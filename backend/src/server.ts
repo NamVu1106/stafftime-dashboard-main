@@ -74,15 +74,13 @@ app.get('/api/health', (req, res) => {
 
 // Serve frontend for all non-API routes (SPA routing)
 if (distExists) {
-  app.get('/*', (req, res) => {
-    // Don't serve index.html for API routes
-    if (req.path.startsWith('/api')) {
-      return res.status(404).json({ error: 'API route not found' });
+  // Use middleware to catch all non-API routes
+  app.use((req, res, next) => {
+    // Skip API routes and uploads
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+      return next();
     }
-    // Don't serve index.html for uploads
-    if (req.path.startsWith('/uploads')) {
-      return res.status(404).json({ error: 'File not found' });
-    }
+    // Serve index.html for all other routes (SPA routing)
     res.sendFile(path.join(frontendDistPath, 'index.html'));
   });
 }
