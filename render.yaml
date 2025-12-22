@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: stafftime-app
+    env: node
+    region: singapore
+    buildCommand: |
+      # Build frontend first
+      npm install
+      npm run build
+      # Then build backend
+      cd backend
+      npm install
+      npm run build
+      npx prisma generate
+    startCommand: cd backend && npm start
+    envVars:
+      - key: DATABASE_URL
+        value: file:./prisma/dev.db
+      - key: JWT_SECRET
+        generateValue: true
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+    plan: free

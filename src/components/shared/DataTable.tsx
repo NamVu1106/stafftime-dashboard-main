@@ -1,0 +1,211 @@
+import { useState } from 'react';
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+interface Column<T> {
+  key: keyof T | string;
+  header: string;
+  render?: (item: T, index?: number) => React.ReactNode;
+  sortable?: boolean;
+}
+
+interface DataTableProps<T> {
+  data: T[];
+  columns: Column<T>[];
+  searchPlaceholder?: string;
+  onSearch?: (query: string) => void;
+  pageSize?: number;
+}
+
+export function DataTable<T extends { id: number | string }>({
+  data,
+  columns,
+  searchPlaceholder = 'Tìm kiếm...',
+  onSearch,
+  pageSize: initialPageSize = 10,
+}: DataTableProps<T>) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+
+  // If onSearch callback is provided, use server-side search (don't filter client-side)
+  // Otherwise, use client-side filtering
+  const shouldUseServerSearch = !!onSearch;
+
+  // Client-side filtering (only if no onSearch callback)
+  const filteredData = shouldUseServerSearch 
+    ? data  // Use data as-is when server-side search is enabled
+    : data.filter((item) => {
+        if (!searchQuery) return true;
+        const searchLower = searchQuery.toLowerCase();
+        return Object.values(item).some(value => 
+          String(value).toLowerCase().includes(searchLower)
+        );
+      });
+
+  // Sorting
+  const sortedData = [...filteredData].sort((a, b) => {
+    if (!sortConfig) return 0;
+    const aValue = (a as Record<string, unknown>)[sortConfig.key];
+    const bValue = (b as Record<string, unknown>)[sortConfig.key];
+    
+    if (aValue === bValue) return 0;
+    
+    const comparison = aValue! < bValue! ? -1 : 1;
+    return sortConfig.direction === 'asc' ? comparison : -comparison;
+  });
+
+  // Pagination
+  const totalPages = Math.ceil(sortedData.length / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedData = sortedData.slice(startIndex, startIndex + pageSize);
+
+  const handleSort = (key: string) => {
+    setSortConfig(prev => {
+      if (prev?.key === key) {
+        return prev.direction === 'asc' 
+          ? { key, direction: 'desc' } 
+          : null;
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const handleSearch = (value: string) => {
+    // Update local state immediately for UI responsiveness
+    setSearchQuery(value);
+    setCurrentPage(1);
+    // If onSearch callback is provided, use it for server-side search
+    // Call it immediately (no debounce) so user sees results as they type
+    if (onSearch) {
+      onSearch(value);
+    }
+  };
+
+  return (
+    <div className="bg-card rounded-lg border border-border shadow-sm">
+      {/* Header */}
+      <div className="p-4 border-b border-border flex flex-col sm:flex-row gap-4 justify-between">
+        {searchPlaceholder && (
+        <div className="relative w-full sm:w-72">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder={searchPlaceholder}
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        )}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">Hiển thị</span>
+          <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
+            <SelectTrigger className="w-20">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="10">10</SelectItem>
+              <SelectItem value="25">25</SelectItem>
+              <SelectItem value="50">50</SelectItem>
+              <SelectItem value="100">100</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className="text-sm text-muted-foreground">dòng</span>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="data-table">
+          <thead>
+            <tr>
+              {columns.map((col) => (
+                <th
+                  key={col.key.toString()}
+                  onClick={() => col.sortable && handleSort(col.key.toString())}
+                  className={col.sortable ? 'cursor-pointer hover:bg-muted/80 select-none' : ''}
+                >
+                  <div className="flex items-center gap-1">
+                    {col.header}
+                    {col.sortable && sortConfig?.key === col.key && (
+                      <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedData.length > 0 ? (
+              paginatedData.map((item, rowIndex) => (
+                <tr key={item.id}>
+                  {columns.map((col) => (
+                    <td key={`${item.id}-${col.key.toString()}`}>
+                      {col.render 
+                        ? col.render(item, startIndex + rowIndex) 
+                        : String((item as Record<string, unknown>)[col.key.toString()] ?? '')}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={columns.length} className="text-center py-8 text-muted-foreground">
+                  Không có dữ liệu
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination */}
+      <div className="p-4 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
+        <p className="text-sm text-muted-foreground">
+          Hiển thị {startIndex + 1} - {Math.min(startIndex + pageSize, sortedData.length)} trong tổng số {sortedData.length} dòng
+        </p>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setCurrentPage(1)}
+            disabled={currentPage === 1}
+          >
+            <ChevronsLeft className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setCurrentPage(p => p - 1)}
+            disabled={currentPage === 1}
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <span className="px-4 text-sm">
+            Trang {currentPage} / {totalPages || 1}
+          </span>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setCurrentPage(p => p + 1)}
+            disabled={currentPage === totalPages}
+          >
+            <ChevronRight className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setCurrentPage(totalPages)}
+            disabled={currentPage === totalPages}
+          >
+            <ChevronsRight className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
