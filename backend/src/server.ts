@@ -74,7 +74,7 @@ app.get('/api/health', (req, res) => {
 
 // Serve frontend for all non-API routes (SPA routing)
 if (distExists) {
-  app.get('*', (req, res) => {
+  app.get('/*', (req, res) => {
     // Don't serve index.html for API routes
     if (req.path.startsWith('/api')) {
       return res.status(404).json({ error: 'API route not found' });
