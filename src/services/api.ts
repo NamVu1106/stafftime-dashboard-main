@@ -1,5 +1,7 @@
+// Use environment variable if set, otherwise use relative path for production
+// or localhost for development
 const API_URL = import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');
+  (import.meta.env.MODE === 'production' ? '/api' : 'http://localhost:3000/api');
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('token');
