@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2, Download, X, Loader2, Eye, AlertTriangle, Filter } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { PageHeader } from '@/components/shared/PageHeader';
@@ -16,12 +17,44 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { employeesAPI } from '@/services/api';
 import { Employee, FamilyMember } from '@/data/mockData';
+import { useI18n } from '@/contexts/I18nContext';
 
 const EmployeesPage = () => {
+  const { t } = useI18n();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [isFormOpen, setIsFormOpen] = useState(false);
+  
+  // Auto-open form if route is /employees/new
+  useEffect(() => {
+    if (location.pathname === '/employees/new') {
+      // Reset form and open dialog
+      setEditingEmployee(null);
+      setFormData({
+        employee_code: '',
+        name: '',
+        gender: 'Nam',
+        date_of_birth: '',
+        department: '',
+        employment_type: 'Chính thức',
+        cccd: '',
+        hometown: '',
+        permanent_residence: '',
+        temporary_residence: '',
+        marital_status: 'Độc thân',
+        family_relations: [],
+        phone: '',
+        avatar: '',
+      });
+      setFamilyMemberForm({ relation: '', name: '', occupation: '' });
+      setIsFormOpen(true);
+      // Navigate back to /employees to avoid blank page
+      navigate('/employees', { replace: true });
+    }
+  }, [location.pathname, navigate]);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -66,15 +99,15 @@ const EmployeesPage = () => {
       queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
       queryClient.refetchQueries({ queryKey: ['notifications', 'unread-count'] });
       toast({
-        title: 'Thành công',
-        description: 'Thêm nhân viên mới thành công',
+        title: t('common.success'),
+        description: t('employees.addSuccess'),
       });
       setIsFormOpen(false);
     },
     onError: (error: any) => {
       toast({
-        title: 'Lỗi',
-        description: error.message || 'Có lỗi xảy ra khi thêm nhân viên',
+        title: t('common.error'),
+        description: error.message || t('employees.addError'),
         variant: 'destructive',
       });
     },
@@ -90,15 +123,15 @@ const EmployeesPage = () => {
       queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'statistics' });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast({
-        title: 'Thành công',
-        description: 'Cập nhật thông tin nhân viên thành công',
+        title: t('common.success'),
+        description: t('employees.updateSuccess'),
       });
       setIsFormOpen(false);
     },
     onError: (error: any) => {
       toast({
-        title: 'Lỗi',
-        description: error.message || 'Có lỗi xảy ra khi cập nhật nhân viên',
+        title: t('common.error'),
+        description: error.message || t('employees.updateError'),
         variant: 'destructive',
       });
     },
@@ -114,16 +147,16 @@ const EmployeesPage = () => {
       queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'statistics' });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast({
-        title: 'Thành công',
-        description: 'Xóa nhân viên thành công',
+        title: t('common.success'),
+        description: t('employees.deleteSuccess'),
       });
       setIsDeleteDialogOpen(false);
       setDeletingEmployee(null);
     },
     onError: (error: any) => {
       toast({
-        title: 'Lỗi',
-        description: error.message || 'Có lỗi xảy ra khi xóa nhân viên',
+        title: t('common.error'),
+        description: error.message || t('employees.deleteError'),
         variant: 'destructive',
       });
     },
@@ -139,14 +172,14 @@ const EmployeesPage = () => {
       queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] === 'statistics' });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast({
-        title: 'Thành công',
-        description: 'Đã xóa tất cả nhân viên trong hệ thống',
+        title: t('common.success'),
+        description: t('employees.deleteAllSuccess'),
       });
     },
     onError: (error: any) => {
       toast({
-        title: 'Lỗi',
-        description: error.message || 'Có lỗi xảy ra khi xóa tất cả nhân viên',
+        title: t('common.error'),
+        description: error.message || t('employees.deleteAllError'),
         variant: 'destructive',
       });
     },
@@ -378,22 +411,22 @@ const EmployeesPage = () => {
     try {
       // Define headers first
       const headers = [
-        'STT',
-        'Ảnh',
-        'Mã NV',
-        'Tên nhân viên',
-        'Giới tính',
-        'Ngày sinh',
-        'Tuổi',
-        'Phòng ban',
-        'Loại hợp đồng',
-        'CCCD',
-        'SĐT',
-        'Quê quán',
-        'Thường trú',
-        'Tạm trú',
-        'Tình trạng hôn nhân',
-        'Quan hệ gia đình',
+        t('employees.stt'),
+        t('employees.photo'),
+        t('employees.employeeCode'),
+        t('employees.name'),
+        t('employees.gender'),
+        t('employees.dateOfBirth'),
+        t('employees.age'),
+        t('employees.department'),
+        t('employees.employmentType'),
+        t('employees.cccd'),
+        t('employees.phoneShort'),
+        t('employees.hometown'),
+        t('employees.permanentResidenceShort'),
+        t('employees.temporaryResidenceShort'),
+        t('employees.maritalStatus'),
+        t('employees.familyRelations'),
       ];
 
       // Helper function to truncate text to Excel's max cell length (32767 characters)
@@ -406,12 +439,12 @@ const EmployeesPage = () => {
       // Prepare data for export - always export, even if empty
       const exportData = filteredEmployees.length > 0 
         ? filteredEmployees.map((emp, index) => ({
-            'STT': index + 1,
-            'Ảnh': truncateForExcel(emp.avatar || (emp as any).avatar_url || ''),
-            'Mã NV': truncateForExcel(emp.employee_code),
-            'Tên nhân viên': truncateForExcel(emp.name),
-            'Giới tính': truncateForExcel(emp.gender),
-            'Ngày sinh': emp.date_of_birth 
+            [t('employees.stt')]: index + 1,
+            [t('employees.photo')]: truncateForExcel(emp.avatar || (emp as any).avatar_url || ''),
+            [t('employees.employeeCode')]: truncateForExcel(emp.employee_code),
+            [t('employees.name')]: truncateForExcel(emp.name),
+            [t('employees.gender')]: truncateForExcel(translateValue(emp.gender)),
+            [t('employees.dateOfBirth')]: emp.date_of_birth 
               ? (() => {
                   try {
                     const date = new Date(emp.date_of_birth);
@@ -425,16 +458,16 @@ const EmployeesPage = () => {
                   return truncateForExcel(emp.date_of_birth);
                 })()
               : '',
-            'Tuổi': emp.age || 0,
-            'Phòng ban': truncateForExcel(emp.department),
-            'Loại hợp đồng': truncateForExcel(emp.employment_type),
-            'CCCD': truncateForExcel(emp.cccd || ''),
-            'SĐT': truncateForExcel(emp.phone || ''),
-            'Quê quán': truncateForExcel(emp.hometown || ''),
-            'Thường trú': truncateForExcel(emp.permanent_residence || ''),
-            'Tạm trú': truncateForExcel(emp.temporary_residence || ''),
-            'Tình trạng hôn nhân': truncateForExcel(emp.marital_status || ''),
-            'Quan hệ gia đình': emp.family_relations && emp.family_relations.length > 0 
+            [t('employees.age')]: emp.age || 0,
+            [t('employees.department')]: truncateForExcel(emp.department),
+            [t('employees.employmentType')]: truncateForExcel(translateValue(emp.employment_type)),
+            [t('employees.cccd')]: truncateForExcel(emp.cccd || ''),
+            [t('employees.phoneShort')]: truncateForExcel(emp.phone || ''),
+            [t('employees.hometown')]: truncateForExcel(emp.hometown || ''),
+            [t('employees.permanentResidenceShort')]: truncateForExcel(emp.permanent_residence || ''),
+            [t('employees.temporaryResidenceShort')]: truncateForExcel(emp.temporary_residence || ''),
+            [t('employees.maritalStatus')]: truncateForExcel(translateValue(emp.marital_status || '')),
+            [t('employees.familyRelations')]: emp.family_relations && emp.family_relations.length > 0 
               ? truncateForExcel(
                   emp.family_relations.map((f: FamilyMember) => 
                     `${f.relation}: ${f.name}${f.occupation ? ` (${f.occupation})` : ''}`
@@ -455,7 +488,7 @@ const EmployeesPage = () => {
       }
       
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Danh sách nhân viên');
+      XLSX.utils.book_append_sheet(workbook, worksheet, t('employees.list'));
 
       // Set column widths - matching table columns order
       const columnWidths = [
@@ -500,10 +533,26 @@ const EmployeesPage = () => {
     }
   };
 
+  // Helper function to translate values
+  const translateValue = (value: string): string => {
+    const translations: Record<string, string> = {
+      'Nam': t('employees.male'),
+      'Nữ': t('employees.female'),
+      'Chính thức': t('employees.official'),
+      'Thời vụ': t('employees.seasonal'),
+      'Độc thân': t('employees.single'),
+      'Đã kết hôn': t('employees.married'),
+      'Đã có gia đình': t('employees.marriedWithFamily'),
+      'Ly hôn': t('employees.divorced'),
+      'Góa': t('employees.widowed'),
+    };
+    return translations[value] || value;
+  };
+
   const columns = [
     { 
       key: 'id' as const, 
-      header: 'STT', 
+      header: t('employees.stt'), 
       sortable: false,
       render: (_: Employee, index?: number) => {
         // STT should be 1-based index from the current page
@@ -512,7 +561,7 @@ const EmployeesPage = () => {
     },
     { 
       key: 'avatar' as const, 
-      header: 'Ảnh',
+      header: t('employees.photo'),
       render: (emp: Employee) => (
         emp.avatar ? (
           <img src={emp.avatar} alt={emp.name} className="w-10 h-10 rounded-full object-cover" />
@@ -523,22 +572,22 @@ const EmployeesPage = () => {
         )
       )
     },
-    { key: 'employee_code' as const, header: 'Mã NV', sortable: true },
-    { key: 'name' as const, header: 'Tên nhân viên', sortable: true },
+    { key: 'employee_code' as const, header: t('employees.employeeCode'), sortable: true },
+    { key: 'name' as const, header: t('employees.name'), sortable: true },
     { 
       key: 'gender' as const, 
-      header: 'Giới tính',
+      header: t('employees.gender'),
       render: (emp: Employee) => (
         <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
           emp.gender === 'Nam' ? 'bg-primary/10 text-primary' : 'bg-pink-100 text-pink-700'
         }`}>
-          {emp.gender}
+          {translateValue(emp.gender)}
         </span>
       )
     },
     { 
       key: 'date_of_birth' as const, 
-      header: 'Ngày sinh', 
+      header: t('employees.dateOfBirth'), 
       sortable: true,
       render: (emp: Employee) => {
         if (!emp.date_of_birth) return '-';
@@ -555,34 +604,34 @@ const EmployeesPage = () => {
         }
       }
     },
-    { key: 'age' as const, header: 'Tuổi', sortable: true },
-    { key: 'department' as const, header: 'Phòng ban', sortable: true },
+    { key: 'age' as const, header: t('employees.age'), sortable: true },
+    { key: 'department' as const, header: t('employees.department'), sortable: true },
     { 
       key: 'employment_type' as const, 
-      header: 'Loại hợp đồng',
+      header: t('employees.employmentType'),
       render: (emp: Employee) => (
         <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
           emp.employment_type === 'Chính thức' 
             ? 'bg-green-100 text-green-700' 
             : 'bg-orange-100 text-orange-700'
         }`}>
-          {emp.employment_type}
+          {translateValue(emp.employment_type)}
         </span>
       )
     },
     { 
       key: 'cccd' as const, 
-      header: 'CCCD',
+      header: t('employees.cccd'),
       render: (emp: Employee) => emp.cccd || '-'
     },
     { 
       key: 'phone' as const, 
-      header: 'SĐT',
+      header: t('employees.phoneShort'),
       render: (emp: Employee) => emp.phone || '-'
     },
     { 
       key: 'hometown' as const, 
-      header: 'Quê quán',
+      header: t('employees.hometown'),
       render: (emp: Employee) => (
         <div className="max-w-md whitespace-normal break-words">
           {emp.hometown || '-'}
@@ -591,7 +640,7 @@ const EmployeesPage = () => {
     },
     { 
       key: 'permanent_residence' as const, 
-      header: 'Thường trú',
+      header: t('employees.permanentResidenceShort'),
       render: (emp: Employee) => (
         <div className="max-w-md whitespace-normal break-words" title={emp.permanent_residence || ''}>
           {emp.permanent_residence || '-'}
@@ -600,7 +649,7 @@ const EmployeesPage = () => {
     },
     { 
       key: 'temporary_residence' as const, 
-      header: 'Tạm trú',
+      header: t('employees.temporaryResidenceShort'),
       render: (emp: Employee) => (
         <div className="max-w-md whitespace-normal break-words" title={emp.temporary_residence || ''}>
           {emp.temporary_residence || '-'}
@@ -609,12 +658,12 @@ const EmployeesPage = () => {
     },
     { 
       key: 'marital_status' as const, 
-      header: 'Tình trạng hôn nhân',
-      render: (emp: Employee) => emp.marital_status || '-'
+      header: t('employees.maritalStatus'),
+      render: (emp: Employee) => translateValue(emp.marital_status || '-')
     },
     { 
       key: 'family_relations' as const, 
-      header: 'Quan hệ gia đình',
+      header: t('employees.familyRelations'),
       render: (emp: Employee) => {
         const familyRelations = emp.family_relations || (emp as any).family_members || [];
         if (familyRelations.length === 0) return '-';
@@ -628,7 +677,7 @@ const EmployeesPage = () => {
     },
     {
       key: 'actions',
-      header: 'Thao tác',
+      header: t('employees.actions'),
       render: (emp: Employee) => (
         <div className="flex items-center gap-2">
           <Button
@@ -638,7 +687,7 @@ const EmployeesPage = () => {
               setViewingEmployee(emp);
               setIsViewDialogOpen(true);
             }}
-            title="Xem chi tiết"
+            title={t('employees.view')}
           >
             <Eye className="w-4 h-4 text-blue-600" />
           </Button>
@@ -646,7 +695,7 @@ const EmployeesPage = () => {
             variant="ghost"
             size="icon"
             onClick={() => openEditForm(emp)}
-            title="Sửa"
+            title={t('employees.edit')}
           >
             <Pencil className="w-4 h-4 text-primary" />
           </Button>
@@ -657,7 +706,7 @@ const EmployeesPage = () => {
               setDeletingEmployee(emp);
               setIsDeleteDialogOpen(true);
             }}
-            title="Xóa"
+            title={t('employees.delete')}
           >
             <Trash2 className="w-4 h-4 text-destructive" />
           </Button>
@@ -669,14 +718,14 @@ const EmployeesPage = () => {
   return (
     <div>
       <PageHeader
-        title="Quản lý nhân viên"
-        description="Thêm, sửa, xóa thông tin nhân viên trong hệ thống"
-        breadcrumbs={[{ label: 'Quản lý nhân viên' }]}
+        title={t('employees.title')}
+        description={t('employees.description')}
+        breadcrumbs={[{ label: t('employees.title') }]}
         action={
           <div className="flex gap-2">
             <Button variant="outline" onClick={handleExportExcel}>
               <Download className="w-4 h-4 mr-2" />
-              Export Excel
+              {t('employees.exportExcel')}
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -687,12 +736,12 @@ const EmployeesPage = () => {
                   {deleteAllEmployeesMutation.isPending ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Đang xóa...
+                      {t('employees.deleting')}
                     </>
                   ) : (
                     <>
                       <Trash2 className="w-4 h-4 mr-2" />
-                      Xóa tất cả
+                      {t('employees.deleteAll')}
                     </>
                   )}
                 </Button>
@@ -701,17 +750,14 @@ const EmployeesPage = () => {
                 <AlertDialogHeader>
                   <AlertDialogTitle className="flex items-center gap-2">
                     <AlertTriangle className="w-5 h-5 text-destructive" />
-                    Xác nhận xóa tất cả nhân viên
+                    {t('employees.deleteAllConfirm')}
                   </AlertDialogTitle>
                   <AlertDialogDescription>
-                    Bạn có chắc chắn muốn xóa <span className="font-semibold">{transformedEmployees.length}</span> nhân viên hiện có không?
-                    <br />
-                    Hành động này <span className="font-semibold">không thể hoàn tác</span>. Dữ liệu chấm công liên quan vẫn được giữ lại nhưng
-                    sẽ không còn liên kết với nhân viên.
+                    {t('employees.deleteAllDescription')}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Hủy</AlertDialogCancel>
+                  <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                   <AlertDialogAction
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     onClick={() => deleteAllEmployeesMutation.mutate()}
@@ -723,7 +769,7 @@ const EmployeesPage = () => {
             </AlertDialog>
             <Button onClick={openAddForm}>
               <Plus className="w-4 h-4 mr-2" />
-              Thêm nhân viên
+              {t('employees.addEmployee')}
             </Button>
           </div>
         }
@@ -733,17 +779,17 @@ const EmployeesPage = () => {
       <div className="chart-container mb-6">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-5 h-5 text-muted-foreground" />
-          <h3 className="font-semibold">Bộ lọc</h3>
+          <h3 className="font-semibold">{t('employees.filter')}</h3>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
           <div className="space-y-2">
-            <Label>Phòng ban</Label>
+            <Label>{t('employees.department')}</Label>
             <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
               <SelectTrigger>
-                <SelectValue placeholder="Chọn phòng ban" />
+                <SelectValue placeholder={t('employees.selectDepartment')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả</SelectItem>
+                <SelectItem value="all">{t('employees.all')}</SelectItem>
                 {departments.map(dept => (
                   <SelectItem key={dept} value={dept}>{dept}</SelectItem>
                 ))}
@@ -761,7 +807,7 @@ const EmployeesPage = () => {
       ) : error ? (
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
-            <p className="text-destructive mb-2">Lỗi khi tải dữ liệu</p>
+            <p className="text-destructive mb-2">{t('employees.loadingError')}</p>
             <p className="text-sm text-muted-foreground">{(error as Error).message}</p>
           </div>
         </div>
@@ -778,20 +824,20 @@ const EmployeesPage = () => {
         <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingEmployee ? 'Sửa thông tin nhân viên' : 'Thêm nhân viên mới'}
+              {editingEmployee ? t('employees.updateSuccess') : t('employees.addNew')}
             </DialogTitle>
           </DialogHeader>
           <Tabs defaultValue="basic" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="basic">Thông tin cơ bản</TabsTrigger>
-              <TabsTrigger value="personal">Thông tin cá nhân</TabsTrigger>
-              <TabsTrigger value="family">Gia đình</TabsTrigger>
+              <TabsTrigger value="basic">{t('employees.workInfo')}</TabsTrigger>
+              <TabsTrigger value="personal">{t('employees.personalInfo')}</TabsTrigger>
+              <TabsTrigger value="family">{t('employees.familyInfo')}</TabsTrigger>
             </TabsList>
             
             <TabsContent value="basic" className="space-y-4 mt-4">
               <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="employee_code">Mã nhân viên *</Label>
+              <Label htmlFor="employee_code">{t('employees.employeeCodeLabel')} *</Label>
               <Input
                 id="employee_code"
                 value={formData.employee_code}
@@ -800,18 +846,18 @@ const EmployeesPage = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="name">Tên nhân viên *</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="VD: Nguyễn Văn A"
-              />
+              <Label htmlFor="name">{t('employees.nameLabel')} *</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder={t('employees.exampleName')}
+                />
             </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Giới tính *</Label>
+              <Label>{t('employees.gender')} *</Label>
               <RadioGroup
                 value={formData.gender}
                 onValueChange={(value) => setFormData(prev => ({ ...prev, gender: value as 'Nam' | 'Nữ' }))}
@@ -819,16 +865,16 @@ const EmployeesPage = () => {
               >
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="Nam" id="male" />
-                  <Label htmlFor="male" className="font-normal">Nam</Label>
+                  <Label htmlFor="male" className="font-normal">{t('employees.male')}</Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="Nữ" id="female" />
-                  <Label htmlFor="female" className="font-normal">Nữ</Label>
+                  <Label htmlFor="female" className="font-normal">{t('employees.female')}</Label>
                 </div>
               </RadioGroup>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="dob">Ngày sinh *</Label>
+              <Label htmlFor="dob">{t('employees.dateOfBirth')} *</Label>
               <Input
                 id="dob"
                 type="date"
@@ -839,13 +885,13 @@ const EmployeesPage = () => {
               </div>
               <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="department">Phòng ban *</Label>
+              <Label htmlFor="department">{t('employees.department')} *</Label>
               <Select
                 value={formData.department}
                 onValueChange={(value) => setFormData(prev => ({ ...prev, department: value }))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn phòng ban" />
+                  <SelectValue placeholder={t('employees.selectDepartment')} />
                 </SelectTrigger>
                 <SelectContent>
                   {departments.map(dept => (
@@ -855,7 +901,7 @@ const EmployeesPage = () => {
               </Select>
             </div>
                 <div className="space-y-2">
-                  <Label>Loại hợp đồng *</Label>
+                  <Label>{t('employees.employmentType')} *</Label>
                   <RadioGroup
                     value={formData.employment_type}
                     onValueChange={(value) => setFormData(prev => ({ ...prev, employment_type: value as 'Chính thức' | 'Thời vụ' }))}
@@ -863,26 +909,26 @@ const EmployeesPage = () => {
                   >
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="Chính thức" id="chinhthuc" />
-                      <Label htmlFor="chinhthuc" className="font-normal">Chính thức</Label>
+                      <Label htmlFor="chinhthuc" className="font-normal">{t('employees.official')}</Label>
                     </div>
                     <div className="flex items-center space-x-2">
                       <RadioGroupItem value="Thời vụ" id="thoivu" />
-                      <Label htmlFor="thoivu" className="font-normal">Thời vụ</Label>
+                      <Label htmlFor="thoivu" className="font-normal">{t('employees.seasonal')}</Label>
                     </div>
                   </RadioGroup>
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="phone">SĐT liên lạc</Label>
+                <Label htmlFor="phone">{t('employees.phoneLabel')}</Label>
                 <Input
                   id="phone"
                   value={formData.phone}
                   onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                  placeholder="VD: 0912345678"
+                  placeholder={t('employees.examplePhone')}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="avatar">Ảnh chân dung</Label>
+                <Label htmlFor="avatar">{t('employees.avatar')}</Label>
                 <div className="flex items-center gap-4">
                   {formData.avatar && (
                     <img src={formData.avatar} alt="Avatar" className="w-20 h-20 rounded-full object-cover border" />
@@ -901,58 +947,58 @@ const EmployeesPage = () => {
             <TabsContent value="personal" className="space-y-4 mt-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="cccd">CCCD</Label>
+                  <Label htmlFor="cccd">{t('employees.cccd')}</Label>
                   <Input
                     id="cccd"
                     value={formData.cccd}
                     onChange={(e) => setFormData(prev => ({ ...prev, cccd: e.target.value }))}
-                    placeholder="VD: 001199000123"
+                    placeholder={t('employees.exampleCccd')}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="hometown">Quê quán</Label>
+                  <Label htmlFor="hometown">{t('employees.hometown')}</Label>
                   <Input
                     id="hometown"
                     value={formData.hometown}
                     onChange={(e) => setFormData(prev => ({ ...prev, hometown: e.target.value }))}
-                    placeholder="VD: Hà Nội"
+                    placeholder={t('employees.exampleHometown')}
                   />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="permanent_residence">HKTT - Hộ khẩu thường trú</Label>
+                <Label htmlFor="permanent_residence">{t('employees.permanentResidence')}</Label>
                 <Textarea
                   id="permanent_residence"
                   value={formData.permanent_residence}
                   onChange={(e) => setFormData(prev => ({ ...prev, permanent_residence: e.target.value }))}
-                  placeholder="VD: 123 Nguyễn Trãi, Thanh Xuân, Hà Nội"
+                  placeholder={t('employees.exampleAddress')}
                   rows={2}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="temporary_residence">ĐKTT - Đăng ký tạm trú</Label>
+                <Label htmlFor="temporary_residence">{t('employees.temporaryResidence')}</Label>
                 <Textarea
                   id="temporary_residence"
                   value={formData.temporary_residence}
                   onChange={(e) => setFormData(prev => ({ ...prev, temporary_residence: e.target.value }))}
-                  placeholder="VD: 123 Nguyễn Trãi, Thanh Xuân, Hà Nội"
+                  placeholder={t('employees.exampleAddress')}
                   rows={2}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="marital_status">Tình trạng hôn nhân</Label>
+                <Label htmlFor="marital_status">{t('employees.maritalStatus')}</Label>
                 <Select
                   value={formData.marital_status}
                   onValueChange={(value) => setFormData(prev => ({ ...prev, marital_status: value as 'Độc thân' | 'Đã kết hôn' | 'Ly hôn' | 'Góa' }))}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Chọn tình trạng" />
+                    <SelectValue placeholder={t('employees.selectStatus')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Độc thân">Độc thân</SelectItem>
-                    <SelectItem value="Đã kết hôn">Đã kết hôn</SelectItem>
-                    <SelectItem value="Ly hôn">Ly hôn</SelectItem>
-                    <SelectItem value="Góa">Góa</SelectItem>
+                    <SelectItem value="Độc thân">{t('employees.single')}</SelectItem>
+                    <SelectItem value="Đã kết hôn">{t('employees.married')}</SelectItem>
+                    <SelectItem value="Ly hôn">{t('employees.divorced')}</SelectItem>
+                    <SelectItem value="Góa">{t('employees.widowed')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -960,43 +1006,43 @@ const EmployeesPage = () => {
             
             <TabsContent value="family" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label>Quan hệ gia đình + Nghề nghiệp</Label>
+                <Label>{t('employees.familyRelationsLabel')}</Label>
                 <div className="border rounded-lg p-4 space-y-4">
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="family_relation">Quan hệ</Label>
+                      <Label htmlFor="family_relation">{t('employees.relation')}</Label>
                       <Input
                         id="family_relation"
                         value={familyMemberForm.relation}
                         onChange={(e) => setFamilyMemberForm(prev => ({ ...prev, relation: e.target.value }))}
-                        placeholder="VD: Vợ, Chồng, Con"
+                        placeholder={t('employees.exampleRelation')}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="family_name">Họ tên</Label>
+                      <Label htmlFor="family_name">{t('employees.fullName')}</Label>
                       <Input
                         id="family_name"
                         value={familyMemberForm.name}
                         onChange={(e) => setFamilyMemberForm(prev => ({ ...prev, name: e.target.value }))}
-                        placeholder="VD: Nguyễn Thị Lan"
+                        placeholder={t('employees.exampleFamilyName')}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="family_occupation">Nghề nghiệp</Label>
+                      <Label htmlFor="family_occupation">{t('employees.occupation')}</Label>
                       <div className="flex gap-2">
                         <Input
                           id="family_occupation"
                           value={familyMemberForm.occupation}
                           onChange={(e) => setFamilyMemberForm(prev => ({ ...prev, occupation: e.target.value }))}
-                          placeholder="VD: Giáo viên"
+                          placeholder={t('employees.exampleOccupation')}
                         />
-                        <Button type="button" onClick={addFamilyMember} size="sm">Thêm</Button>
+                        <Button type="button" onClick={addFamilyMember} size="sm">{t('employees.add')}</Button>
                       </div>
                     </div>
                   </div>
                   {formData.family_relations.length > 0 && (
                     <div className="space-y-2">
-                      <Label>Danh sách thành viên gia đình</Label>
+                      <Label>{t('employees.familyMemberList')}</Label>
                       <div className="space-y-2">
                         {formData.family_relations.map((member, index) => (
                           <div key={index} className="flex items-center justify-between p-2 bg-muted rounded">
@@ -1022,7 +1068,7 @@ const EmployeesPage = () => {
           </Tabs>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsFormOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button 
               onClick={handleSubmit}
@@ -1031,10 +1077,10 @@ const EmployeesPage = () => {
               {(createMutation.isPending || updateMutation.isPending) ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Đang xử lý...
+                  {t('employees.processing')}
                 </>
               ) : (
-                editingEmployee ? 'Cập nhật' : 'Thêm mới'
+                editingEmployee ? t('employees.update') : t('employees.addNew')
               )}
             </Button>
           </DialogFooter>
@@ -1045,28 +1091,28 @@ const EmployeesPage = () => {
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Chi tiết nhân viên</DialogTitle>
+            <DialogTitle>{t('employees.title')}</DialogTitle>
           </DialogHeader>
           {viewingEmployee && (
             <div className="space-y-6">
               {/* Basic Information */}
               <div>
-                <h3 className="text-lg font-semibold mb-4">Thông tin cơ bản</h3>
+                <h3 className="text-lg font-semibold mb-4">{t('employees.workInfo')}</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-muted-foreground">Mã nhân viên</Label>
+                    <Label className="text-muted-foreground">{t('employees.employeeCodeLabel')}</Label>
                     <p className="font-medium">{viewingEmployee.employee_code}</p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Tên nhân viên</Label>
+                    <Label className="text-muted-foreground">{t('employees.nameLabel')}</Label>
                     <p className="font-medium">{viewingEmployee.name}</p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Giới tính</Label>
-                    <p className="font-medium">{viewingEmployee.gender}</p>
+                    <Label className="text-muted-foreground">{t('employees.gender')}</Label>
+                    <p className="font-medium">{translateValue(viewingEmployee.gender)}</p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Ngày sinh</Label>
+                    <Label className="text-muted-foreground">{t('employees.dateOfBirth')}</Label>
                     <p className="font-medium">
                       {viewingEmployee.date_of_birth 
                         ? (() => {
@@ -1085,19 +1131,19 @@ const EmployeesPage = () => {
                     </p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Tuổi</Label>
+                    <Label className="text-muted-foreground">{t('employees.age')}</Label>
                     <p className="font-medium">{viewingEmployee.age}</p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Phòng ban</Label>
+                    <Label className="text-muted-foreground">{t('employees.department')}</Label>
                     <p className="font-medium">{viewingEmployee.department}</p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Loại hợp đồng</Label>
-                    <p className="font-medium">{viewingEmployee.employment_type}</p>
+                    <Label className="text-muted-foreground">{t('employees.employmentType')}</Label>
+                    <p className="font-medium">{translateValue(viewingEmployee.employment_type)}</p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">SĐT</Label>
+                    <Label className="text-muted-foreground">{t('employees.phoneShort')}</Label>
                     <p className="font-medium">{viewingEmployee.phone || '-'}</p>
                   </div>
                 </div>
@@ -1105,34 +1151,34 @@ const EmployeesPage = () => {
 
               {/* Personal Information */}
               <div>
-                <h3 className="text-lg font-semibold mb-4">Thông tin cá nhân</h3>
+                <h3 className="text-lg font-semibold mb-4">{t('employees.personalInfo')}</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label className="text-muted-foreground">CCCD</Label>
+                    <Label className="text-muted-foreground">{t('employees.cccd')}</Label>
                     <p className="font-medium">{viewingEmployee.cccd || '-'}</p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Quê quán</Label>
+                    <Label className="text-muted-foreground">{t('employees.hometown')}</Label>
                     <p className="font-medium">{viewingEmployee.hometown || '-'}</p>
                   </div>
                   <div className="col-span-2">
-                    <Label className="text-muted-foreground">Thường trú</Label>
+                    <Label className="text-muted-foreground">{t('employees.permanentResidenceShort')}</Label>
                     <p className="font-medium">{viewingEmployee.permanent_residence || '-'}</p>
                   </div>
                   <div className="col-span-2">
-                    <Label className="text-muted-foreground">Tạm trú</Label>
+                    <Label className="text-muted-foreground">{t('employees.temporaryResidenceShort')}</Label>
                     <p className="font-medium">{viewingEmployee.temporary_residence || '-'}</p>
                   </div>
                   <div>
-                    <Label className="text-muted-foreground">Tình trạng hôn nhân</Label>
-                    <p className="font-medium">{viewingEmployee.marital_status || '-'}</p>
+                    <Label className="text-muted-foreground">{t('employees.maritalStatus')}</Label>
+                    <p className="font-medium">{translateValue(viewingEmployee.marital_status || '-')}</p>
                   </div>
                 </div>
               </div>
 
               {/* Family Relations */}
               <div>
-                <h3 className="text-lg font-semibold mb-4">Quan hệ gia đình</h3>
+                <h3 className="text-lg font-semibold mb-4">{t('employees.familyRelations')}</h3>
                 {viewingEmployee.family_relations && viewingEmployee.family_relations.length > 0 ? (
                   <div className="space-y-2">
                     {viewingEmployee.family_relations.map((member: FamilyMember, index: number) => (
@@ -1152,7 +1198,7 @@ const EmployeesPage = () => {
               {/* Avatar */}
               {viewingEmployee.avatar && (
                 <div>
-                  <Label className="text-muted-foreground">Ảnh chân dung</Label>
+                  <Label className="text-muted-foreground">{t('employees.avatar')}</Label>
                   <div className="mt-2">
                     <img 
                       src={viewingEmployee.avatar} 

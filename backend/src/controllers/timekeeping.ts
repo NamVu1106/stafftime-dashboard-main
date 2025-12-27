@@ -5,7 +5,7 @@ import { prisma } from '../server';
 // Query param: archived=true để lấy dữ liệu lịch sử, mặc định chỉ lấy dữ liệu mới
 export const getTimekeeping = async (req: Request, res: Response) => {
   try {
-    const { date, start_date, end_date, department, employee_code, archived } = req.query;
+    const { date, start_date, end_date, department, employee_code, search, archived, page, limit } = req.query;
     
     const where: any = {};
     
@@ -33,7 +33,7 @@ export const getTimekeeping = async (req: Request, res: Response) => {
     }
     
     // Fetch all records first (we'll filter by search term after)
-    const records = await prisma.timekeepingRecord.findMany({
+    const allRecords = await prisma.timekeepingRecord.findMany({
       where,
       include: {
         employee: true,
@@ -51,20 +51,34 @@ export const getTimekeeping = async (req: Request, res: Response) => {
       ],
     });
     
-    // Filter by employee_code or employee_name (case-insensitive)
+    // Filter by employee_code, employee_name, or search term (case-insensitive)
     // SQLite doesn't support case-insensitive search well, so we filter after fetching
-    let filteredRecords = records;
-    if (employee_code) {
-      const searchTerm = (employee_code as string).trim().toLowerCase();
-      if (searchTerm) {
-        filteredRecords = records.filter(record => 
-          record.employee_code.toLowerCase().includes(searchTerm) ||
-          record.employee_name.toLowerCase().includes(searchTerm)
+    let filteredRecords = allRecords;
+    const searchTerm = (search || employee_code) as string;
+    if (searchTerm) {
+      const term = searchTerm.trim().toLowerCase();
+      if (term) {
+        filteredRecords = allRecords.filter(record => 
+          record.employee_code.toLowerCase().includes(term) ||
+          record.employee_name.toLowerCase().includes(term)
         );
       }
     }
     
-    res.json(filteredRecords);
+    // Pagination
+    const pageNum = page ? parseInt(page as string) : 1;
+    const limitNum = limit ? parseInt(limit as string) : 20;
+    const skip = (pageNum - 1) * limitNum;
+    const total = filteredRecords.length;
+    const data = filteredRecords.slice(skip, skip + limitNum);
+    
+    res.json({
+      data,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(total / limitNum),
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

@@ -1,0 +1,400 @@
+THIẾT KẾ MÀN HÌNH - HỆ THỐNG QUẢN LÝ CHẤM CÔNG
+
+═══════════════════════════════════════════════════════════════════════════════
+
+MỤC ĐÍCH
+Tài liệu này mô tả các màn hình và tính năng cần phát triển theo yêu cầu của sếp.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+TỔNG QUAN HỆ THỐNG
+
+Điều kiện cần thiết để phát triển hệ thống:
+
+1. Máy chủ (Server/Hosting):
+   - Hiện tại: Đã có sẵn trên Render.com (miễn phí)
+   - Địa chỉ web hiện tại: https://stafftime-app.onrender.com
+   - Giải thích: Máy chủ là nơi chạy code và lưu trữ dữ liệu. Domain là địa chỉ web để truy cập. Hiện tại đã có cả 2 (domain miễn phí từ Render).
+   - Nếu cần domain đẹp hơn: Có thể xin công ty cấp subdomain (ví dụ: chamcong.company.com) hoặc tự mua domain riêng.
+
+2. Dữ liệu thô (Rawdata):
+   - Cần có: Dữ liệu từ hệ thống chấm công hiện tại của công ty
+   - Format dữ liệu: Cần xác định xem dữ liệu ở dạng nào (file Excel, file CSV, database, hoặc API)
+   - Nguồn: Từ phần mềm máy chấm công mà công ty đang sử dụng
+
+3. Kết nối với phần mềm máy chấm công:
+   - Mục đích: Để hệ thống mới có thể lấy dữ liệu từ hệ thống chấm công cũ
+   - Có 4 cách kết nối:
+     + Cách 1: API endpoint - Hệ thống chấm công cũ gửi dữ liệu đến hệ thống mới qua đường link API
+     + Cách 2: Webhook - Hệ thống chấm công cũ tự động gửi dữ liệu khi có sự kiện mới (ví dụ: có người chấm công)
+     + Cách 3: Polling - Hệ thống mới tự động lấy dữ liệu từ hệ thống chấm công cũ định kỳ (ví dụ: mỗi 5 phút)
+     + Cách 4: Database sync - Đồng bộ trực tiếp từ database của hệ thống chấm công cũ
+
+═══════════════════════════════════════════════════════════════════════════════
+
+MÀN HÌNH 1: TRANG TỔNG QUAN (CẢI TIẾN)
+
+Vị trí: Trang chủ khi đăng nhập vào hệ thống
+
+Mô tả:
+Trang này hiển thị thống kê tổng hợp theo 3 khoảng thời gian khác nhau (Ngày/Tháng/Năm) trên cùng một màn hình. Thay vì chỉ xem được một khoảng thời gian, giờ có thể xem cả 3 cùng lúc.
+
+Bố cục màn hình:
+- Phần trên cùng: Tiêu đề "Quản lý Chấm công - Admin Dashboard"
+- Bên trái: Menu điều hướng (sidebar)
+- Phần chính (giữa màn hình):
+  + Ở trên cùng: Bộ lọc thời gian với các nút chọn: Hôm nay, Tháng này, Năm này, 1 ngày, Giai đoạn
+  + Ở giữa: 3 cột thống kê song song:
+    * Cột 1: Thống kê Hôm nay (Tổng nhân viên, Số người đi làm, Tỷ lệ đi làm, Tổng giờ làm)
+    * Cột 2: Thống kê Tháng này (các chỉ số tương tự)
+    * Cột 3: Thống kê Năm này (các chỉ số tương tự)
+  + Ở dưới: Các biểu đồ và thống kê khác (giữ nguyên như hiện tại)
+
+Tính năng:
+1. Hiển thị 3 cột thống kê song song để so sánh dễ dàng
+2. Bộ lọc thời gian nâng cao:
+   - Có các nút chọn: Hôm nay, Tháng này, Năm này, 1 ngày, Giai đoạn
+   - Khi chọn "Giai đoạn": Hiển thị 2 ô chọn ngày (Từ ngày và Đến ngày) để chọn khoảng thời gian bất kỳ
+   - Khi chọn "1 ngày": Hiển thị 1 ô chọn ngày để xem thống kê của ngày đó
+3. Tự động làm mới dữ liệu khi thay đổi bộ lọc
+4. Giữ nguyên các biểu đồ và thống kê hiện có
+
+Lợi ích:
+- Xem được thống kê của nhiều khoảng thời gian cùng lúc, dễ so sánh
+- Có thể chọn bất kỳ giai đoạn nào để xem, không chỉ ngày/tháng cố định
+
+═══════════════════════════════════════════════════════════════════════════════
+
+MÀN HÌNH 2: MENU ĐIỀU HƯỚNG BÊN TRÁI (SIDEBAR)
+
+Vị trí: Bên trái màn hình, hiển thị trên tất cả các trang
+
+Mô tả:
+Menu bên trái có cấu trúc phân cấp với nhiều mục để người dùng có thể chọn và chuyển đến các trang khác nhau. Menu này có thể thu gọn hoặc mở rộng.
+
+Cấu trúc menu:
+- Trang chủ: Click vào sẽ quay về trang tổng quan
+- Tổng quan:
+  + Dashboard: Trang tổng quan chính
+  + Real-time: Trang xem dữ liệu thời gian thực
+- Nhân viên:
+  + Danh sách: Xem danh sách tất cả nhân viên
+  + Thêm mới: Thêm nhân viên mới vào hệ thống
+  + Chi tiết: Xem thông tin chi tiết của nhân viên
+- Báo cáo:
+  + Theo ngày: Xem báo cáo của một ngày cụ thể
+  + Theo tháng: Xem báo cáo của một tháng cụ thể
+  + Theo năm: Xem báo cáo của một năm cụ thể
+  + Giai đoạn: Xem báo cáo của một khoảng thời gian bất kỳ
+  + So sánh: So sánh dữ liệu giữa các phòng ban hoặc thời kỳ
+- Phòng ban:
+  + Hiển thị danh sách các phòng ban (Phòng Sản xuất, Phòng Kỹ thuật, Phòng Hành chính, ...)
+  + Click vào từng phòng ban sẽ mở trang báo cáo riêng của phòng ban đó
+- Thời gian:
+  + Hôm nay: Lọc nhanh để xem dữ liệu hôm nay
+  + Tuần này: Lọc nhanh để xem dữ liệu tuần này
+  + Tháng này: Lọc nhanh để xem dữ liệu tháng này
+  + Tùy chọn: Mở bộ lọc tùy chỉnh để chọn khoảng thời gian
+- Upload Data: Upload file Excel chứa dữ liệu chấm công
+- Lịch sử: Xem lịch sử các thao tác đã thực hiện
+
+Tính năng:
+1. Menu phân cấp: Có thể thu gọn/mở rộng từng nhóm menu
+2. Điều hướng: Click vào mục menu sẽ chuyển đến trang tương ứng
+3. Highlight: Mục menu đang được chọn sẽ được làm nổi bật
+4. Thu gọn: Có thể thu gọn toàn bộ sidebar để có thêm không gian
+5. Responsive: Trên điện thoại, menu sẽ ẩn và hiện bằng nút hamburger
+
+Lợi ích:
+- Dễ dàng điều hướng giữa các trang
+- Tổ chức menu rõ ràng, dễ tìm
+- Tiết kiệm không gian màn hình khi thu gọn
+
+═══════════════════════════════════════════════════════════════════════════════
+
+MÀN HÌNH 3: TRANG XEM DỮ LIỆU THỜI GIAN THỰC (REAL-TIME)
+
+Vị trí: Trang riêng, truy cập từ menu "Tổng quan > Real-time"
+
+Mô tả:
+Trang này hiển thị dữ liệu chấm công theo thời gian thực, tức là dữ liệu sẽ tự động cập nhật liên tục. Người dùng có thể chọn khoảng thời gian muốn xem (từ giờ nào đến giờ nào).
+
+Bố cục màn hình:
+- Phần trên cùng: Tiêu đề "Real-time Dashboard"
+- Bên trái: Menu điều hướng
+- Phần chính:
+  + Bộ lọc thời gian:
+    * Ô chọn "Từ giờ" (ví dụ: 08:00)
+    * Ô chọn "Đến giờ" (ví dụ: 17:00)
+    * Nút bật/tắt tự động làm mới
+    * Hiển thị thời gian làm mới (ví dụ: mỗi 30 giây)
+  + Thống kê số người đang làm việc:
+    * Biểu đồ hiển thị số lượng người đang làm việc theo thời gian
+    * Số lượng hiện tại (ví dụ: 45 người)
+    * Thời gian cập nhật cuối cùng (ví dụ: 14:30:25)
+  + Thống kê nhanh:
+    * Đang làm việc: 45 người
+    * Đang nghỉ: 5 người
+    * Đi trễ: 2 người
+    * Vắng mặt: 3 người
+  + Danh sách nhân viên đang làm việc:
+    * Hiển thị danh sách các nhân viên đang trong giờ làm việc
+    * Tự động cập nhật khi có thay đổi
+
+Tính năng:
+1. Chọn khoảng giờ: Có thể chọn từ giờ nào đến giờ nào (ví dụ: 8h sáng đến 5h chiều)
+2. Tự động làm mới: Dữ liệu tự động cập nhật mỗi 30 giây (có thể bật/tắt)
+3. Biểu đồ real-time: Hiển thị số người đang làm việc theo thời gian, cập nhật liên tục
+4. Thống kê nhanh: Hiển thị các chỉ số quan trọng ngay lập tức
+5. Danh sách nhân viên: Xem ai đang làm việc, ai đang nghỉ, ai đi trễ
+6. Hiển thị thời gian cập nhật: Để biết dữ liệu có mới nhất không
+
+Lợi ích:
+- Xem được tình hình chấm công ngay lập tức
+- Phát hiện vấn đề sớm (ví dụ: nhiều người đi trễ)
+- Theo dõi số người đang làm việc trong thời gian thực
+
+Ví dụ sử dụng:
+- Sếp muốn biết lúc 10h sáng có bao nhiêu người đang làm việc
+- Muốn xem trong khoảng 8h-12h có bao nhiêu người đi làm
+- Muốn theo dõi số người đi trễ trong ngày
+
+═══════════════════════════════════════════════════════════════════════════════
+
+MÀN HÌNH 4: BÁO CÁO THEO GIAI ĐOẠN
+
+Vị trí: Trang riêng, truy cập từ menu "Báo cáo > Giai đoạn"
+
+Mô tả:
+Trang này cho phép xem báo cáo chi tiết của bất kỳ khoảng thời gian nào. Người dùng chọn từ ngày nào đến ngày nào, hệ thống sẽ hiển thị tất cả dữ liệu trong khoảng thời gian đó.
+
+Bố cục màn hình:
+- Phần trên cùng: Tiêu đề "Báo cáo theo Giai đoạn"
+- Bên trái: Menu điều hướng
+- Phần chính:
+  + Bộ lọc:
+    * Ô chọn "Từ ngày" (chọn ngày bắt đầu)
+    * Ô chọn "Đến ngày" (chọn ngày kết thúc)
+    * Dropdown chọn phòng ban (có thể chọn "Tất cả" hoặc một phòng ban cụ thể)
+    * Ô tìm kiếm nhân viên (tìm theo tên hoặc mã nhân viên)
+    * Nút "Xem báo cáo" để áp dụng bộ lọc
+  + Thống kê tổng hợp:
+    * Tổng nhân viên trong giai đoạn
+    * Tổng số ngày làm việc
+    * Tổng số giờ làm việc
+    * Tổng số giờ tăng ca
+  + Bảng dữ liệu chi tiết:
+    * Hiển thị từng nhân viên với các thông tin: Mã NV, Tên, Phòng ban, Ngày, Giờ vào, Giờ ra, Tổng giờ, Tăng ca
+    * Có phân trang (chia nhỏ ra nhiều trang nếu dữ liệu nhiều)
+    * Có thể sắp xếp theo cột (ví dụ: sắp xếp theo tên, theo ngày)
+  + Nút Export Excel để tải báo cáo về máy
+
+Tính năng:
+1. Chọn giai đoạn: Chọn từ ngày nào đến ngày nào (ví dụ: từ 01/12/2025 đến 15/12/2025)
+2. Lọc phòng ban: Có thể xem tất cả phòng ban hoặc chỉ một phòng ban cụ thể
+3. Tìm kiếm nhân viên: Tìm theo tên hoặc mã nhân viên
+4. Thống kê tổng hợp: Xem các chỉ số tổng hợp cho giai đoạn đã chọn
+5. Bảng chi tiết: Xem đầy đủ thông tin chấm công của từng nhân viên
+6. Export Excel: Tải báo cáo về máy để in hoặc gửi email
+
+Lợi ích:
+- Xem được báo cáo của bất kỳ khoảng thời gian nào (không chỉ ngày/tháng cố định)
+- Dễ dàng xuất báo cáo để gửi cho sếp hoặc in ra
+- Có thể lọc theo phòng ban để xem chi tiết từng phòng
+
+Ví dụ sử dụng:
+- Xem báo cáo từ đầu tháng đến giữa tháng
+- Xem báo cáo của một tuần cụ thể
+- Xem báo cáo của một quý (3 tháng)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+MÀN HÌNH 5: BÁO CÁO THEO PHÒNG BAN
+
+Vị trí: Trang riêng, truy cập từ menu "Phòng ban > [Tên phòng ban]"
+
+Mô tả:
+Mỗi phòng ban sẽ có một trang báo cáo riêng. Trang này hiển thị thống kê và dữ liệu chỉ của phòng ban đó, không bao gồm các phòng ban khác.
+
+Bố cục màn hình:
+- Phần trên cùng: Tiêu đề "Báo cáo - [Tên phòng ban]" (ví dụ: "Báo cáo - Phòng Sản xuất")
+- Bên trái: Menu điều hướng
+- Phần chính:
+  + Thông tin phòng ban:
+    * Tên phòng ban
+    * Tổng số nhân viên trong phòng
+    * Tỷ lệ đi làm trung bình của phòng
+  + Bộ lọc thời gian:
+    * Các nút chọn: Ngày, Tháng, Năm, Giai đoạn
+    * Ô chọn ngày/tháng/năm tương ứng với lựa chọn
+  + Biểu đồ thống kê:
+    * Biểu đồ cột hiển thị tỷ lệ đi làm của phòng theo thời gian
+    * Biểu đồ tròn hiển thị phân bổ nhân viên (ví dụ: bao nhiêu người chính thức, bao nhiêu người thời vụ)
+  + Bảng danh sách nhân viên:
+    * Hiển thị tất cả nhân viên thuộc phòng ban này
+    * Thống kê cá nhân: Số ngày làm, Tổng giờ, Tỷ lệ đi làm
+    * Có thể click vào từng nhân viên để xem chi tiết hơn
+
+Tính năng:
+1. Thông tin phòng ban: Xem tổng quan về phòng ban
+2. Thống kê riêng: Các chỉ số chỉ tính cho phòng ban này, không tính các phòng khác
+3. Bộ lọc thời gian: Có thể xem thống kê theo ngày, tháng, năm hoặc giai đoạn
+4. Biểu đồ: So sánh phòng ban này với các phòng ban khác (nếu cần)
+5. Danh sách nhân viên: Xem tất cả nhân viên trong phòng với thống kê cá nhân
+
+Lợi ích:
+- Xem được thống kê riêng của từng phòng ban
+- Dễ so sánh giữa các phòng ban
+- Quản lý nhân viên theo phòng ban dễ dàng hơn
+
+Ví dụ sử dụng:
+- Trưởng phòng muốn xem thống kê của phòng mình
+- So sánh phòng này với phòng khác
+- Xem nhân viên nào trong phòng đi làm đều nhất
+
+═══════════════════════════════════════════════════════════════════════════════
+
+MÀN HÌNH 6: TRANG SO SÁNH
+
+Vị trí: Trang riêng, truy cập từ menu "Báo cáo > So sánh"
+
+Mô tả:
+Trang này cho phép so sánh dữ liệu giữa các phòng ban hoặc giữa các thời kỳ khác nhau. Ví dụ: So sánh Phòng Sản xuất với Phòng Kỹ thuật, hoặc so sánh tháng 12 với tháng 11.
+
+Bố cục màn hình:
+- Phần trên cùng: Tiêu đề "So sánh"
+- Bên trái: Menu điều hướng
+- Phần chính:
+  + Chọn đối tượng so sánh:
+    * Các nút chọn: "Phòng ban" hoặc "Thời kỳ"
+    * Nếu chọn "Phòng ban":
+      - Dropdown "Chọn phòng ban 1"
+      - Dropdown "Chọn phòng ban 2"
+      - Nút "Thêm" để thêm phòng ban khác (nếu muốn so sánh nhiều hơn 2 phòng)
+    * Nếu chọn "Thời kỳ":
+      - Ô chọn "Giai đoạn 1" (Từ ngày - Đến ngày)
+      - Ô chọn "Giai đoạn 2" (Từ ngày - Đến ngày)
+      - Nút "Thêm" để thêm giai đoạn khác
+    * Nút "So sánh" để thực hiện so sánh
+  + Kết quả so sánh:
+    * Biểu đồ so sánh: Hiển thị các chỉ số của các đối tượng cạnh nhau để dễ so sánh
+    * Bảng so sánh chi tiết:
+      - Cột 1: Chỉ số (Tỷ lệ đi làm, Tổng giờ làm, Số ngày làm, ...)
+      - Cột 2, 3, ...: Giá trị của từng đối tượng
+      - Cột cuối: Chênh lệch (nếu so sánh 2 đối tượng, sẽ hiển thị chênh lệch bao nhiêu)
+    * Nút Export để tải kết quả so sánh về máy
+
+Tính năng:
+1. Chọn loại so sánh: Có thể so sánh phòng ban hoặc so sánh thời kỳ
+2. So sánh nhiều đối tượng: Có thể so sánh 2, 3, 4 hoặc nhiều hơn
+3. Biểu đồ so sánh: Hiển thị trực quan sự khác biệt
+4. Bảng so sánh chi tiết: Xem từng chỉ số và giá trị tương ứng
+5. Export kết quả: Tải file Excel hoặc PDF để báo cáo
+
+Lợi ích:
+- Dễ dàng so sánh giữa các phòng ban
+- So sánh hiệu suất giữa các thời kỳ
+- Phát hiện xu hướng và vấn đề
+
+Ví dụ sử dụng:
+- So sánh Phòng Sản xuất với Phòng Kỹ thuật xem phòng nào đi làm đều hơn
+- So sánh tháng 12 với tháng 11 xem có cải thiện không
+- So sánh 3 phòng ban cùng lúc để xem phòng nào tốt nhất
+
+═══════════════════════════════════════════════════════════════════════════════
+
+CÁC TÍNH NĂNG KỸ THUẬT CẦN PHÁT TRIỂN
+
+1. Chọn khoảng ngày (Date Range Picker):
+   - Cho phép chọn từ ngày nào đến ngày nào
+   - Kiểm tra: Đến ngày phải lớn hơn hoặc bằng Từ ngày
+   - Hiển thị: DD/MM/YYYY (ví dụ: 22/12/2025)
+
+2. Chọn khoảng giờ (Time Range Picker):
+   - Cho phép chọn từ giờ nào đến giờ nào
+   - Format: 24 giờ (ví dụ: 08:00, 17:00)
+   - Kiểm tra: Đến giờ phải lớn hơn Từ giờ
+
+3. Dữ liệu thời gian thực (Real-time Data):
+   - Tự động lấy dữ liệu mới: Mỗi 30 giây gọi API để lấy dữ liệu mới
+   - Có thể bật/tắt tự động làm mới
+   - Hiển thị trạng thái đang tải khi đang lấy dữ liệu
+
+4. Menu phân cấp (Sidebar với Submenu):
+   - Menu có thể thu gọn/mở rộng từng nhóm
+   - Click vào mục menu sẽ chuyển đến trang tương ứng
+   - Mục menu đang được chọn sẽ được làm nổi bật
+
+5. Các API mới cần tạo:
+   - API lấy dữ liệu real-time: /api/statistics/realtime?start_time=08:00&end_time=17:00
+   - API lấy dữ liệu theo giai đoạn: /api/statistics/range?start_date=2025-12-01&end_date=2025-12-15
+   - API so sánh: /api/statistics/compare?type=department&ids=dept1,dept2
+   - API thống kê theo phòng ban: /api/departments/:dept/stats?date=2025-12-22
+
+═══════════════════════════════════════════════════════════════════════════════
+
+LUỒNG ĐIỀU HƯỚNG
+
+Khi đăng nhập vào hệ thống, người dùng sẽ thấy Trang chủ với Dashboard cải tiến (hiển thị 3 cột: Ngày/Tháng/Năm).
+
+Từ menu bên trái, người dùng có thể chuyển đến:
+- Trang Real-time để xem dữ liệu thời gian thực
+- Các trang báo cáo:
+  + Báo cáo theo ngày
+  + Báo cáo theo tháng
+  + Báo cáo theo năm
+  + Báo cáo theo giai đoạn
+  + So sánh
+- Báo cáo theo phòng ban (click vào tên phòng ban trong menu)
+
+Menu bên trái có cấu trúc phân cấp:
+- Tổng quan: Dashboard, Real-time
+- Nhân viên: Danh sách, Chi tiết
+- Báo cáo: Theo ngày, Theo tháng, Theo năm, Giai đoạn, So sánh
+- Phòng ban: Danh sách các phòng ban, mỗi phòng ban là một link
+
+═══════════════════════════════════════════════════════════════════════════════
+
+CHECKLIST PHÁT TRIỂN
+
+Phần giao diện (Frontend):
+□ Cải thiện Dashboard: Hiển thị Ngày/Tháng/Năm cùng lúc trên 3 cột
+□ Thêm chức năng chọn khoảng ngày (từ ngày - đến ngày)
+□ Thêm chức năng chọn khoảng giờ (từ giờ - đến giờ)
+□ Cải thiện Menu bên trái: Thêm menu phân cấp
+□ Tạo trang Real-time Dashboard
+□ Tạo trang Báo cáo theo Giai đoạn
+□ Tạo trang Báo cáo theo Phòng ban
+□ Tạo trang So sánh
+□ Tự động làm mới dữ liệu cho real-time (mỗi 30 giây)
+
+Phần backend (Backend):
+□ Tạo API lấy dữ liệu real-time với filter theo khoảng giờ
+□ Tạo API lấy dữ liệu theo giai đoạn
+□ Tạo API so sánh phòng ban hoặc thời kỳ
+□ Tạo API lấy thống kê theo phòng ban
+□ Hỗ trợ filter theo khoảng giờ trong các API hiện có
+□ Kết nối với hệ thống chấm công (nếu có) để nhận data real-time
+
+Database:
+□ Tối ưu query khi tìm kiếm theo thời gian
+□ Có thể cần tạo bảng mới để lưu real-time data nếu cần cache
+
+═══════════════════════════════════════════════════════════════════════════════
+
+GHI CHÚ
+
+1. Tham khảo Gmes: Cần xem cách Gmes hiển thị data để áp dụng phong cách tương tự về cách bố trí, màu sắc, và cách trình bày biểu đồ.
+
+2. Real-time: Có thể bắt đầu với cách tự động lấy dữ liệu mỗi 30 giây, sau đó nâng cấp lên kết nối real-time thực sự nếu cần.
+
+3. Hiệu suất: Cần tối ưu khi filter theo giai đoạn dài (ví dụ: cả năm) để tránh chậm.
+
+4. Trải nghiệm người dùng: Đảm bảo có thông báo đang tải và xử lý lỗi đầy đủ, đặc biệt là cho real-time data.
+
+5. Responsive: Tất cả các màn hình cần hoạt động tốt trên điện thoại và tablet.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Ngày tạo: 22/12/2025
+Version: 1.0

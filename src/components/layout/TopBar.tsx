@@ -1,7 +1,9 @@
 import { Bell, Menu, User, LogOut, X, Trash2, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useI18n } from '@/contexts/I18nContext';
 import { Button } from '@/components/ui/button';
+import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,6 +69,7 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { t, language } = useI18n();
 
   // Fetch notifications
   const { data: notifications = [], refetch: refetchNotifications } = useQuery<Notification[]>({
@@ -109,14 +112,14 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
       queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
       toast({
-        title: 'Thành công',
-        description: 'Đã xóa thông báo',
+        title: t('common.success'),
+        description: language === 'vi' ? 'Đã xóa thông báo' : '알림이 삭제되었습니다',
       });
     },
     onError: (error: any) => {
       toast({
-        title: 'Lỗi',
-        description: error.message || 'Có lỗi xảy ra khi xóa thông báo',
+        title: t('common.error'),
+        description: error.message || (language === 'vi' ? 'Có lỗi xảy ra khi xóa thông báo' : '알림 삭제 중 오류가 발생했습니다'),
         variant: 'destructive',
       });
     },
@@ -129,14 +132,14 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
       queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
       toast({
-        title: 'Thành công',
-        description: 'Đã xóa tất cả thông báo',
+        title: t('common.success'),
+        description: language === 'vi' ? 'Đã xóa tất cả thông báo' : '모든 알림이 삭제되었습니다',
       });
     },
     onError: (error: any) => {
       toast({
-        title: 'Lỗi',
-        description: error.message || 'Có lỗi xảy ra khi xóa thông báo',
+        title: t('common.error'),
+        description: error.message || (language === 'vi' ? 'Có lỗi xảy ra khi xóa thông báo' : '알림 삭제 중 오류가 발생했습니다'),
         variant: 'destructive',
       });
     },
@@ -179,6 +182,9 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
 
       {/* Right Side */}
       <div className="flex items-center gap-2 ml-auto">
+        {/* Language Switcher */}
+        <LanguageSwitcher />
+
         {/* Notifications */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -193,7 +199,7 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-80">
             <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-              <p className="font-semibold">Thông báo</p>
+              <p className="font-semibold">{t('common.notifications')}</p>
               {unreadCount > 0 && (
                 <Button
                   variant="ghost"
@@ -201,14 +207,14 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
                   className="h-auto p-1 text-xs text-primary"
                   onClick={handleMarkAllAsRead}
                 >
-                  Đánh dấu đã đọc
+                  {t('common.markAllAsRead')}
                 </Button>
               )}
             </div>
             <div className="py-2 max-h-96 overflow-y-auto">
               {notifications.length === 0 ? (
                 <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                  Không có thông báo nào
+                  {t('common.noNotifications')}
                 </div>
               ) : (
                 notifications.map((notification) => (
@@ -243,7 +249,7 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
                 <DropdownMenuSeparator />
                 <div className="p-2 flex gap-2">
                   <Button variant="ghost" className="flex-1 text-primary">
-                    Xem tất cả thông báo
+                    {t('common.viewAll')}
                   </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -260,20 +266,20 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
                       <AlertDialogHeader>
                         <AlertDialogTitle className="flex items-center gap-2">
                           <AlertTriangle className="w-5 h-5 text-destructive" />
-                          Xác nhận xóa tất cả thông báo
+                          {t('common.confirm')} {t('common.deleteAll')}
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                          Bạn có chắc chắn muốn xóa tất cả {notifications.length} thông báo không? 
-                          Hành động này không thể hoàn tác.
+                          {t('common.confirm')} {notifications.length} {t('common.notifications')}? 
+                          {language === 'vi' ? ' Hành động này không thể hoàn tác.' : ' 이 작업은 되돌릴 수 없습니다.'}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>Hủy</AlertDialogCancel>
+                        <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                         <AlertDialogAction
                           onClick={handleDeleteAll}
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
-                          Xóa tất cả
+                          {t('common.deleteAll')}
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
@@ -297,11 +303,11 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
           <DropdownMenuContent align="end" className="w-56">
             <div className="px-4 py-3 border-b border-border">
               <p className="font-medium">{user?.username || 'User'}</p>
-              <p className="text-sm text-muted-foreground">Vai trò: {user?.role || 'user'}</p>
+              <p className="text-sm text-muted-foreground">{t('common.role')}: {user?.role || 'user'}</p>
             </div>
             <DropdownMenuItem className="text-destructive" onClick={handleLogout}>
               <LogOut className="w-4 h-4 mr-2" />
-              Đăng xuất
+              {t('common.logout')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

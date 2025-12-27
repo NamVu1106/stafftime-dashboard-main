@@ -6,7 +6,10 @@ import {
   getEmploymentTypeStats, 
   getAttendanceRateByDepartment,
   getGenderByEmploymentType,
-  getAttendanceByDate
+  getAttendanceByDate,
+  getRealtimeStats,
+  getRangeStats,
+  getCompareStats
 } from '../controllers/statistics';
 
 const router = express.Router();
@@ -18,6 +21,9 @@ router.get('/employment-type', getEmploymentTypeStats);
 router.get('/department', getAttendanceRateByDepartment);
 router.get('/gender-by-employment-type', getGenderByEmploymentType);
 router.get('/attendance-by-date', getAttendanceByDate);
+router.get('/realtime', getRealtimeStats);
+router.get('/range', getRangeStats);
+router.get('/compare', getCompareStats);
 
 export default router;
 

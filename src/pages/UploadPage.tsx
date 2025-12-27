@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { uploadAPI } from '@/services/api';
+import { useI18n } from '@/contexts/I18nContext';
 
 interface UploadedFile {
   name: string;
@@ -14,6 +15,7 @@ interface UploadedFile {
 }
 
 const UploadPage = () => {
+  const { t } = useI18n();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const employeeFileInputRef = useRef<HTMLInputElement>(null);
@@ -42,8 +44,8 @@ const UploadPage = () => {
       setPreviewData([]); // Clear preview, will be shown after upload
     } else {
       toast({
-        title: 'Lỗi',
-        description: 'Vui lòng chọn file Excel (.xlsx hoặc .xls)',
+        title: t('common.error'),
+        description: t('upload.invalidFile'),
         variant: 'destructive',
       });
     }
@@ -85,16 +87,19 @@ const UploadPage = () => {
       queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
       queryClient.refetchQueries({ queryKey: ['notifications', 'unread-count'] });
       
-      let description = `Upload thành công! Đã thêm ${data.count || 0} nhân viên từ ${data.totalRows || 0} dòng dữ liệu.`;
+      let description = t('upload.uploadSuccessMessage', { 
+        count: data.count || 0, 
+        totalRows: data.totalRows || 0 
+      });
       if (data.skippedRows > 0) {
-        description += ` Bỏ qua ${data.skippedRows} dòng.`;
+        description += t('upload.uploadSuccessSkipped', { skippedRows: data.skippedRows });
         if (data.skippedReasons && data.skippedReasons.length > 0) {
           console.warn('Skipped reasons:', data.skippedReasons);
         }
       }
       
       toast({
-        title: data.count > 0 ? 'Thành công' : 'Cảnh báo',
+        title: data.count > 0 ? t('common.success') : t('common.warning') || 'Cảnh báo',
         description,
         variant: data.count === 0 ? 'destructive' : 'default',
       });
@@ -106,8 +111,8 @@ const UploadPage = () => {
         setEmployeeFile({ ...employeeFile, status: 'error' });
       }
       toast({
-        title: 'Lỗi',
-        description: error.message || 'Có lỗi xảy ra khi upload file',
+        title: t('common.error'),
+        description: error.message || t('upload.uploadError'),
         variant: 'destructive',
       });
     },
@@ -130,9 +135,16 @@ const UploadPage = () => {
       queryClient.refetchQueries({ queryKey: ['notifications'] });
       queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
       queryClient.refetchQueries({ queryKey: ['notifications', 'unread-count'] });
+      let description = t('upload.timekeepingUploadSuccessMessage', { 
+        count: data.count || 0, 
+        totalRows: data.totalRows || 0 
+      });
+      description += t('upload.timekeepingUploadNote');
+      
       toast({
-        title: 'Thành công',
-        description: `Upload thành công! Đã thêm ${data.count || 0} bản ghi chấm công từ ${data.totalRows || 0} dòng dữ liệu.`,
+        title: t('common.success'),
+        description,
+        duration: 8000, // Hiển thị lâu hơn để user đọc được
       });
       setSelectedFile(null);
       if (timekeepingFileInputRef.current) timekeepingFileInputRef.current.value = '';
@@ -142,8 +154,8 @@ const UploadPage = () => {
         setTimekeepingFile({ ...timekeepingFile, status: 'error' });
       }
       toast({
-        title: 'Lỗi',
-        description: error.message || 'Có lỗi xảy ra khi upload file',
+        title: t('common.error'),
+        description: error.message || t('upload.uploadError'),
         variant: 'destructive',
       });
     },
@@ -154,8 +166,8 @@ const UploadPage = () => {
     
     if (!file) {
     toast({
-        title: 'Lỗi',
-        description: 'Vui lòng chọn file trước khi upload',
+        title: t('common.error'),
+        description: t('upload.selectFileFirst'),
         variant: 'destructive',
       });
       return;
@@ -197,13 +209,10 @@ const UploadPage = () => {
           <label htmlFor={`file-${type}`} className="cursor-pointer">
             <Upload className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
             <p className="text-lg font-medium text-foreground mb-1">
-              Kéo thả file vào đây
-            </p>
-            <p className="text-sm text-muted-foreground mb-4">
-              hoặc click để chọn file
+              {t('upload.selectFile')}
             </p>
             <p className="text-xs text-muted-foreground">
-              Chấp nhận file .xlsx, .xls (tối đa 10MB)
+              {t('upload.fileFormat')}
             </p>
           </label>
         </div>
@@ -244,7 +253,7 @@ const UploadPage = () => {
       {file && previewData.length > 0 && (
         <div className="bg-card border border-border rounded-lg overflow-hidden">
           <div className="p-3 border-b border-border bg-muted/50">
-            <p className="text-sm font-medium">Xem trước dữ liệu (10 dòng đầu)</p>
+            <p className="text-sm font-medium">{t('upload.preview')}</p>
           </div>
           <div className="overflow-x-auto">
             <table className="data-table text-sm">
@@ -278,10 +287,10 @@ const UploadPage = () => {
           {(type === 'employee' ? uploadEmployeeMutation.isPending : uploadTimekeepingMutation.isPending) ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Đang xử lý...
+              {t('upload.uploading')}
             </>
           ) : (
-            'Xác nhận Upload'
+            t('upload.upload')
           )}
         </Button>
       )}
@@ -291,23 +300,22 @@ const UploadPage = () => {
   return (
     <div>
       <PageHeader
-        title="Upload Data"
-        description="Upload file Excel chấm công và thông tin nhân viên"
-        breadcrumbs={[{ label: 'Upload Data' }]}
+        title={t('upload.title')}
+        description={t('upload.description')}
+        breadcrumbs={[{ label: t('upload.title') }]}
       />
 
       <Tabs defaultValue="employee" className="w-full">
         <TabsList className="mb-6">
-          <TabsTrigger value="employee">Thông tin nhân viên</TabsTrigger>
-          <TabsTrigger value="timekeeping">Dữ liệu chấm công</TabsTrigger>
+          <TabsTrigger value="employee">{t('upload.employees')}</TabsTrigger>
+          <TabsTrigger value="timekeeping">{t('upload.timekeeping')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="employee">
           <div className="chart-container">
-            <h3 className="text-lg font-semibold mb-4">Upload file thông tin nhân viên</h3>
+            <h3 className="text-lg font-semibold mb-4">{t('upload.uploadEmployeeFile')}</h3>
             <p className="text-muted-foreground mb-6">
-              Upload file Excel chứa thông tin nhân viên (Mã NV, Tên, Giới tính, Ngày sinh, Phòng ban).
-              File này dùng để import dữ liệu ban đầu.
+              {t('upload.employeeFileUploadDescription')}
             </p>
             <UploadZone 
               type="employee" 
@@ -319,9 +327,9 @@ const UploadPage = () => {
 
         <TabsContent value="timekeeping">
           <div className="chart-container">
-            <h3 className="text-lg font-semibold mb-4">Upload file dữ liệu chấm công</h3>
+            <h3 className="text-lg font-semibold mb-4">{t('upload.uploadTimekeepingFile')}</h3>
             <p className="text-muted-foreground mb-6">
-              Upload file Excel xuất từ máy chấm công. File này sẽ được cập nhật định kỳ (hàng ngày/tuần).
+              {t('upload.timekeepingFileUploadDescription')}
             </p>
             <UploadZone 
               type="timekeeping" 

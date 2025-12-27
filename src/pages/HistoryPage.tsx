@@ -11,8 +11,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { timekeepingAPI } from '@/services/api';
 import { TimekeepingRecord } from '@/data/mockData';
 import { useToast } from '@/hooks/use-toast';
+import { useI18n } from '@/contexts/I18nContext';
 
 const HistoryPage = () => {
+  const { t } = useI18n();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
@@ -24,7 +26,7 @@ const HistoryPage = () => {
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
 
   // Fetch archived timekeeping data from API
-  const { data: timekeepingData = [], isLoading, error } = useQuery({
+  const { data: timekeepingResponse, isLoading, error } = useQuery({
     queryKey: ['timekeeping-history', dateRange.start, dateRange.end, selectedDepartment],
     queryFn: () => timekeepingAPI.getAll({
       start_date: dateRange.start,
@@ -33,6 +35,11 @@ const HistoryPage = () => {
       archived: true, // Chỉ lấy dữ liệu lịch sử (đã được archive)
     }),
   });
+  
+  // Extract data array from API response
+  const timekeepingData = Array.isArray(timekeepingResponse) 
+    ? timekeepingResponse 
+    : (timekeepingResponse?.data || []);
 
   // Get unique departments from current filtered data
   const departments = useMemo(() => {
@@ -52,14 +59,14 @@ const HistoryPage = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['timekeeping-history'] });
       toast({
-        title: 'Thành công',
-        description: 'Đã xóa tất cả dữ liệu lịch sử',
+        title: t('common.success'),
+        description: t('history.deleteAllSuccess'),
       });
     },
     onError: (error: any) => {
       toast({
-        title: 'Lỗi',
-        description: error.message || 'Có lỗi xảy ra khi xóa dữ liệu',
+        title: t('common.error'),
+        description: error.message || t('history.deleteAllError'),
         variant: 'destructive',
       });
     },
@@ -68,7 +75,7 @@ const HistoryPage = () => {
   const columns = [
     { 
       key: 'id' as const, 
-      header: 'STT', 
+      header: t('history.stt'), 
       sortable: false,
       render: (_: any, index?: number) => {
         if (index !== undefined) {
@@ -77,30 +84,30 @@ const HistoryPage = () => {
         return '';
       }
     },
-    { key: 'employee_code' as const, header: 'Mã NV', sortable: true },
-    { key: 'employee_name' as const, header: 'Tên nhân viên', sortable: true },
-    { key: 'department' as const, header: 'Phòng ban', sortable: true },
-    { key: 'date' as const, header: 'Ngày', sortable: true },
-    { key: 'day_of_week' as const, header: 'Thứ' },
-    { key: 'check_in' as const, header: 'Giờ vào' },
-    { key: 'check_out' as const, header: 'Giờ ra' },
+    { key: 'employee_code' as const, header: t('history.employeeCode'), sortable: true },
+    { key: 'employee_name' as const, header: t('history.employeeName'), sortable: true },
+    { key: 'department' as const, header: t('history.department'), sortable: true },
+    { key: 'date' as const, header: t('history.date'), sortable: true },
+    { key: 'day_of_week' as const, header: t('history.dayOfWeek') },
+    { key: 'check_in' as const, header: t('history.checkIn') },
+    { key: 'check_out' as const, header: t('history.checkOut') },
     { 
       key: 'late_minutes' as const, 
-      header: 'Trễ (phút)',
+      header: t('history.lateMinutes'),
       render: (record: TimekeepingRecord) => (
         <span className={record.late_minutes > 0 ? 'text-destructive font-medium' : ''}>
           {record.late_minutes}
         </span>
       )
     },
-    { key: 'early_minutes' as const, header: 'Sớm (phút)' },
-    { key: 'workday' as const, header: 'Công' },
-    { key: 'total_hours' as const, header: 'Tổng giờ' },
-    { key: 'overtime_hours' as const, header: 'Tăng ca' },
-    { key: 'total_all_hours' as const, header: 'Tổng toàn bộ' },
+    { key: 'early_minutes' as const, header: t('history.earlyMinutes') },
+    { key: 'workday' as const, header: t('history.workday') },
+    { key: 'total_hours' as const, header: t('history.totalHours') },
+    { key: 'overtime_hours' as const, header: t('history.overtime') },
+    { key: 'total_all_hours' as const, header: t('history.totalAll') },
     { 
       key: 'shift' as const, 
-      header: 'Ca',
+      header: t('history.shift'),
       render: (record: TimekeepingRecord) => (
         <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
           record.shift === 'CA NGAY' 
@@ -119,36 +126,35 @@ const HistoryPage = () => {
   return (
     <div>
       <PageHeader
-        title="Lịch sử chấm công"
-        description="Dữ liệu chấm công đã được lưu trữ (dữ liệu cũ)"
-        breadcrumbs={[{ label: 'Lịch sử' }]}
+        title={t('history.title')}
+        description={t('history.description')}
+        breadcrumbs={[{ label: t('sidebar.history') }]}
         action={
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="destructive" disabled={isLoading || filteredData.length === 0}>
                 <Trash2 className="w-4 h-4 mr-2" />
-                Xóa tất cả
+                {t('common.deleteAll')}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle className="flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5 text-destructive" />
-                  Xác nhận xóa tất cả dữ liệu lịch sử
+                  {t('history.deleteAllConfirm')}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
-                  Bạn có chắc chắn muốn xóa tất cả {filteredData.length} bản ghi lịch sử không? 
-                  Hành động này không thể hoàn tác.
+                  {t('history.deleteAllDescription', { count: filteredData.length })}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Hủy</AlertDialogCancel>
+                <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                 <AlertDialogAction
                   onClick={() => deleteAllMutation.mutate()}
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   disabled={deleteAllMutation.isPending}
                 >
-                  {deleteAllMutation.isPending ? 'Đang xóa...' : 'Xóa tất cả'}
+                  {deleteAllMutation.isPending ? t('history.deleting') : t('common.deleteAll')}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -160,11 +166,11 @@ const HistoryPage = () => {
       <div className="chart-container mb-6">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-5 h-5 text-muted-foreground" />
-          <h3 className="font-semibold">Bộ lọc</h3>
+          <h3 className="font-semibold">{t('history.filter')}</h3>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="space-y-2">
-            <Label>Từ ngày</Label>
+            <Label>{t('history.fromDate')}</Label>
             <Input
               type="date"
               value={dateRange.start}
@@ -172,7 +178,7 @@ const HistoryPage = () => {
             />
           </div>
           <div className="space-y-2">
-            <Label>Đến ngày</Label>
+            <Label>{t('history.toDate')}</Label>
             <Input
               type="date"
               value={dateRange.end}
@@ -180,13 +186,13 @@ const HistoryPage = () => {
             />
           </div>
           <div className="space-y-2">
-            <Label>Phòng ban</Label>
+            <Label>{t('history.department')}</Label>
             <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
               <SelectTrigger>
-                <SelectValue placeholder="Chọn phòng ban" />
+                <SelectValue placeholder={t('history.selectDepartment')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tất cả</SelectItem>
+                <SelectItem value="all">{t('history.allDepartments')}</SelectItem>
                 {departments.map(dept => (
                   <SelectItem key={dept} value={dept}>{dept}</SelectItem>
                 ))}
@@ -204,7 +210,7 @@ const HistoryPage = () => {
       ) : error ? (
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
-            <p className="text-destructive mb-2">Lỗi khi tải dữ liệu</p>
+            <p className="text-destructive mb-2">{t('history.loadingError')}</p>
             <p className="text-sm text-muted-foreground">{(error as Error).message}</p>
           </div>
         </div>

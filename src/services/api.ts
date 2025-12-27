@@ -1,228 +1,211 @@
-// Use relative path in production, absolute in development
-const API_URL = import.meta.env.VITE_API_URL || 
+const API_URL = import.meta.env.VITE_API_URL ||
   (import.meta.env.PROD ? '/api' : 'http://localhost:3000/api');
 
-// Get auth token from sessionStorage (automatically clears when browser closes)
-const getAuthToken = () => {
-  return sessionStorage.getItem('token');
-};
-
-// API request helper
-const apiRequest = async (endpoint: string, options: RequestInit = {}) => {
-  const token = getAuthToken();
-  
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...options.headers,
-  };
-  
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  
+async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const token = localStorage.getItem('token');
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
-    headers,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...options?.headers,
+    },
   });
-  
+
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(error.error || `HTTP error! status: ${response.status}`);
+    if (response.status === 401) {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+    throw new Error(`API error: ${response.statusText}`);
   }
-  
+
   return response.json();
-};
+}
 
-// Employees API
-export const employeesAPI = {
-  getAll: (params?: { search?: string; department?: string; employment_type?: string }) => {
-    const queryParams = new URLSearchParams();
-    if (params?.search) queryParams.append('search', params.search);
-    if (params?.department) queryParams.append('department', params.department);
-    if (params?.employment_type) queryParams.append('employment_type', params.employment_type);
-    
-    const query = queryParams.toString();
-    return apiRequest(`/employees${query ? `?${query}` : ''}`);
+export const authAPI = {
+  login: async (username: string, password: string) => {
+    return request<{ token: string; user: any }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
   },
-  
-  getById: (id: number) => apiRequest(`/employees/${id}`),
-  
-  create: (data: any) => apiRequest('/employees', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
-  
-  update: (id: number, data: any) => apiRequest(`/employees/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  }),
-  
-  delete: (id: number) => apiRequest(`/employees/${id}`, {
-    method: 'DELETE',
-  }),
-
-  // Delete all employees
-  deleteAll: () => apiRequest('/employees', {
-    method: 'DELETE',
-  }),
 };
 
-// Timekeeping API
-export const timekeepingAPI = {
-  getAll: (params?: { date?: string; start_date?: string; end_date?: string; department?: string; employee_code?: string; archived?: boolean }) => {
-    const queryParams = new URLSearchParams();
-    if (params?.date) queryParams.append('date', params.date);
-    if (params?.start_date) queryParams.append('start_date', params.start_date);
-    if (params?.end_date) queryParams.append('end_date', params.end_date);
-    if (params?.department) queryParams.append('department', params.department);
-    if (params?.employee_code) queryParams.append('employee_code', params.employee_code);
-    if (params?.archived !== undefined) queryParams.append('archived', params.archived.toString());
-    
-    const query = queryParams.toString();
-    return apiRequest(`/timekeeping${query ? `?${query}` : ''}`);
-  },
-  
-  getById: (id: number) => apiRequest(`/timekeeping/${id}`),
-  
-  create: (data: any) => apiRequest('/timekeeping', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
-  
-  update: (id: number, data: any) => apiRequest(`/timekeeping/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  }),
-  
-  delete: (id: number) => apiRequest(`/timekeeping/${id}`, {
-    method: 'DELETE',
-  }),
-  deleteAll: () => apiRequest('/timekeeping', { method: 'DELETE' }), // Delete all records
-  deleteAllArchived: () => apiRequest('/timekeeping/archived', { method: 'DELETE' }), // Delete all archived records
-  fixArchiveStatus: () => apiRequest('/timekeeping/fix-archive', { method: 'POST' }), // Fix archive status for existing data
-};
-
-// Statistics API
 export const statisticsAPI = {
-  getDashboard: (params?: { date?: string; start_date?: string; end_date?: string }) => {
+  getDashboard: async (params?: { date?: string; start_date?: string; end_date?: string }) => {
     const queryParams = new URLSearchParams();
     if (params?.date) queryParams.append('date', params.date);
     if (params?.start_date) queryParams.append('start_date', params.start_date);
     if (params?.end_date) queryParams.append('end_date', params.end_date);
-    const query = queryParams.toString();
-    return apiRequest(`/statistics/dashboard${query ? `?${query}` : ''}`);
+    return request(`/statistics/dashboard?${queryParams.toString()}`);
   },
-  
-  getGender: () => apiRequest('/statistics/gender'),
-  
-  getAge: () => apiRequest('/statistics/age'),
-  
-  getEmploymentType: () => apiRequest('/statistics/employment-type'),
-  
-  getDepartment: (params?: { date?: string; start_date?: string; end_date?: string }) => {
+  getGender: async () => {
+    return request('/statistics/gender');
+  },
+  getAge: async () => {
+    return request('/statistics/age');
+  },
+  getEmploymentType: async () => {
+    return request('/statistics/employment-type');
+  },
+  getDepartment: async (params?: { date?: string; start_date?: string; end_date?: string }) => {
     const queryParams = new URLSearchParams();
     if (params?.date) queryParams.append('date', params.date);
     if (params?.start_date) queryParams.append('start_date', params.start_date);
     if (params?.end_date) queryParams.append('end_date', params.end_date);
-    const query = queryParams.toString();
-    return apiRequest(`/statistics/department${query ? `?${query}` : ''}`);
+    return request(`/statistics/department?${queryParams.toString()}`);
   },
-  
-  getGenderByEmploymentType: () => apiRequest('/statistics/gender-by-employment-type'),
-  
-  getAttendanceByDate: (days?: number) => {
-    const query = days ? `?days=${days}` : '';
-    return apiRequest(`/statistics/attendance-by-date${query}`);
+  getGenderByEmploymentType: async () => {
+    return request('/statistics/gender-by-employment-type');
+  },
+  getAttendanceByDate: async (days: number = 7) => {
+    return request(`/statistics/attendance-by-date?days=${days}`);
+  },
+  getRealtime: async (params: { start_time?: string; end_time?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params.start_time) queryParams.append('start_time', params.start_time);
+    if (params.end_time) queryParams.append('end_time', params.end_time);
+    return request(`/statistics/realtime?${queryParams.toString()}`);
+  },
+  getRange: async (params: { start_date: string; end_date: string; department?: string }) => {
+    const queryParams = new URLSearchParams();
+    queryParams.append('start_date', params.start_date);
+    queryParams.append('end_date', params.end_date);
+    if (params.department) queryParams.append('department', params.department);
+    return request(`/statistics/range?${queryParams.toString()}`);
+  },
+  getCompare: async (params: { type: 'department' | 'period'; ids?: string; periods?: string }) => {
+    const queryParams = new URLSearchParams();
+    queryParams.append('type', params.type);
+    if (params.ids) queryParams.append('ids', params.ids);
+    if (params.periods) queryParams.append('periods', params.periods);
+    return request(`/statistics/compare?${queryParams.toString()}`);
+  },
+  getDepartmentStats: async (dept: string, params?: { date?: string; start_date?: string; end_date?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.date) queryParams.append('date', params.date);
+    if (params?.start_date) queryParams.append('start_date', params.start_date);
+    if (params?.end_date) queryParams.append('end_date', params.end_date);
+    return request(`/departments/${dept}/stats?${queryParams.toString()}`);
   },
 };
 
-// Upload API
+export const timekeepingAPI = {
+  getAll: async (params?: { start_date?: string; end_date?: string; department?: string; search?: string; page?: number; limit?: number; archived?: boolean }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.start_date) queryParams.append('start_date', params.start_date);
+    if (params?.end_date) queryParams.append('end_date', params.end_date);
+    if (params?.department) queryParams.append('department', params.department);
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.archived !== undefined) queryParams.append('archived', params.archived ? 'true' : 'false');
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    return request(`/timekeeping?${queryParams.toString()}`);
+  },
+};
+
+export const employeesAPI = {
+  getAll: async () => {
+    return request('/employees');
+  },
+  getById: async (id: string) => {
+    return request(`/employees/${id}`);
+  },
+  create: async (data: any) => {
+    return request('/employees', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  update: async (id: string, data: any) => {
+    return request(`/employees/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+  delete: async (id: string) => {
+    return request(`/employees/${id}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+export const notificationsAPI = {
+  getAll: async (params?: { limit?: number }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    return request(`/notifications?${queryParams.toString()}`);
+  },
+  getUnreadCount: async () => {
+    return request('/notifications/unread-count');
+  },
+  markAsRead: async (id: number) => {
+    return request(`/notifications/${id}/read`, {
+      method: 'PUT',
+    });
+  },
+  markAllAsRead: async () => {
+    return request('/notifications/read-all', {
+      method: 'PUT',
+    });
+  },
+  delete: async (id: number) => {
+    return request(`/notifications/${id}`, {
+      method: 'DELETE',
+    });
+  },
+  deleteAll: async () => {
+    return request('/notifications', {
+      method: 'DELETE',
+    });
+  },
+};
+
 export const uploadAPI = {
   uploadEmployees: async (file: File) => {
-    const token = getAuthToken();
     const formData = new FormData();
     formData.append('file', file);
-    
+    const token = localStorage.getItem('token');
     const response = await fetch(`${API_URL}/upload/employees`, {
       method: 'POST',
-      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
       body: formData,
     });
-    
+
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(error.error || `HTTP error! status: ${response.status}`);
+      if (response.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
+      throw new Error(`API error: ${response.statusText}`);
     }
-    
+
     return response.json();
   },
-  
   uploadTimekeeping: async (file: File) => {
-    const token = getAuthToken();
     const formData = new FormData();
     formData.append('file', file);
-    
+    const token = localStorage.getItem('token');
     const response = await fetch(`${API_URL}/upload/timekeeping`, {
       method: 'POST',
-      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
       body: formData,
     });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(error.error || `HTTP error! status: ${response.status}`);
-    }
-    
-    return response.json();
-  },
-  
-  uploadAvatar: async (file: File) => {
-    const token = getAuthToken();
-    const formData = new FormData();
-    formData.append('avatar', file);
-    
-    const response = await fetch(`${API_URL}/upload/avatar`, {
-      method: 'POST',
-      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-      body: formData,
-    });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(error.error || `HTTP error! status: ${response.status}`);
-    }
-    
-    return response.json();
-  },
-};
 
-// Notifications API
-export const notificationsAPI = {
-  getAll: (params?: { unread_only?: boolean; limit?: number }) => {
-    const queryParams = new URLSearchParams();
-    if (params?.unread_only) queryParams.append('unread_only', 'true');
-    if (params?.limit) queryParams.append('limit', params.limit.toString());
-    
-    const query = queryParams.toString();
-    return apiRequest(`/notifications${query ? `?${query}` : ''}`);
+    if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
+      throw new Error(`API error: ${response.statusText}`);
+    }
+
+    return response.json();
   },
-  
-  getUnreadCount: () => apiRequest('/notifications/unread-count'),
-  
-  markAsRead: (id: number) => apiRequest(`/notifications/${id}/read`, {
-    method: 'PUT',
-  }),
-  
-  markAllAsRead: () => apiRequest('/notifications/read-all', {
-    method: 'PUT',
-  }),
-  
-  delete: (id: number) => apiRequest(`/notifications/${id}`, {
-    method: 'DELETE',
-  }),
-  
-  deleteAll: () => apiRequest('/notifications', {
-    method: 'DELETE',
-  }),
 };
 

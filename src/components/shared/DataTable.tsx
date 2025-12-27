@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useI18n } from '@/contexts/I18nContext';
 
 interface Column<T> {
   key: keyof T | string;
@@ -22,14 +23,17 @@ interface DataTableProps<T> {
 export function DataTable<T extends { id: number | string }>({
   data,
   columns,
-  searchPlaceholder = 'Tìm kiếm...',
+  searchPlaceholder,
   onSearch,
   pageSize: initialPageSize = 10,
 }: DataTableProps<T>) {
+  const { t } = useI18n();
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+  
+  const defaultSearchPlaceholder = searchPlaceholder || t('common.search');
 
   // If onSearch callback is provided, use server-side search (don't filter client-side)
   // Otherwise, use client-side filtering
@@ -94,7 +98,7 @@ export function DataTable<T extends { id: number | string }>({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             type="search"
-            placeholder={searchPlaceholder}
+            placeholder={defaultSearchPlaceholder}
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             className="pl-10"
@@ -102,7 +106,7 @@ export function DataTable<T extends { id: number | string }>({
         </div>
         )}
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Hiển thị</span>
+          <span className="text-sm text-muted-foreground">{t('common.display')}</span>
           <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
             <SelectTrigger className="w-20">
               <SelectValue />
@@ -114,7 +118,7 @@ export function DataTable<T extends { id: number | string }>({
               <SelectItem value="100">100</SelectItem>
             </SelectContent>
           </Select>
-          <span className="text-sm text-muted-foreground">dòng</span>
+          <span className="text-sm text-muted-foreground">{t('common.rows')}</span>
         </div>
       </div>
 
@@ -155,7 +159,7 @@ export function DataTable<T extends { id: number | string }>({
             ) : (
               <tr>
                 <td colSpan={columns.length} className="text-center py-8 text-muted-foreground">
-                  Không có dữ liệu
+                  {t('common.noData')}
                 </td>
               </tr>
             )}
@@ -166,7 +170,7 @@ export function DataTable<T extends { id: number | string }>({
       {/* Pagination */}
       <div className="p-4 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground">
-          Hiển thị {startIndex + 1} - {Math.min(startIndex + pageSize, sortedData.length)} trong tổng số {sortedData.length} dòng
+          {t('common.showing')} {startIndex + 1} - {Math.min(startIndex + pageSize, sortedData.length)} {t('common.of')} {sortedData.length} {t('common.rows')}
         </p>
         <div className="flex items-center gap-1">
           <Button
@@ -186,7 +190,7 @@ export function DataTable<T extends { id: number | string }>({
             <ChevronLeft className="w-4 h-4" />
           </Button>
           <span className="px-4 text-sm">
-            Trang {currentPage} / {totalPages || 1}
+            {t('common.page')} {currentPage} / {totalPages || 1}
           </span>
           <Button
             variant="outline"

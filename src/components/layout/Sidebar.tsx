@@ -1,4 +1,5 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
+import { useState } from 'react';
 import { 
   LayoutDashboard, 
   Upload, 
@@ -7,24 +8,188 @@ import {
   FileText,
   History,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ChevronDown,
+  Activity,
+  Building2,
+  Clock,
+  TrendingUp,
+  Calendar,
+  GitCompare
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { useI18n } from '@/contexts/I18nContext';
 
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
 }
 
-const menuItems = [
-  { path: '/', icon: LayoutDashboard, label: 'Trang chủ' },
-  { path: '/upload', icon: Upload, label: 'Upload Data' },
-  { path: '/employees', icon: Users, label: 'Quản lý nhân viên' },
-  { path: '/reports', icon: FileText, label: 'Báo cáo' },
-  { path: '/history', icon: History, label: 'Lịch sử' },
+interface MenuItem {
+  path?: string;
+  icon: any;
+  label: string;
+  children?: MenuItem[];
+}
+
+const getMenuItems = (t: (key: string) => string): MenuItem[] => [
+  { path: '/', icon: LayoutDashboard, label: t('sidebar.home') },
+  {
+    icon: TrendingUp,
+    label: t('sidebar.overview'),
+    children: [
+      { path: '/', icon: LayoutDashboard, label: t('sidebar.dashboard') },
+      { path: '/realtime', icon: Activity, label: t('sidebar.realtime') },
+    ],
+  },
+  {
+    icon: Users,
+    label: t('sidebar.employees'),
+    children: [
+      { path: '/employees', icon: Users, label: t('sidebar.list') },
+      { path: '/employees/new', icon: Users, label: t('sidebar.addNew') },
+    ],
+  },
+  {
+    icon: FileText,
+    label: t('sidebar.reports'),
+    children: [
+      { path: '/reports/day', icon: Calendar, label: t('sidebar.byDay') },
+      { path: '/reports/month', icon: Calendar, label: t('sidebar.byMonth') },
+      { path: '/reports/year', icon: Calendar, label: t('sidebar.byYear') },
+      { path: '/reports/range', icon: Calendar, label: t('sidebar.byPeriod') },
+      { path: '/reports/compare', icon: GitCompare, label: t('sidebar.compare') },
+    ],
+  },
+  {
+    icon: Building2,
+    label: t('sidebar.departments'),
+    children: [
+      { path: '/departments/hg', icon: Building2, label: t('sidebar.hg') },
+      { path: '/departments/prod', icon: Building2, label: t('sidebar.prod') },
+      { path: '/departments/qc', icon: Building2, label: t('sidebar.qc') },
+      { path: '/departments/cs', icon: Building2, label: t('sidebar.cs') },
+      { path: '/departments/eqm', icon: Building2, label: t('sidebar.eqm') },
+      { path: '/departments/sm', icon: Building2, label: t('sidebar.sm') },
+      { path: '/departments/mm', icon: Building2, label: t('sidebar.mm') },
+    ],
+  },
+  { path: '/upload', icon: Upload, label: t('sidebar.uploadData') },
+  { path: '/history', icon: History, label: t('sidebar.history') },
 ];
 
 export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
+  const { t } = useI18n();
+  const location = useLocation();
+  const [openMenus, setOpenMenus] = useState<string[]>([]);
+  const menuItems = getMenuItems(t);
+
+  const toggleMenu = (label: string) => {
+    setOpenMenus(prev => 
+      prev.includes(label) 
+        ? prev.filter(m => m !== label)
+        : [...prev, label]
+    );
+  };
+
+  const isMenuOpen = (label: string) => openMenus.includes(label);
+  const hasActiveChild = (item: MenuItem) => {
+    if (!item.children) return false;
+    return item.children.some(child => child.path === location.pathname);
+  };
+
+  const renderMenuItem = (item: MenuItem, index: number) => {
+    // Menu item có children (submenu)
+    if (item.children && item.children.length > 0) {
+      const isOpen = isMenuOpen(item.label);
+      const hasActive = hasActiveChild(item);
+
+      return (
+        <li key={`${item.label}-${index}`}>
+          <Collapsible open={isOpen} onOpenChange={() => toggleMenu(item.label)}>
+            <CollapsibleTrigger
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
+                "text-sidebar-foreground hover:bg-sidebar-hover",
+                hasActive && "bg-primary/10 text-primary",
+                collapsed && "justify-center px-2"
+              )}
+              title={collapsed ? item.label : undefined}
+            >
+              <item.icon className="w-5 h-5 flex-shrink-0" />
+              {!collapsed && (
+                <>
+                  <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
+                  <ChevronDown className={cn(
+                    "w-4 h-4 transition-transform duration-200",
+                    isOpen && "rotate-180"
+                  )} />
+                </>
+              )}
+            </CollapsibleTrigger>
+            {!collapsed && (
+              <CollapsibleContent className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
+                <ul className="ml-4 mt-1 space-y-1 border-l border-sidebar-hover pl-4">
+                  {item.children.map((child, childIndex) => {
+                    const isActive = child.path === location.pathname;
+                    return (
+                      <li key={`${child.path}-${childIndex}`}>
+                        <NavLink
+                          to={child.path || '#'}
+                          className={cn(
+                            "flex items-center gap-2 px-3 py-2 rounded-md transition-all duration-200",
+                            "text-sm text-sidebar-foreground/80 hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                            isActive && "bg-primary text-primary-foreground font-medium"
+                          )}
+                        >
+                          <child.icon className="w-4 h-4" />
+                          <span>{child.label}</span>
+                        </NavLink>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </CollapsibleContent>
+            )}
+          </Collapsible>
+        </li>
+      );
+    }
+
+    // Menu item không có children (link đơn)
+    if (item.path) {
+      const isActive = item.path === location.pathname;
+      return (
+        <li key={item.path}>
+          <NavLink
+            to={item.path}
+            className={({ isActive }) =>
+              cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
+                "text-sidebar-foreground hover:bg-sidebar-hover",
+                isActive && "bg-primary text-primary-foreground hover:bg-primary",
+                collapsed && "justify-center px-2"
+              )
+            }
+            title={collapsed ? item.label : undefined}
+          >
+            <item.icon className="w-5 h-5 flex-shrink-0" />
+            {!collapsed && (
+              <span className="text-sm font-medium">{item.label}</span>
+            )}
+          </NavLink>
+        </li>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <aside
       className={cn(
@@ -49,27 +214,7 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
       {/* Navigation */}
       <nav className="flex-1 py-4 px-3 overflow-y-auto scrollbar-thin">
         <ul className="space-y-1">
-          {menuItems.map((item) => (
-            <li key={item.path}>
-              <NavLink
-                to={item.path}
-                className={({ isActive }) =>
-                  cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
-                    "text-sidebar-foreground hover:bg-sidebar-hover",
-                    isActive && "bg-primary text-primary-foreground hover:bg-primary",
-                    collapsed && "justify-center px-2"
-                  )
-                }
-                title={collapsed ? item.label : undefined}
-              >
-                <item.icon className="w-5 h-5 flex-shrink-0" />
-                {!collapsed && (
-                  <span className="text-sm font-medium">{item.label}</span>
-                )}
-              </NavLink>
-            </li>
-          ))}
+          {menuItems.map((item, index) => renderMenuItem(item, index))}
         </ul>
       </nav>
 

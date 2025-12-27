@@ -480,4 +480,274 @@ export const getAttendanceByDate = async (req: Request, res: Response) => {
   }
 };
 
+// GET /api/statistics/realtime?start_time=08:00&end_time=17:00
+export const getRealtimeStats = async (req: Request, res: Response) => {
+  try {
+    const startTime = req.query.start_time as string || '08:00';
+    const endTime = req.query.end_time as string || '17:00';
+    
+    // Get current date
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Parse time strings to minutes for comparison
+    const parseTime = (timeStr: string): number => {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      return (hours || 0) * 60 + (minutes || 0);
+    };
+    
+    const startMinutes = parseTime(startTime);
+    const endMinutes = parseTime(endTime);
+    
+    // Get today's records
+    const todayRecords = await prisma.timekeepingRecord.findMany({
+      where: {
+        is_archived: 0,
+        date: today,
+      },
+    });
+    
+    // Filter records within time range
+    const inRangeRecords = todayRecords.filter(r => {
+      if (!r.check_in) return false;
+      const [hours, minutes] = r.check_in.split(':').map(Number);
+      const checkInMinutes = (hours || 0) * 60 + (minutes || 0);
+      return checkInMinutes >= startMinutes && checkInMinutes <= endMinutes;
+    });
+    
+    // Count unique employees currently working
+    const currentEmployees = new Set(
+      inRangeRecords.map(r => resolveRecordCode(r as any))
+    ).size;
+    
+    // Count employees on break (checked in but checked out)
+    const onBreakEmployees = new Set(
+      inRangeRecords
+        .filter(r => r.check_in && r.check_out)
+        .map(r => resolveRecordCode(r as any))
+    ).size;
+    
+    // Count late employees
+    const lateEmployees = new Set(
+      inRangeRecords
+        .filter(r => {
+          if (r.late_minutes > 0) return true;
+          if (!r.check_in) return false;
+          const [hours, minutes] = r.check_in.split(':').map(Number);
+          const checkInMinutes = (hours || 0) * 60 + (minutes || 0);
+          return checkInMinutes > 8 * 60; // After 8:00 AM
+        })
+        .map(r => resolveRecordCode(r as any))
+    ).size;
+    
+    // Count absent employees (total employees - those who checked in)
+    const totalEmployees = await prisma.employee.count();
+    const checkedInEmployees = new Set(
+      todayRecords.map(r => resolveRecordCode(r as any))
+    ).size;
+    const absentEmployees = Math.max(0, totalEmployees - checkedInEmployees);
+    
+    // Get list of employees currently working
+    const employeesList = inRangeRecords
+      .filter(r => r.check_in && !r.check_out) // Currently working (not checked out)
+      .map(r => ({
+        code: resolveRecordCode(r as any),
+        name: r.employee_name || 'N/A',
+        department: r.department || 'N/A',
+      }))
+      .filter((emp, index, self) => 
+        index === self.findIndex(e => e.code === emp.code)
+      ); // Remove duplicates
+    
+    res.json({
+      current: currentEmployees - onBreakEmployees, // Working (not on break)
+      onBreak: onBreakEmployees,
+      late: lateEmployees,
+      absent: absentEmployees,
+      employees: employeesList,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// GET /api/statistics/range?start_date=2024-12-01&end_date=2024-12-31&department=...
+export const getRangeStats = async (req: Request, res: Response) => {
+  try {
+    const startDate = req.query.start_date as string;
+    const endDate = req.query.end_date as string;
+    const department = req.query.department as string | undefined;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'start_date and end_date are required' });
+    }
+    
+    // Build where clause
+    const where: any = {
+      is_archived: 0,
+      date: {
+        gte: startDate,
+        lte: endDate,
+      },
+    };
+    
+    if (department && department !== 'all') {
+      // Normalize department for matching
+      const normDept = normalizeDept(department);
+      const allEmployees = await prisma.employee.findMany({
+        select: { employee_code: true, department: true },
+      });
+      const employeeDeptMap = new Map<string, string>();
+      allEmployees.forEach(emp => {
+        employeeDeptMap.set(normalizeCode(emp.employee_code), normalizeDept(emp.department));
+      });
+      
+      // Get records and filter by department
+      const allRecords = await prisma.timekeepingRecord.findMany({ where });
+      const filteredRecords = allRecords.filter(r => {
+        const code = resolveRecordCode(r as any);
+        const empDept = employeeDeptMap.get(code);
+        return empDept === normDept || normalizeDept(r.department) === normDept;
+      });
+      
+      // Calculate stats
+      const uniqueEmployees = new Set(filteredRecords.map(r => resolveRecordCode(r as any))).size;
+      const totalDays = filteredRecords.length;
+      const totalHours = filteredRecords.reduce((sum, r) => sum + (r.total_hours || 0), 0);
+      const totalOvertime = filteredRecords.reduce((sum, r) => sum + (r.overtime_hours || 0), 0);
+      
+      return res.json({
+        totalEmployees: uniqueEmployees,
+        totalDays,
+        totalHours: parseFloat(totalHours.toFixed(1)),
+        totalOvertime: parseFloat(totalOvertime.toFixed(1)),
+      });
+    }
+    
+    // No department filter
+    const records = await prisma.timekeepingRecord.findMany({ where });
+    const uniqueEmployees = new Set(records.map(r => resolveRecordCode(r as any))).size;
+    const totalDays = records.length;
+    const totalHours = records.reduce((sum, r) => sum + (r.total_hours || 0), 0);
+    const totalOvertime = records.reduce((sum, r) => sum + (r.overtime_hours || 0), 0);
+    
+    res.json({
+      totalEmployees: uniqueEmployees,
+      totalDays,
+      totalHours: parseFloat(totalHours.toFixed(1)),
+      totalOvertime: parseFloat(totalOvertime.toFixed(1)),
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// GET /api/statistics/compare?type=department&ids=dept1,dept2
+// GET /api/statistics/compare?type=period&periods=2024-12-01:2024-12-15,2024-11-01:2024-11-15
+export const getCompareStats = async (req: Request, res: Response) => {
+  try {
+    const type = req.query.type as 'department' | 'period';
+    const ids = req.query.ids as string | undefined;
+    const periods = req.query.periods as string | undefined;
+    
+    if (type === 'department' && ids) {
+      // Compare departments
+      const deptIds = ids.split(',').map(d => d.trim());
+      const allEmployees = await prisma.employee.findMany({
+        select: { employee_code: true, department: true },
+      });
+      const employeeDeptMap = new Map<string, string>();
+      allEmployees.forEach(emp => {
+        employeeDeptMap.set(normalizeCode(emp.employee_code), normalizeDept(emp.department));
+      });
+      
+      // Get stats for each department
+      const today = new Date().toISOString().split('T')[0];
+      const records = await prisma.timekeepingRecord.findMany({
+        where: {
+          is_archived: 0,
+          date: today,
+        },
+      });
+      
+      const results = await Promise.all(
+        deptIds.map(async (deptId) => {
+          const normDept = normalizeDept(deptId);
+          const deptRecords = records.filter(r => {
+            const code = resolveRecordCode(r as any);
+            const empDept = employeeDeptMap.get(code);
+            return empDept === normDept || normalizeDept(r.department) === normDept;
+          });
+          
+          const uniqueEmployees = new Set(deptRecords.map(r => resolveRecordCode(r as any))).size;
+          const totalHours = deptRecords.reduce((sum, r) => sum + (r.total_hours || 0), 0);
+          const totalDays = deptRecords.length;
+          
+          // Get total employees in department
+          const deptEmployeeCount = allEmployees.filter(emp => 
+            normalizeDept(emp.department) === normDept
+          ).length;
+          
+          const attendanceRate = deptEmployeeCount > 0
+            ? ((uniqueEmployees / deptEmployeeCount) * 100).toFixed(1)
+            : '0';
+          
+          return {
+            id: deptId,
+            attendanceRate: parseFloat(attendanceRate),
+            totalHours: parseFloat(totalHours.toFixed(1)),
+            totalDays,
+            uniqueEmployees,
+          };
+        })
+      );
+      
+      return res.json(results);
+    }
+    
+    if (type === 'period' && periods) {
+      // Compare periods
+      const periodList = periods.split(',').map(p => {
+        const [start, end] = p.split(':').map(s => s.trim());
+        return { start, end };
+      });
+      
+      const results = await Promise.all(
+        periodList.map(async (period) => {
+          const records = await prisma.timekeepingRecord.findMany({
+            where: {
+              is_archived: 0,
+              date: {
+                gte: period.start,
+                lte: period.end,
+              },
+            },
+          });
+          
+          const uniqueEmployees = new Set(records.map(r => resolveRecordCode(r as any))).size;
+          const totalHours = records.reduce((sum, r) => sum + (r.total_hours || 0), 0);
+          const totalDays = records.length;
+          
+          const totalEmployees = await prisma.employee.count();
+          const attendanceRate = totalEmployees > 0
+            ? ((uniqueEmployees / totalEmployees) * 100).toFixed(1)
+            : '0';
+          
+          return {
+            period: `${period.start} to ${period.end}`,
+            attendanceRate: parseFloat(attendanceRate),
+            totalHours: parseFloat(totalHours.toFixed(1)),
+            totalDays,
+            uniqueEmployees,
+          };
+        })
+      );
+      
+      return res.json(results);
+    }
+    
+    res.status(400).json({ error: 'Invalid parameters' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
 

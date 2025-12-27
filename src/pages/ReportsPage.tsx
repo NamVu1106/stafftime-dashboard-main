@@ -15,15 +15,15 @@ import { useToast } from '@/hooks/use-toast';
 const ReportsPage = () => {
   const { toast } = useToast();
   
-  // Default to last 30 days to show more data
+  // Default to last 90 days to show more data (bao gồm cả tháng trước)
   const [dateRange, setDateRange] = useState({
-    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    start: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0],
   });
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
 
   // Fetch timekeeping data from API - CHỈ lấy dữ liệu mới nhất (is_archived = 0)
-  const { data: timekeepingData = [], isLoading, error } = useQuery({
+  const { data: timekeepingResponse, isLoading, error } = useQuery({
     queryKey: ['timekeeping', dateRange.start, dateRange.end, selectedDepartment],
     queryFn: () => timekeepingAPI.getAll({
       start_date: dateRange.start,
@@ -32,6 +32,11 @@ const ReportsPage = () => {
       archived: false, // CHỈ lấy dữ liệu mới (hiển thị ở Báo cáo)
     }),
   });
+  
+  // Extract data array from API response
+  const timekeepingData = Array.isArray(timekeepingResponse) 
+    ? timekeepingResponse 
+    : (timekeepingResponse?.data || []);
   
   // Debug: Log data
   if (timekeepingData.length > 0) {
@@ -201,7 +206,7 @@ const ReportsPage = () => {
     <div>
       <PageHeader
         title="Báo cáo chấm công"
-        description="Chi tiết dữ liệu chấm công theo ngày"
+        description="Chi tiết dữ liệu chấm công theo ngày (chỉ hiển thị dữ liệu mới nhất, không bao gồm dữ liệu đã lưu trữ)"
         breadcrumbs={[{ label: 'Báo cáo' }]}
         action={
           <Button variant="outline" onClick={handleExportExcel} disabled={isLoading || filteredData.length === 0}>

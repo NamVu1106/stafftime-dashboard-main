@@ -6,6 +6,7 @@ import { StatCard } from '@/components/shared/StatCard';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { statisticsAPI, timekeepingAPI } from '@/services/api';
+import { useI18n } from '@/contexts/I18nContext';
 import { 
   LineChart, 
   Line, 
@@ -23,9 +24,11 @@ import {
 } from 'recharts';
 
 const Index = () => {
+  const { t } = useI18n();
   // Bộ lọc ngày - mặc định là null để hiển thị tất cả dữ liệu
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [filterMode, setFilterMode] = useState<'day' | 'month'>('day'); // day: theo ngày; month: theo tháng của ngày đang chọn
+  const [filterMode, setFilterMode] = useState<'day' | 'month' | 'year' | 'single' | 'range'>('day'); // day: hôm nay; month: tháng này; year: năm này; single: 1 ngày; range: giai đoạn
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
 
   const toLocalYmd = (dt: Date) => {
     const y = dt.getFullYear();
@@ -73,18 +76,55 @@ const Index = () => {
     return `${dd}/${mm}/${yy}`;
   })();
 
+  // Tính toán params cho filter hiện tại
   const params =
     filterMode === 'month'
       ? (() => {
           const { start, end } = getMonthRange(baseDate);
           return { date: undefined, start_date: start, end_date: end };
         })()
-      : { date: baseDate, start_date: undefined, end_date: undefined };
+      : filterMode === 'year'
+      ? (() => {
+          const year = new Date().getFullYear();
+          return { date: undefined, start_date: `${year}-01-01`, end_date: `${year}-12-31` };
+        })()
+      : filterMode === 'range'
+      ? { date: undefined, start_date: dateRange.start || undefined, end_date: dateRange.end || undefined }
+      : filterMode === 'single'
+      ? { date: selectedDate || undefined, start_date: undefined, end_date: undefined }
+      : { date: todayIso, start_date: undefined, end_date: undefined };
+
+  // Tính toán params cho 3 cột thống kê (Ngày/Tháng/Năm)
+  const todayParams = { date: todayIso, start_date: undefined, end_date: undefined };
+  const monthParams = (() => {
+    const { start, end } = getMonthRange(todayIso);
+    return { date: undefined, start_date: start, end_date: end };
+  })();
+  const yearParams = (() => {
+    const year = new Date().getFullYear();
+    return { date: undefined, start_date: `${year}-01-01`, end_date: `${year}-12-31` };
+  })();
   
   // Fetch data from API - nếu không có date thì không filter
   const { data: dashboardStats, isLoading: loadingStats } = useQuery({
     queryKey: ['dashboard', params.date, params.start_date, params.end_date],
     queryFn: () => statisticsAPI.getDashboard(params),
+  });
+
+  // Fetch data cho 3 cột thống kê (Ngày/Tháng/Năm)
+  const { data: todayStats } = useQuery({
+    queryKey: ['dashboard', 'today', todayParams.date],
+    queryFn: () => statisticsAPI.getDashboard(todayParams),
+  });
+
+  const { data: monthStats } = useQuery({
+    queryKey: ['dashboard', 'month', monthParams.start_date, monthParams.end_date],
+    queryFn: () => statisticsAPI.getDashboard(monthParams),
+  });
+
+  const { data: yearStats } = useQuery({
+    queryKey: ['dashboard', 'year', yearParams.start_date, yearParams.end_date],
+    queryFn: () => statisticsAPI.getDashboard(yearParams),
   });
 
   const { data: genderData = [] } = useQuery({
@@ -120,23 +160,26 @@ const Index = () => {
     queryFn: () => statisticsAPI.getAttendanceByDate(7),
   });
 
-  const { data: recentTimekeeping = [] } = useQuery({
+  const { data: recentTimekeepingData } = useQuery({
     queryKey: ['recentTimekeeping', params.date, params.start_date, params.end_date],
     queryFn: () => {
       if (filterMode === 'month') {
         return timekeepingAPI.getAll({
           start_date: params.start_date,
           end_date: params.end_date,
-          archived: false,
         });
       }
       return timekeepingAPI.getAll({ 
         start_date: baseDate, 
         end_date: baseDate,
-        archived: false // CHỈ lấy dữ liệu mới
       });
     },
   });
+  
+  // Extract data array from response (API returns { data, total, ... } or array)
+  const recentTimekeeping = Array.isArray(recentTimekeepingData) 
+    ? recentTimekeepingData 
+    : ((recentTimekeepingData as any)?.data || []);
 
   // Helper function to cap percentage at 100%
   const capPercentage = (value: number, total: number): string => {
@@ -145,21 +188,34 @@ const Index = () => {
     return Math.min(percent, 100).toFixed(1);
   };
   
+  // Helper function to translate API values
+  const translateValue = (value: string): string => {
+    const translations: Record<string, string> = {
+      'Nam': t('employees.male'),
+      'Nữ': t('employees.female'),
+      'Chính thức': t('employees.official'),
+      'Thời vụ': t('employees.seasonal'),
+      'CA NGAY': t('dashboard.shiftDay'),
+      'CA DEM': t('dashboard.shiftNight'),
+    };
+    return translations[value] || value;
+  };
+
   // Calculate additional stats
-  const totalEmployees = dashboardStats?.totalEmployees || 0;
-  const maleCount = genderData.find(g => g.name === 'Nam')?.value || 0;
-  const femaleCount = genderData.find(g => g.name === 'Nữ')?.value || 0;
+  const totalEmployees = (dashboardStats as any)?.totalEmployees || 0;
+  const maleCount = (genderData as any[]).find((g: any) => g.name === 'Nam')?.value || 0;
+  const femaleCount = (genderData as any[]).find((g: any) => g.name === 'Nữ')?.value || 0;
   const malePercent = capPercentage(maleCount, totalEmployees);
   const femalePercent = capPercentage(femaleCount, totalEmployees);
   
   // Find largest age group
-  const largestAgeGroup = ageData.length > 0 
-    ? ageData.reduce((max, group) => group.value > max.value ? group : max, ageData[0])
-    : { name: 'N/A', value: 0 };
+  const largestAgeGroup = (ageData as any[]).length > 0 
+    ? (ageData as any[]).reduce((max: any, group: any) => group.value > max.value ? group : max, (ageData as any[])[0])
+    : { name: t('dashboard.na'), value: 0 };
   
   // Find department with highest attendance rate; if tie, prefer higher attendance count, then totalEmployees
-  const bestDept = attendanceRateByDept.length > 0
-    ? attendanceRateByDept.reduce((max, dept) => {
+  const bestDept = (attendanceRateByDept as any[]).length > 0
+    ? (attendanceRateByDept as any[]).reduce((max: any, dept: any) => {
         if (dept.attendanceRate > max.attendanceRate) return dept;
         if (dept.attendanceRate < max.attendanceRate) return max;
         // tie on rate: pick higher attendance count
@@ -168,8 +224,8 @@ const Index = () => {
         // tie: pick higher totalEmployees
         if ((dept.totalEmployees || 0) > (max.totalEmployees || 0)) return dept;
         return max;
-      }, attendanceRateByDept[0])
-    : { department: 'N/A', attendanceRate: 0, attendance: 0, totalEmployees: 0 };
+      }, (attendanceRateByDept as any[])[0])
+    : { department: t('dashboard.na'), attendanceRate: 0, attendance: 0, totalEmployees: 0 };
   
   // Recent activity (last 15 records)
   const recentActivity = recentTimekeeping.slice(0, 15);
@@ -205,7 +261,7 @@ const Index = () => {
   };
 
   // Format attendance data for chart
-  const formattedAttendanceData = attendanceByDate.map(item => ({
+  const formattedAttendanceData = (attendanceByDate as any[]).map((item: any) => ({
     date: new Date(item.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
     rate: capPercentage(item.attendance, totalEmployees),
     attendance: item.attendance,
@@ -218,8 +274,8 @@ const Index = () => {
       return (
         <div className="rounded-md border border-border bg-card px-3 py-2 text-sm shadow">
           <div className="font-semibold">{data.department}</div>
-          <div>Tỷ lệ: {data.attendanceRate}%</div>
-          <div>Đi làm: {data.attendance}/{data.totalEmployees}</div>
+          <div>{t('dashboard.rate')}: {data.attendanceRate}%</div>
+          <div>{t('dashboard.attendance')}: {data.attendance}/{data.totalEmployees}</div>
         </div>
       );
     }
@@ -229,166 +285,299 @@ const Index = () => {
   return (
     <div>
       <PageHeader 
-        title="Tổng quan" 
-        description={`Chào mừng bạn quay trở lại! Đây là tổng quan hoạt động ${
+        title={t('dashboard.title')} 
+        description={`${t('dashboard.welcome')} ${
           filterMode === 'month'
-            ? `tháng ${(() => { const d = parseYmdLocal(baseDate); return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`; })()}`
+            ? `${(() => { const d = parseYmdLocal(baseDate); return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`; })()} ${t('dashboard.thisMonth').toLowerCase()}`
             : baseDate === todayIso
-              ? 'hôm nay'
-              : `ngày ${formatDateDisplay(baseDate)}`
+              ? t('dashboard.today').toLowerCase()
+              : `${t('dashboard.oneDay')} ${formatDateDisplay(baseDate)}`
         }.`}
       />
 
-      {/* Bộ lọc ngày */}
+      {/* Bộ lọc thời gian */}
       <div className="mb-6 p-4 bg-card border border-border rounded-lg">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-5 h-5 text-muted-foreground" />
-          <h3 className="font-semibold">Bộ lọc</h3>
+          <h3 className="font-semibold">{t('dashboard.timeFilter')}</h3>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="space-y-2 flex-1 max-w-xs">
-            <Label htmlFor="date-filter">Chọn ngày xem dữ liệu (để trống để xem tất cả)</Label>
-            <div className="relative">
-              <Input
-                id="date-filter"
-                type="date"
-                // In month mode we still keep a valid date value, but hide the day visually
-                value={filterMode === 'month' ? baseDate : (selectedDate || '')}
-                onChange={(e) => {
-                  setSelectedDate(e.target.value || null);
-                  setFilterMode('day'); // chọn ngày luôn về chế độ NGÀY
+        <div className="space-y-4">
+          {/* Radio buttons cho chọn loại filter */}
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="filter-mode"
+                value="day"
+                checked={filterMode === 'day'}
+                onChange={() => {
+                  setFilterMode('day');
+                  setSelectedDate(todayIso);
                 }}
-                max={todayIso}
-                className="text-transparent caret-transparent"
+                className="w-4 h-4 text-primary"
               />
-              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">
-                {filterMode === 'month' ? monthPlaceholderLabel : dayDisplayLabel}
-              </span>
-            </div>
+              <span className="text-sm">{t('dashboard.today')}</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="filter-mode"
+                value="month"
+                checked={filterMode === 'month'}
+                onChange={() => {
+                  setFilterMode('month');
+                  setSelectedDate(todayIso);
+                }}
+                className="w-4 h-4 text-primary"
+              />
+              <span className="text-sm">{t('dashboard.thisMonth')}</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="filter-mode"
+                value="year"
+                checked={filterMode === 'year'}
+                onChange={() => setFilterMode('year')}
+                className="w-4 h-4 text-primary"
+              />
+              <span className="text-sm">{t('dashboard.thisYear')}</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="filter-mode"
+                value="single"
+                checked={filterMode === 'single'}
+                onChange={() => setFilterMode('single')}
+                className="w-4 h-4 text-primary"
+              />
+              <span className="text-sm">{t('dashboard.oneDay')}</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="filter-mode"
+                value="range"
+                checked={filterMode === 'range'}
+                onChange={() => setFilterMode('range')}
+                className="w-4 h-4 text-primary"
+              />
+              <span className="text-sm">{t('dashboard.period')}</span>
+            </label>
           </div>
-          <div className="pt-6 flex gap-2">
-            <button
-              onClick={() => {
-                const base = selectedDate || todayIso;
-                setSelectedDate(base); // giữ nguyên ngày đang có, chỉ đổi logic lọc theo THÁNG
-                setFilterMode('month');
-              }}
-              className="text-sm text-primary hover:underline"
-            >
-              Xem tất cả
-            </button>
-            <span className="text-muted-foreground">|</span>
-            <button
-              onClick={() => {
-                const today = todayIso;
-                setSelectedDate(today);
-                setFilterMode('day');
-              }}
-              className="text-sm text-primary hover:underline"
-            >
-              Về hôm nay
-            </button>
+
+          {/* Date picker tương ứng với lựa chọn */}
+          <div className="flex items-center gap-4">
+            {filterMode === 'single' && (
+              <div className="space-y-2">
+                <Label htmlFor="date-filter">{t('dashboard.selectDate')}</Label>
+                <Input
+                  id="date-filter"
+                  type="date"
+                  value={selectedDate || ''}
+                  onChange={(e) => setSelectedDate(e.target.value || null)}
+                  max={todayIso}
+                />
+              </div>
+            )}
+            {filterMode === 'range' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="start-date">{t('dashboard.fromDate')}</Label>
+                  <Input
+                    id="start-date"
+                    type="date"
+                    value={dateRange.start}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                    max={dateRange.end || todayIso}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="end-date">{t('dashboard.toDate')}</Label>
+                  <Input
+                    id="end-date"
+                    type="date"
+                    value={dateRange.end}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                    min={dateRange.start}
+                    max={todayIso}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Stats Cards - Hàng 1 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
+      {/* 3 Cột thống kê: Ngày/Tháng/Năm - CHỈ HIỂN THỊ 1 LẦN */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {/* Cột 1: Hôm nay */}
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <div className="flex items-center gap-2 mb-4">
+            <Calendar className="w-5 h-5 text-primary" />
+            <h3 className="font-semibold text-lg">{t('dashboard.today')}</h3>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{t('dashboard.totalEmployees')}</span>
+              <span className="font-semibold">{(todayStats as any)?.totalEmployees || (stats as any).totalEmployees}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{t('dashboard.attendance')}</span>
+              <span className="font-semibold text-success">
+                {(todayStats as any) ? Math.round((parseFloat((todayStats as any).attendanceRate || '0') / 100) * ((todayStats as any).totalEmployees || 0)) : 0}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{t('dashboard.attendanceRate')}</span>
+              <span className="font-semibold">{(todayStats as any)?.attendanceRate || (stats as any).attendanceRate}%</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{t('dashboard.totalHours')}</span>
+              <span className="font-semibold">{(todayStats as any)?.totalHoursToday || (stats as any).totalHoursToday}h</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Cột 2: Tháng này */}
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <div className="flex items-center gap-2 mb-4">
+            <Calendar className="w-5 h-5 text-info" />
+            <h3 className="font-semibold text-lg">{t('dashboard.thisMonth')}</h3>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{t('dashboard.totalEmployees')}</span>
+              <span className="font-semibold">{(monthStats as any)?.totalEmployees || (stats as any).totalEmployees}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{t('dashboard.attendance')}</span>
+              <span className="font-semibold text-success">
+                {(monthStats as any) ? Math.round((parseFloat((monthStats as any).attendanceRate || '0') / 100) * ((monthStats as any).totalEmployees || 0)) : 0}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{t('dashboard.attendanceRate')}</span>
+              <span className="font-semibold">{(monthStats as any)?.attendanceRate || '0'}%</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{t('dashboard.totalHours')}</span>
+              <span className="font-semibold">{(monthStats as any)?.totalHoursToday || '0'}h</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Cột 3: Năm này */}
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <div className="flex items-center gap-2 mb-4">
+            <Calendar className="w-5 h-5 text-warning" />
+            <h3 className="font-semibold text-lg">{t('dashboard.thisYear')}</h3>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{t('dashboard.totalEmployees')}</span>
+              <span className="font-semibold">{(yearStats as any)?.totalEmployees || (stats as any).totalEmployees}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{t('dashboard.attendance')}</span>
+              <span className="font-semibold text-success">
+                {(yearStats as any) ? Math.round((parseFloat((yearStats as any).attendanceRate || '0') / 100) * ((yearStats as any).totalEmployees || 0)) : 0}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{t('dashboard.attendanceRate')}</span>
+              <span className="font-semibold">{(yearStats as any)?.attendanceRate || '0'}%</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">{t('dashboard.totalHours')}</span>
+              <span className="font-semibold">{(yearStats as any)?.totalHoursToday || '0'}h</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Cards - Hàng 1: Thống kê chính */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <StatCard
-          title="Tổng số nhân viên"
-          value={stats.totalEmployees}
+          title={t('dashboard.totalEmployees')}
+          value={(stats as any).totalEmployees}
           icon={Users}
           variant="primary"
         />
         <StatCard
-          title="Tỷ lệ đi làm Chính thức"
-          value={`${stats.chinhThucRate}%`}
+          title={t('dashboard.officialAttendanceRate')}
+          value={`${(stats as any).chinhThucRate}%`}
           icon={TrendingUp}
           variant="success"
         />
         <StatCard
-          title="Tỷ lệ đi làm Thời vụ"
-          value={`${stats.thoiVuRate}%`}
+          title={t('dashboard.seasonalAttendanceRate')}
+          value={`${(stats as any).thoiVuRate}%`}
           icon={TrendingUp}
           variant="info"
         />
         <StatCard
-          title="Nhân viên đi trễ"
-          value={stats.lateToday}
+          title={t('dashboard.lateEmployees')}
+          value={(stats as any).lateToday}
           icon={Clock}
           variant="warning"
         />
         <StatCard
-          title="Tổng giờ làm việc"
-          value={`${stats.totalHoursToday}h`}
+          title={t('dashboard.totalWorkingHours')}
+          value={`${(stats as any).totalHoursToday}h`}
           icon={Timer}
           variant="info"
         />
       </div>
 
-      {/* Stats Cards - Hàng 2: Tỷ lệ Nam/Nữ theo Chính thức/Thời vụ */}
+      {/* Stats Cards - Hàng 2: Phân bổ Nam/Nữ theo Chính thức/Thời vụ */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard
-          title="Nam - Chính thức"
-          value={`${genderByEmpType.chinhThucNam.count} (${genderByEmpType.chinhThucNam.percent}%)`}
+          title={t('dashboard.maleOfficial')}
+          value={`${(genderByEmpType as any).chinhThucNam.count} (${(genderByEmpType as any).chinhThucNam.percent}%)`}
           icon={UserCheck}
           variant="primary"
         />
         <StatCard
-          title="Nữ - Chính thức"
-          value={`${genderByEmpType.chinhThucNu.count} (${genderByEmpType.chinhThucNu.percent}%)`}
+          title={t('dashboard.femaleOfficial')}
+          value={`${(genderByEmpType as any).chinhThucNu.count} (${(genderByEmpType as any).chinhThucNu.percent}%)`}
           icon={Users2}
           variant="info"
         />
         <StatCard
-          title="Nam - Thời vụ"
-          value={`${genderByEmpType.thoiVuNam.count} (${genderByEmpType.thoiVuNam.percent}%)`}
+          title={t('dashboard.maleSeasonal')}
+          value={`${(genderByEmpType as any).thoiVuNam.count} (${(genderByEmpType as any).thoiVuNam.percent}%)`}
           icon={UserCheck}
           variant="success"
         />
         <StatCard
-          title="Nữ - Thời vụ"
-          value={`${genderByEmpType.thoiVuNu.count} (${genderByEmpType.thoiVuNu.percent}%)`}
+          title={t('dashboard.femaleSeasonal')}
+          value={`${(genderByEmpType as any).thoiVuNu.count} (${(genderByEmpType as any).thoiVuNu.percent}%)`}
           icon={Users2}
           variant="warning"
         />
       </div>
 
-      {/* Stats Cards - Hàng 3: Thông tin bổ sung */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 mb-6">
-        <StatCard
-          title="Nhóm tuổi lớn nhất"
-          value={`${largestAgeGroup.name}: ${largestAgeGroup.value}`}
-          icon={Calendar}
-          variant="success"
-        />
-        <StatCard
-          title="Bộ phận đi làm tốt nhất"
-          value={`${bestDept.department}: ${bestDept.attendanceRate}%`}
-          icon={Building2}
-          variant="warning"
-        />
-      </div>
-
-      {/* Tỷ lệ - Grid 4 cột */}
+      {/* Charts - Grid 4 cột: Tỷ lệ phân bổ */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {/* 1. Tỷ lệ đi làm: Chính thức - Thời vụ */}
-        <div className="chart-container">
-          <h3 className="text-base font-semibold mb-3">Tỷ lệ: Chính thức - Thời vụ</h3>
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <h3 className="text-base font-semibold mb-3">{t('dashboard.ratioOfficialSeasonal')}</h3>
           <div className="h-[220px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={employmentTypeData}
+                  data={employmentTypeData as any[]}
                   cx="50%"
                   cy="50%"
                   innerRadius={40}
                   outerRadius={70}
                   paddingAngle={5}
                   dataKey="value"
-                  label={({ name, value, percent }) => `${name}: ${value}`}
+                  label={({ name, value, percent }) => `${translateValue(name)}: ${value}`}
                 >
-                  {employmentTypeData.map((entry, index) => (
+                  {(employmentTypeData as any[]).map((entry: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
@@ -404,36 +593,36 @@ const Index = () => {
             </ResponsiveContainer>
           </div>
           <div className="flex justify-center gap-4 mt-3">
-            {employmentTypeData.map(item => (
+            {(employmentTypeData as any[]).map((item: any) => (
               <div key={item.name} className="text-center">
                 <div className="flex items-center gap-1 justify-center mb-1">
                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-xs font-medium">{item.name}</span>
+                  <span className="text-xs font-medium">{translateValue(item.name)}</span>
                 </div>
                 <p className="text-lg font-bold">{item.value}</p>
-                <p className="text-xs text-muted-foreground">người</p>
+                <p className="text-xs text-muted-foreground">{t('common.people')}</p>
               </div>
             ))}
           </div>
         </div>
 
         {/* 2. Tỷ lệ Nam - Nữ */}
-        <div className="chart-container">
-          <h3 className="text-base font-semibold mb-3">Tỷ lệ Nam - Nữ</h3>
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <h3 className="text-base font-semibold mb-3">{t('dashboard.ratioMaleFemale')}</h3>
           <div className="h-[220px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={genderData}
+                  data={genderData as any[]}
                   cx="50%"
                   cy="50%"
                   innerRadius={40}
                   outerRadius={70}
                   paddingAngle={5}
                   dataKey="value"
-                  label={({ name, value, percent }) => `${name}: ${value}`}
+                  label={({ name, value, percent }) => `${translateValue(name)}: ${value}`}
                 >
-                  {genderData.map((entry, index) => (
+                  {(genderData as any[]).map((entry: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
@@ -449,25 +638,25 @@ const Index = () => {
             </ResponsiveContainer>
           </div>
           <div className="flex justify-center gap-4 mt-3">
-            {genderData.map(item => (
+            {(genderData as any[]).map((item: any) => (
               <div key={item.name} className="text-center">
                 <div className="flex items-center gap-1 justify-center mb-1">
                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-xs font-medium">{item.name}</span>
+                  <span className="text-xs font-medium">{translateValue(item.name)}</span>
                 </div>
                 <p className="text-lg font-bold">{item.value}</p>
-                <p className="text-xs text-muted-foreground">người</p>
+                <p className="text-xs text-muted-foreground">{t('common.people')}</p>
               </div>
             ))}
           </div>
         </div>
 
         {/* 3. Tỷ lệ theo lứa tuổi */}
-        <div className="chart-container">
-          <h3 className="text-base font-semibold mb-3">Tỷ lệ theo lứa tuổi</h3>
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <h3 className="text-base font-semibold mb-3">{t('dashboard.ratioByAge')}</h3>
           <div className="h-[220px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={ageData} layout="vertical" barSize={20}>
+              <BarChart data={ageData as any[]} layout="vertical" barSize={20}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={10} />
                 <YAxis dataKey="name" type="category" stroke="hsl(var(--muted-foreground))" fontSize={10} width={40} />
@@ -478,10 +667,10 @@ const Index = () => {
                     borderRadius: '8px',
                     fontSize: '12px'
                   }}
-                  formatter={(value: number) => [`${value} người`, 'Số lượng']}
+                  formatter={(value: number) => [`${value} ${t('common.people')}`, t('common.quantity') || 'Số lượng']}
                 />
                 <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                  {ageData.map((entry, index) => (
+                  {(ageData as any[]).map((entry: any, index: number) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Bar>
@@ -489,7 +678,7 @@ const Index = () => {
             </ResponsiveContainer>
           </div>
           <div className="grid grid-cols-5 gap-1 mt-3">
-            {ageData.map(item => (
+            {(ageData as any[]).map((item: any) => (
               <div key={item.name} className="text-center p-1 rounded-lg bg-muted/50">
                 <p className="text-[10px] text-muted-foreground">{item.name}</p>
                 <p className="text-sm font-bold">{item.value}</p>
@@ -499,11 +688,11 @@ const Index = () => {
         </div>
 
         {/* 4. Tỷ lệ đi làm các bộ phận */}
-        <div className="chart-container">
-          <h3 className="text-base font-semibold mb-3">Tỷ lệ đi làm các bộ phận</h3>
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <h3 className="text-base font-semibold mb-3">{t('dashboard.attendanceByDepartment')}</h3>
           <div className="h-[220px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={attendanceRateByDept} barGap={4}>
+              <BarChart data={attendanceRateByDept as any[]} barGap={4}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="department" stroke="hsl(var(--muted-foreground))" fontSize={10} angle={-45} textAnchor="end" height={60} />
                 <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} />
@@ -512,7 +701,7 @@ const Index = () => {
                 />
                 <Bar
                   dataKey="attendanceRate"
-                  name="Tỷ lệ (%)"
+                  name={t('dashboard.percentage')}
                   fill="hsl(var(--primary))"
                   radius={[4, 4, 0, 0]}
                   label={{ position: 'top', formatter: (val: number) => `${val}%` }}
@@ -521,7 +710,7 @@ const Index = () => {
             </ResponsiveContainer>
           </div>
           <div className="grid grid-cols-3 gap-1 mt-3">
-            {attendanceRateByDept.map(item => (
+            {(attendanceRateByDept as any[]).map((item: any) => (
               <div key={item.department} className="text-center p-1 rounded-lg bg-muted/50">
                 <p className="text-[10px] text-muted-foreground">{item.department}</p>
                 <p className="text-sm font-bold">{item.attendanceRate}%</p>
@@ -535,8 +724,8 @@ const Index = () => {
       {/* Charts Row - 7 ngày gần nhất */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Attendance Chart */}
-        <div className="chart-container">
-          <h3 className="text-lg font-semibold mb-4">Tỷ lệ đi làm 7 ngày gần nhất</h3>
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <h3 className="text-lg font-semibold mb-4">{t('dashboard.attendanceRateLast7Days')}</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={formattedAttendanceData}>
@@ -554,7 +743,7 @@ const Index = () => {
                 <Line 
                   type="monotone" 
                   dataKey="rate" 
-                  name="Tỷ lệ %" 
+                  name={t('dashboard.percentage')} 
                   stroke="hsl(var(--primary))" 
                   strokeWidth={2}
                   dot={{ fill: 'hsl(var(--primary))' }}
@@ -565,8 +754,8 @@ const Index = () => {
         </div>
 
         {/* Quick Stats */}
-        <div className="chart-container">
-          <h3 className="text-lg font-semibold mb-4">Số lượng đi làm 7 ngày gần nhất</h3>
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <h3 className="text-lg font-semibold mb-4">{t('dashboard.attendanceLast7Days') || 'Số lượng đi làm 7 ngày gần nhất'}</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={formattedAttendanceData}>
@@ -584,7 +773,7 @@ const Index = () => {
                 <Line 
                   type="monotone" 
                   dataKey="attendance" 
-                  name="Số lượng" 
+                  name={t('common.quantity')} 
                   stroke="hsl(var(--success))" 
                   strokeWidth={2}
                 />
@@ -595,20 +784,20 @@ const Index = () => {
       </div>
 
       {/* Recent Activity Table */}
-      <div className="chart-container">
-        <h3 className="text-lg font-semibold mb-4">Hoạt động chấm công gần đây</h3>
+      <div className="p-4 bg-card border border-border rounded-lg">
+        <h3 className="text-lg font-semibold mb-4">{t('dashboard.recentActivity')}</h3>
         <div className="overflow-x-auto">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Mã NV</th>
-                <th>Tên nhân viên</th>
-                <th>Phòng ban</th>
-                <th>Ngày</th>
-                <th>Giờ vào</th>
-                <th>Giờ ra</th>
-                <th>Ca</th>
-                <th>Tổng giờ</th>
+                <th>{t('dashboard.employeeCode')}</th>
+                <th>{t('dashboard.employeeName')}</th>
+                <th>{t('dashboard.department')}</th>
+                <th>{t('dashboard.date')}</th>
+                <th>{t('dashboard.timeIn')}</th>
+                <th>{t('dashboard.timeOut')}</th>
+                <th>{t('dashboard.shift')}</th>
+                <th>{t('dashboard.totalHoursLabel')}</th>
               </tr>
             </thead>
             <tbody>
@@ -629,7 +818,7 @@ const Index = () => {
                         ? 'bg-warning/10 text-warning' 
                         : 'bg-muted text-muted-foreground'
                     }`}>
-                      {record.shift}
+                      {translateValue(record.shift)}
                     </span>
                   </td>
                   <td>{record.total_hours}h</td>
@@ -638,7 +827,7 @@ const Index = () => {
               ) : (
                 <tr>
                   <td colSpan={8} className="text-center text-muted-foreground py-8">
-                    Chưa có dữ liệu chấm công
+                    {t('dashboard.noTimekeepingData')}
                   </td>
                 </tr>
               )}
