@@ -247,15 +247,15 @@ const DepartmentPage = () => {
         {isLoading ? (
           <div className="text-center py-8">{t('common.loading')}</div>
         ) : stats?.employees && stats.employees.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
+          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-400px)] relative">
+            <table className="w-full data-table">
+              <thead className="sticky top-0 z-30 bg-muted">
                 <tr className="border-b">
-                  <th className="text-left p-2">{t('department.employeeCode')}</th>
-                  <th className="text-left p-2">{t('department.employeeName')}</th>
-                  <th className="text-left p-2">{t('department.daysWorked')}</th>
-                  <th className="text-left p-2">{t('department.totalHours')}</th>
-                  <th className="text-left p-2">{t('department.attendanceRate')}</th>
+                  <th className="text-left p-2 bg-muted" style={{ position: 'sticky', top: 0 }}>{t('department.employeeCode')}</th>
+                  <th className="text-left p-2 bg-muted" style={{ position: 'sticky', top: 0 }}>{t('department.employeeName')}</th>
+                  <th className="text-left p-2 bg-muted" style={{ position: 'sticky', top: 0 }}>{t('department.daysWorked')}</th>
+                  <th className="text-left p-2 bg-muted" style={{ position: 'sticky', top: 0 }}>{t('department.totalHours')}</th>
+                  <th className="text-left p-2 bg-muted" style={{ position: 'sticky', top: 0 }}>{t('department.attendanceRate')}</th>
                 </tr>
               </thead>
               <tbody>

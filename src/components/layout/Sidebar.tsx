@@ -114,19 +114,19 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
           <Collapsible open={isOpen} onOpenChange={() => toggleMenu(item.label)}>
             <CollapsibleTrigger
               className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
-                "text-sidebar-foreground hover:bg-sidebar-hover",
+                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-300 ease-out",
+                "text-sidebar-foreground hover:bg-sidebar-hover hover:translate-x-1",
                 hasActive && "bg-primary/10 text-primary",
                 collapsed && "justify-center px-2"
               )}
               title={collapsed ? item.label : undefined}
             >
-              <item.icon className="w-5 h-5 flex-shrink-0" />
+              <item.icon className="w-5 h-5 flex-shrink-0 transition-transform duration-300 group-hover:scale-110" />
               {!collapsed && (
                 <>
                   <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
                   <ChevronDown className={cn(
-                    "w-4 h-4 transition-transform duration-200",
+                    "w-4 h-4 transition-transform duration-300 ease-out",
                     isOpen && "rotate-180"
                   )} />
                 </>
@@ -142,12 +142,12 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
                         <NavLink
                           to={child.path || '#'}
                           className={cn(
-                            "flex items-center gap-2 px-3 py-2 rounded-md transition-all duration-200",
-                            "text-sm text-sidebar-foreground/80 hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                            "flex items-center gap-2 px-3 py-2 rounded-md transition-all duration-300 ease-out",
+                            "text-sm text-sidebar-foreground/80 hover:bg-sidebar-hover hover:text-sidebar-foreground hover:translate-x-1",
                             isActive && "bg-primary text-primary-foreground font-medium"
                           )}
                         >
-                          <child.icon className="w-4 h-4" />
+                          <child.icon className="w-4 h-4 transition-transform duration-300 group-hover:scale-110" />
                           <span>{child.label}</span>
                         </NavLink>
                       </li>
@@ -170,15 +170,15 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
             to={item.path}
             className={({ isActive }) =>
               cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
-                "text-sidebar-foreground hover:bg-sidebar-hover",
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-300 ease-out",
+                "text-sidebar-foreground hover:bg-sidebar-hover hover:translate-x-1",
                 isActive && "bg-primary text-primary-foreground hover:bg-primary",
                 collapsed && "justify-center px-2"
               )
             }
             title={collapsed ? item.label : undefined}
           >
-            <item.icon className="w-5 h-5 flex-shrink-0" />
+            <item.icon className="w-5 h-5 flex-shrink-0 transition-transform duration-300 group-hover:scale-110" />
             {!collapsed && (
               <span className="text-sm font-medium">{item.label}</span>
             )}
@@ -193,7 +193,7 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 z-40 h-screen bg-sidebar-bg transition-all duration-300 flex flex-col",
+        "fixed left-0 top-0 z-40 h-screen bg-sidebar-bg transition-all duration-300 ease-out flex flex-col shadow-lg",
         collapsed ? "w-16" : "w-64"
       )}
     >
@@ -221,12 +221,12 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
       {/* Toggle Button */}
       <button
         onClick={onToggle}
-        className="absolute -right-3 top-20 w-6 h-6 bg-card border border-border rounded-full flex items-center justify-center shadow-sm hover:bg-muted transition-colors"
+        className="absolute -right-3 top-20 w-6 h-6 bg-card border border-border rounded-full flex items-center justify-center shadow-sm hover:bg-muted hover:scale-110 active:scale-95 transition-all duration-300 ease-out"
       >
         {collapsed ? (
-          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          <ChevronRight className="w-4 h-4 text-muted-foreground transition-transform duration-300" />
         ) : (
-          <ChevronLeft className="w-4 h-4 text-muted-foreground" />
+          <ChevronLeft className="w-4 h-4 text-muted-foreground transition-transform duration-300" />
         )}
       </button>
     </aside>

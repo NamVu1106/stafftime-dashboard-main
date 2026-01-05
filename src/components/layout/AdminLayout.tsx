@@ -32,13 +32,13 @@ export const AdminLayout = () => {
       {/* Main Content */}
       <div
         className={cn(
-          "transition-all duration-300",
+          "transition-all duration-300 ease-out",
           sidebarCollapsed ? "lg:ml-16" : "lg:ml-64"
         )}
       >
         <TopBar onMenuClick={() => setMobileMenuOpen(!mobileMenuOpen)} />
         
-        <main className="p-4 md:p-6 animate-fade-in">
+        <main className="p-4 md:p-6 page-content">
           <Outlet />
         </main>
       </div>

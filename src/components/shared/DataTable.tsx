@@ -90,7 +90,7 @@ export function DataTable<T extends { id: number | string }>({
   };
 
   return (
-    <div className="bg-card rounded-lg border border-border shadow-sm">
+    <div className="bg-card rounded-lg border border-border shadow-sm animate-fade-in-up transition-all duration-300 hover:shadow-md">
       {/* Header */}
       <div className="p-4 border-b border-border flex flex-col sm:flex-row gap-4 justify-between">
         {searchPlaceholder && (
@@ -123,37 +123,67 @@ export function DataTable<T extends { id: number | string }>({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="data-table">
-          <thead>
+      <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-300px)] relative">
+        <table className="data-table w-full">
+          <thead className="sticky top-0 z-30 bg-muted">
             <tr>
-              {columns.map((col) => (
-                <th
-                  key={col.key.toString()}
-                  onClick={() => col.sortable && handleSort(col.key.toString())}
-                  className={col.sortable ? 'cursor-pointer hover:bg-muted/80 select-none' : ''}
-                >
-                  <div className="flex items-center gap-1">
-                    {col.header}
-                    {col.sortable && sortConfig?.key === col.key && (
-                      <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                    )}
-                  </div>
-                </th>
-              ))}
+              {columns.map((col, index) => {
+                // Make first two columns (STT and Avatar) sticky when scrolling horizontally
+                const isStickyColumn = index < 2;
+                return (
+                  <th
+                    key={col.key.toString()}
+                    onClick={() => col.sortable && handleSort(col.key.toString())}
+                    className={`${col.sortable ? 'cursor-pointer hover:bg-muted/80 select-none' : ''} ${
+                      isStickyColumn ? 'sticky bg-muted border-r border-border' : 'bg-muted'
+                    } ${index === 1 ? 'left-[60px] z-30' : index === 0 ? 'left-0 z-30' : ''}`}
+                    style={isStickyColumn ? {
+                      minWidth: index === 0 ? '60px' : '80px',
+                      width: index === 0 ? '60px' : '80px',
+                      position: 'sticky',
+                      top: 0,
+                    } : {
+                      position: 'sticky',
+                      top: 0,
+                    }}
+                  >
+                    <div className="flex items-center gap-1">
+                      {col.header}
+                      {col.sortable && sortConfig?.key === col.key && (
+                        <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                    </div>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
             {paginatedData.length > 0 ? (
               paginatedData.map((item, rowIndex) => (
-                <tr key={item.id}>
-                  {columns.map((col) => (
-                    <td key={`${item.id}-${col.key.toString()}`}>
-                      {col.render 
-                        ? col.render(item, startIndex + rowIndex) 
-                        : String((item as Record<string, unknown>)[col.key.toString()] ?? '')}
-                    </td>
-                  ))}
+                <tr key={item.id} className="hover:bg-muted/50">
+                  {columns.map((col, index) => {
+                    // Make first two columns (STT and Avatar) sticky when scrolling horizontally
+                    const isStickyColumn = index < 2;
+                    return (
+                      <td 
+                        key={`${item.id}-${col.key.toString()}`}
+                        className={`${isStickyColumn ? 'sticky bg-card border-r border-border' : ''} ${
+                          index === 1 ? 'left-[60px] z-20' : index === 0 ? 'left-0 z-20' : ''
+                        }`}
+                        style={isStickyColumn ? {
+                          minWidth: index === 0 ? '60px' : '80px',
+                          width: index === 0 ? '60px' : '80px',
+                          position: 'sticky',
+                          left: index === 0 ? 0 : '60px',
+                        } : {}}
+                      >
+                        {col.render 
+                          ? col.render(item, startIndex + rowIndex) 
+                          : String((item as Record<string, unknown>)[col.key.toString()] ?? '')}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))
             ) : (

@@ -767,10 +767,6 @@ const EmployeesPage = () => {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-            <Button onClick={openAddForm}>
-              <Plus className="w-4 h-4 mr-2" />
-              {t('employees.addEmployee')}
-            </Button>
           </div>
         }
       />

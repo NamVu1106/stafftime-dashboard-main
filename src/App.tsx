@@ -22,7 +22,16 @@ import DepartmentPage from "./pages/DepartmentPage";
 import ComparePage from "./pages/ComparePage";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // Cache data trong 5 phút
+      refetchOnWindowFocus: false, // Không refetch khi focus lại window
+      retry: 2, // Retry 2 lần nếu fail
+      retryDelay: 1000, // Đợi 1 giây giữa các lần retry
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>

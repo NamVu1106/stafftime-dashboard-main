@@ -5,31 +5,53 @@ const API_URL = import.meta.env.VITE_API_URL ||
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('token');
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...options?.headers,
-    },
-  });
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+  
+  // Add timeout (30 seconds)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...options?.headers,
+      },
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
+      throw new Error(`API error: ${response.statusText}`);
     }
-    throw new Error(`API error: ${response.statusText}`);
+    
+    return response.json();
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout - Server không phản hồi. Vui lòng kiểm tra backend có đang chạy không.');
+    }
+    throw error;
   }
-
-  return response.json();
 }
 
 export const authAPI = {
   login: async (username: string, password: string) => {
     return request<{ token: string; user: any }>('/auth/login', {
-      method: 'POST',
+    method: 'POST',
       body: JSON.stringify({ username, password }),
+    });
+  },
+  forgotPassword: async (username: string) => {
+    return request<{ success: boolean; message: string; username?: string; newPassword: string; warning?: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
     });
   },
 };
@@ -176,7 +198,7 @@ export const uploadAPI = {
       },
       body: formData,
     });
-
+    
     if (!response.ok) {
       if (response.status === 401) {
         localStorage.removeItem('token');
@@ -184,7 +206,7 @@ export const uploadAPI = {
       }
       throw new Error(`API error: ${response.statusText}`);
     }
-
+    
     return response.json();
   },
   uploadTimekeeping: async (file: File) => {
@@ -198,7 +220,7 @@ export const uploadAPI = {
       },
       body: formData,
     });
-
+    
     if (!response.ok) {
       if (response.status === 401) {
         localStorage.removeItem('token');
@@ -206,7 +228,7 @@ export const uploadAPI = {
       }
       throw new Error(`API error: ${response.statusText}`);
     }
-
+    
     return response.json();
   },
 };

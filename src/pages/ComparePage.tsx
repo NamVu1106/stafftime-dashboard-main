@@ -210,14 +210,14 @@ const ComparePage = () => {
         </div>
 
         {/* Bảng so sánh chi tiết */}
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
+        <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-400px)] relative">
+          <table className="w-full data-table">
+            <thead className="sticky top-0 z-30 bg-muted">
               <tr className="border-b">
-                <th className="text-left p-2">{t('reports.index')}</th>
-                <th className="text-left p-2">{t('reports.object1')}</th>
-                <th className="text-left p-2">{t('reports.object2')}</th>
-                <th className="text-left p-2">{t('reports.difference')}</th>
+                <th className="text-left p-2 bg-muted" style={{ position: 'sticky', top: 0 }}>{t('reports.index')}</th>
+                <th className="text-left p-2 bg-muted" style={{ position: 'sticky', top: 0 }}>{t('reports.object1')}</th>
+                <th className="text-left p-2 bg-muted" style={{ position: 'sticky', top: 0 }}>{t('reports.object2')}</th>
+                <th className="text-left p-2 bg-muted" style={{ position: 'sticky', top: 0 }}>{t('reports.difference')}</th>
               </tr>
             </thead>
             <tbody>

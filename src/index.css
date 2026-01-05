@@ -39,7 +39,7 @@
     --info: 189 94% 43%;
     --info-foreground: 0 0% 100%;
 
-    --border: 220 13% 91%;
+    --border: 220 13% 85%;
     --input: 220 13% 91%;
     --ring: 211 100% 50%;
 
@@ -79,7 +79,7 @@
     --destructive: 0 62% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 13% 20%;
+    --border: 220 13% 30%;
     --input: 220 13% 20%;
     --ring: 211 100% 50%;
 
@@ -105,11 +105,16 @@
 
 @layer components {
   .stat-card {
-    @apply bg-card rounded-lg shadow-sm border border-border p-6 transition-all duration-200 hover:shadow-md;
+    @apply bg-card rounded-lg shadow-sm border-2 border-border p-6 
+           transition-all duration-300 ease-out
+           hover:shadow-md hover:shadow-primary/5 hover:-translate-y-1
+           animate-fade-in-up;
   }
 
   .stat-card-icon {
-    @apply w-12 h-12 rounded-lg flex items-center justify-center;
+    @apply w-12 h-12 rounded-lg flex items-center justify-center
+           transition-all duration-300 ease-out
+           group-hover:scale-110 group-hover:rotate-3;
   }
 
   .data-table {
@@ -117,14 +122,39 @@
   }
 
   .data-table th {
-    @apply bg-muted text-muted-foreground font-semibold text-left px-4 py-3 border-b border-border;
+    @apply bg-muted text-muted-foreground font-semibold text-left px-4 py-3 border-b border-border
+           transition-colors duration-200;
+  }
+
+  .data-table thead th {
+    @apply bg-muted;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+
+  .data-table th.sticky {
+    @apply shadow-[2px_0_4px_rgba(0,0,0,0.1)];
   }
 
   .data-table td {
-    @apply px-4 py-3 border-b border-border;
+    @apply px-4 py-3 border-b border-border
+           transition-colors duration-200;
+  }
+
+  .data-table td.sticky {
+    @apply shadow-[2px_0_4px_rgba(0,0,0,0.1)];
+  }
+
+  .data-table tbody tr {
+    @apply transition-all duration-200 ease-out animate-fade-in;
   }
 
   .data-table tbody tr:hover {
+    @apply bg-muted/50;
+  }
+
+  .data-table tbody tr:hover td.sticky {
     @apply bg-muted/50;
   }
 
@@ -132,16 +162,40 @@
     @apply bg-muted/30;
   }
 
-  .upload-zone {
-    @apply border-2 border-dashed border-border rounded-lg p-8 text-center transition-all duration-200 cursor-pointer;
+  .data-table tbody tr:nth-child(even) td.sticky {
+    @apply bg-muted/30;
   }
 
-  .upload-zone:hover {
-    @apply border-primary bg-primary/5;
+  .upload-zone {
+    @apply border-2 border-dashed border-border rounded-lg p-8 text-center 
+           transition-all duration-300 ease-out cursor-pointer
+           hover:border-primary hover:bg-primary/5 hover:shadow-md
+           animate-fade-in;
+  }
+
+  .upload-zone.drag-over {
+    @apply border-primary bg-primary/10 scale-105 shadow-lg;
   }
 
   .chart-container {
-    @apply bg-card rounded-lg shadow-sm border border-border p-6;
+    @apply bg-card rounded-lg shadow-sm border-2 border-border p-6
+           transition-all duration-300 ease-out
+           hover:shadow-md
+           animate-fade-in-up;
+  }
+
+  .page-content {
+    @apply animate-fade-in;
+  }
+
+  .card-hover {
+    @apply transition-all duration-300 ease-out
+           hover:shadow-lg hover:-translate-y-1 hover:shadow-primary/5;
+  }
+
+  .button-smooth {
+    @apply transition-all duration-200 ease-out
+           active:scale-95;
   }
 }
 
@@ -163,9 +217,109 @@
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background: hsl(var(--muted-foreground) / 0.3);
     border-radius: 3px;
+    transition: background 0.2s ease;
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  /* Animation delays for staggered effects */
+  .animate-delay-75 {
+    animation-delay: 75ms;
+  }
+
+  .animate-delay-100 {
+    animation-delay: 100ms;
+  }
+
+  .animate-delay-150 {
+    animation-delay: 150ms;
+  }
+
+  .animate-delay-200 {
+    animation-delay: 200ms;
+  }
+
+  .animate-delay-300 {
+    animation-delay: 300ms;
+  }
+
+  /* Smooth transitions */
+  .transition-smooth {
+    transition-property: all;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 300ms;
+  }
+
+  /* Login Page Styles */
+  .login-background {
+    background: linear-gradient(-45deg, #667eea, #764ba2, #f093fb, #4facfe);
+    background-size: 400% 400%;
+    animation: gradient-shift 15s ease infinite;
+  }
+
+  .login-card {
+    backdrop-filter: blur(20px);
+    background: rgba(255, 255, 255, 0.98);
+    border-radius: 24px;
+    box-shadow: 
+      0 25px 50px -12px rgba(0, 0, 0, 0.15),
+      0 0 0 1px rgba(255, 255, 255, 0.8),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .dark .login-card {
+    background: rgba(30, 30, 35, 0.98);
+    box-shadow: 
+      0 25px 50px -12px rgba(0, 0, 0, 0.5),
+      0 0 0 1px rgba(255, 255, 255, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .login-input {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .login-input:focus {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+  }
+
+  .login-button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .login-button:hover:not(:disabled) {
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+  }
+
+  .login-button:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .floating-label {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    color: hsl(var(--muted-foreground));
+  }
+
+  .floating-label.focused,
+  .floating-label.has-value {
+    top: -8px;
+    left: 8px;
+    font-size: 0.75rem;
+    background: hsl(var(--background));
+    padding: 0 4px;
+    color: hsl(var(--primary));
   }
 }

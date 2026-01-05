@@ -200,7 +200,7 @@ const Index = () => {
     };
     return translations[value] || value;
   };
-
+  
   // Calculate additional stats
   const totalEmployees = (dashboardStats as any)?.totalEmployees || 0;
   const maleCount = (genderData as any[]).find((g: any) => g.name === 'Nam')?.value || 0;
@@ -368,13 +368,13 @@ const Index = () => {
           </div>
 
           {/* Date picker tương ứng với lựa chọn */}
-          <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4">
             {filterMode === 'single' && (
               <div className="space-y-2">
                 <Label htmlFor="date-filter">{t('dashboard.selectDate')}</Label>
-                <Input
-                  id="date-filter"
-                  type="date"
+              <Input
+                id="date-filter"
+                type="date"
                   value={selectedDate || ''}
                   onChange={(e) => setSelectedDate(e.target.value || null)}
                   max={todayIso}
@@ -401,7 +401,7 @@ const Index = () => {
                     value={dateRange.end}
                     onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
                     min={dateRange.start}
-                    max={todayIso}
+                max={todayIso}
                   />
                 </div>
               </>
@@ -413,7 +413,7 @@ const Index = () => {
       {/* 3 Cột thống kê: Ngày/Tháng/Năm - CHỈ HIỂN THỊ 1 LẦN */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {/* Cột 1: Hôm nay */}
-        <div className="p-4 bg-card border border-border rounded-lg">
+        <div className="p-4 bg-card border-2 border-border rounded-lg">
           <div className="flex items-center gap-2 mb-4">
             <Calendar className="w-5 h-5 text-primary" />
             <h3 className="font-semibold text-lg">{t('dashboard.today')}</h3>
@@ -441,7 +441,7 @@ const Index = () => {
         </div>
 
         {/* Cột 2: Tháng này */}
-        <div className="p-4 bg-card border border-border rounded-lg">
+        <div className="p-4 bg-card border-2 border-border rounded-lg">
           <div className="flex items-center gap-2 mb-4">
             <Calendar className="w-5 h-5 text-info" />
             <h3 className="font-semibold text-lg">{t('dashboard.thisMonth')}</h3>
@@ -469,7 +469,7 @@ const Index = () => {
         </div>
 
         {/* Cột 3: Năm này */}
-        <div className="p-4 bg-card border border-border rounded-lg">
+        <div className="p-4 bg-card border-2 border-border rounded-lg">
           <div className="flex items-center gap-2 mb-4">
             <Calendar className="w-5 h-5 text-warning" />
             <h3 className="font-semibold text-lg">{t('dashboard.thisYear')}</h3>
@@ -562,7 +562,7 @@ const Index = () => {
       {/* Charts - Grid 4 cột: Tỷ lệ phân bổ */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {/* 1. Tỷ lệ đi làm: Chính thức - Thời vụ */}
-        <div className="p-4 bg-card border border-border rounded-lg">
+        <div className="p-4 bg-card border-2 border-border rounded-lg">
           <h3 className="text-base font-semibold mb-3">{t('dashboard.ratioOfficialSeasonal')}</h3>
           <div className="h-[220px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -607,7 +607,7 @@ const Index = () => {
         </div>
 
         {/* 2. Tỷ lệ Nam - Nữ */}
-        <div className="p-4 bg-card border border-border rounded-lg">
+        <div className="p-4 bg-card border-2 border-border rounded-lg">
           <h3 className="text-base font-semibold mb-3">{t('dashboard.ratioMaleFemale')}</h3>
           <div className="h-[220px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -652,7 +652,7 @@ const Index = () => {
         </div>
 
         {/* 3. Tỷ lệ theo lứa tuổi */}
-        <div className="p-4 bg-card border border-border rounded-lg">
+        <div className="p-4 bg-card border-2 border-border rounded-lg">
           <h3 className="text-base font-semibold mb-3">{t('dashboard.ratioByAge')}</h3>
           <div className="h-[220px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -688,7 +688,7 @@ const Index = () => {
         </div>
 
         {/* 4. Tỷ lệ đi làm các bộ phận */}
-        <div className="p-4 bg-card border border-border rounded-lg">
+        <div className="p-4 bg-card border-2 border-border rounded-lg">
           <h3 className="text-base font-semibold mb-3">{t('dashboard.attendanceByDepartment')}</h3>
           <div className="h-[220px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -724,7 +724,7 @@ const Index = () => {
       {/* Charts Row - 7 ngày gần nhất */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Attendance Chart */}
-        <div className="p-4 bg-card border border-border rounded-lg">
+        <div className="p-4 bg-card border-2 border-border rounded-lg">
           <h3 className="text-lg font-semibold mb-4">{t('dashboard.attendanceRateLast7Days')}</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -754,7 +754,7 @@ const Index = () => {
         </div>
 
         {/* Quick Stats */}
-        <div className="p-4 bg-card border border-border rounded-lg">
+        <div className="p-4 bg-card border-2 border-border rounded-lg">
           <h3 className="text-lg font-semibold mb-4">{t('dashboard.attendanceLast7Days') || 'Số lượng đi làm 7 ngày gần nhất'}</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">

@@ -169,7 +169,7 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
     navigate('/login');
   };
   return (
-    <header className="sticky top-0 z-30 h-16 bg-topbar-bg border-b border-border shadow-topbar flex items-center px-4 gap-4">
+    <header className="sticky top-0 z-30 h-16 bg-topbar-bg border-b border-border shadow-topbar flex items-center px-4 gap-4 backdrop-blur-sm bg-opacity-95 transition-all duration-300">
       {/* Menu Toggle (Mobile) */}
       <Button
         variant="ghost"

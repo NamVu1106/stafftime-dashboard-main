@@ -127,6 +127,54 @@ export const getMe = async (req: Request, res: Response) => {
   }
 };
 
+// POST /api/auth/forgot-password - Reset password
+export const forgotPassword = async (req: Request, res: Response) => {
+  try {
+    const { username } = req.body;
+    
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+    
+    const user = await prisma.user.findUnique({
+      where: { username },
+    });
+    
+    if (!user) {
+      // Don't reveal if user exists or not for security
+      return res.json({
+        success: true,
+        message: 'Nếu tài khoản tồn tại, mật khẩu đã được reset về mặc định.',
+        newPassword: 'admin123',
+        warning: 'Vui lòng đổi mật khẩu sau khi đăng nhập!'
+      });
+    }
+    
+    // Generate a temporary password (or use default)
+    const tempPassword = 'admin123'; // Default password
+    const password_hash = await bcrypt.hash(tempPassword, 10);
+    
+    // Update user password
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password_hash,
+        updated_at: new Date().toISOString(),
+      },
+    });
+    
+    res.json({
+      success: true,
+      message: 'Mật khẩu đã được reset thành công!',
+      username: user.username,
+      newPassword: tempPassword,
+      warning: '⚠️ Vui lòng đổi mật khẩu ngay sau khi đăng nhập để bảo mật!'
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 // GET/POST /api/auth/create-default - Create default admin user
 export const createDefaultUser = async (req: Request, res: Response) => {
   try {

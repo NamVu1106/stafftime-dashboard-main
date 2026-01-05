@@ -212,14 +212,14 @@ const RealtimePage = () => {
             <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
+          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-400px)] relative">
+            <table className="w-full data-table">
+              <thead className="sticky top-0 z-30 bg-muted">
                 <tr className="border-b">
-                  <th className="text-left p-2">{t('dashboard.employeeCode')}</th>
-                  <th className="text-left p-2">{t('realtime.name')}</th>
-                  <th className="text-left p-2">{t('dashboard.department')}</th>
-                  <th className="text-left p-2">{t('realtime.status')}</th>
+                  <th className="text-left p-2 bg-muted" style={{ position: 'sticky', top: 0 }}>{t('dashboard.employeeCode')}</th>
+                  <th className="text-left p-2 bg-muted" style={{ position: 'sticky', top: 0 }}>{t('realtime.name')}</th>
+                  <th className="text-left p-2 bg-muted" style={{ position: 'sticky', top: 0 }}>{t('dashboard.department')}</th>
+                  <th className="text-left p-2 bg-muted" style={{ position: 'sticky', top: 0 }}>{t('realtime.status')}</th>
                 </tr>
               </thead>
               <tbody>
