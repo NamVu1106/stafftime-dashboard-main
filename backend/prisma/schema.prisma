@@ -1,0 +1,131 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Employee {
+  id                  Int      @id @default(autoincrement())
+  employee_code       String   @unique
+  name                String
+  gender              String   // 'Nam' | 'Nữ'
+  date_of_birth       String
+  age                 Int
+  department          String
+  employment_type     String   // 'Chính thức' | 'Thời vụ'
+  cccd                String?
+  hometown            String?
+  permanent_residence String?  // HKTT
+  temporary_residence String?  // ĐKTT
+  marital_status      String?  // 'Độc thân' | 'Đã kết hôn' | 'Ly hôn' | 'Góa'
+  phone               String?
+  avatar_url          String?
+  created_at          String   @default("")
+  updated_at          String   @default("")
+  
+  family_members      FamilyMember[]
+  timekeeping_records TimekeepingRecord[]
+  
+  @@map("employees")
+}
+
+model FamilyMember {
+  id          Int      @id @default(autoincrement())
+  employee_id Int
+  relation    String   // Quan hệ: Vợ, Chồng, Con, Bố, Mẹ, etc.
+  name        String
+  occupation  String   // Nghề nghiệp
+  
+  employee    Employee @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  
+  @@map("family_members")
+}
+
+model TimekeepingRecord {
+  id               Int      @id @default(autoincrement())
+  employee_code    String
+  employee_id      Int?
+  employee_name    String
+  date             String
+  day_of_week      String
+  check_in         String
+  check_out        String
+  late_minutes     Int      @default(0)
+  early_minutes    Int      @default(0)
+  workday          Float
+  total_hours      Float
+  overtime_hours   Float    @default(0)
+  total_all_hours  Float
+  shift            String   // 'CA NGAY' | 'CA DEM' | '***'
+  department       String
+  created_at       String   @default("") // Thời gian upload để sắp xếp dữ liệu mới trước
+  is_archived      Int      @default(0) // 0 = dữ liệu mới (hiển thị ở Báo cáo), 1 = dữ liệu cũ (lưu ở Lịch sử)
+  
+  employee         Employee? @relation(fields: [employee_id], references: [id], onDelete: SetNull)
+  
+  @@index([employee_code])
+  @@index([date])
+  @@index([department])
+  @@index([created_at])
+  @@index([is_archived])
+  @@map("timekeeping_records")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  password_hash String
+  role         String   @default("admin") // 'admin' | 'user'
+  created_at   String   @default("")
+  updated_at   String   @default("")
+  
+  @@map("users")
+}
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  type        String   // 'upload_success' | 'late_employees' | 'new_employees'
+  title       String
+  message     String
+  is_read     Int      @default(0) // 0 = unread, 1 = read
+  metadata    String?  // JSON string for additional data (e.g., count, date)
+  created_at  String   @default("")
+  
+  @@index([is_read])
+  @@index([created_at])
+  @@map("notifications")
+}
+
+// Raw Excel store for Nhân viên chính thức / thời vụ - display y hệt form Excel
+model EmployeeExcelStore {
+  id          Int    @id @default(autoincrement())
+  type        String @unique // 'official' | 'seasonal'
+  headers     String // JSON array of column names
+  rows        String // JSON array of row objects
+  created_at  String @default("")
+  updated_at  String @default("")
+  @@map("employee_excel_store")
+}
+
+// HR Excel uploads (store metadata + file reference so each HR template has its own page)
+model HrExcelUpload {
+  id                 Int    @id @default(autoincrement())
+  report_type        String // e.g. 'attendance-official', 'attendance-temp', 'bhxh', ...
+  original_file_name String
+  stored_file_name   String // filename in /uploads
+  sheet_names        String // JSON string array of sheet names
+  default_sheet      String
+  created_at         String @default("")
+
+  @@index([report_type])
+  @@index([created_at])
+  @@map("hr_excel_uploads")
+}
+
+

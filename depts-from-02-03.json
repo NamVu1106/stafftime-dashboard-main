@@ -1,0 +1,123 @@
+{
+  "sheets": [
+    "Sheet1"
+  ],
+  "departments": [
+    "EQM",
+    "KG",
+    "MM",
+    "QC",
+    "SAN XUAT",
+    "SM",
+    "TEST",
+    "THOI VU",
+    "VPQL"
+  ],
+  "sample": [
+    {
+      "sheet": "Sheet1",
+      "row": 1,
+      "data": [
+        "CHI TIẾT CHẤM CÔNG",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]
+    },
+    {
+      "sheet": "Sheet1",
+      "row": 2,
+      "data": [
+        "STT",
+        "Mã nhân viên",
+        "Tên nhân viên",
+        "Phòng Ban",
+        "Ngày",
+        "Thứ",
+        "Giờ vào",
+        "Giờ ra",
+        "Trễ",
+        "Sớm",
+        "Công",
+        "Tổng giờ",
+        "Tăng ca",
+        "Tổng toàn bộ",
+        "Ca"
+      ]
+    },
+    {
+      "sheet": "Sheet1",
+      "row": 3,
+      "data": [
+        "1",
+        "Phạm Mạnh Cường",
+        "23046559HG",
+        "VPQL",
+        "2/2/26",
+        "Hai",
+        "",
+        "",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "***"
+      ]
+    },
+    {
+      "sheet": "Sheet1",
+      "row": 4,
+      "data": [
+        "2",
+        "Phạm Mạnh Cường",
+        "23046559HG",
+        "VPQL",
+        "2/3/26",
+        "Ba",
+        "",
+        "",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "***"
+      ]
+    },
+    {
+      "sheet": "Sheet1",
+      "row": 5,
+      "data": [
+        "3",
+        "Phạm Thị Nhung",
+        "17030560HG",
+        "VPQL",
+        "2/2/26",
+        "Hai",
+        "7:52",
+        "12:00",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "***"
+      ]
+    }
+  ]
+}
