@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Users, TrendingUp, Clock, Timer, UserCheck, Users2, Calendar, Building2, Filter, Loader2, Shield, ClipboardList, Calculator, FileText } from 'lucide-react';
+import { Users, TrendingUp, Clock, Timer, UserCheck, Users2, Calendar, Building2, Filter, Loader2, Shield, ClipboardList, Calculator, FileText, Briefcase, ShoppingCart } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DashboardAccounting } from '@/components/dashboard/DashboardAccounting';
 import { DashboardAdministration } from '@/components/dashboard/DashboardAdministration';
+import { DashboardCongVu } from '@/components/dashboard/DashboardCongVu';
+import { DashboardMuaHang } from '@/components/dashboard/DashboardMuaHang';
 import { hrExcelAPI, statisticsAPI, timekeepingAPI } from '@/services/api';
 import { useI18n } from '@/contexts/I18nContext';
 import { formatNumberPlain } from '@/lib/utils';
@@ -448,7 +450,7 @@ const Index = () => {
         description={`${t('dashboard.welcome')} ${headerDateLabel}.`}
       />
 
-      {/* Bộ lọc thời gian — áp dụng cho cả 3 tab Kế toán, Hành chính, Nhân sự */}
+      {/* Bộ lọc thời gian — áp dụng cho tất cả tab */}
       <div className="mb-6 p-4 bg-card border border-border rounded-lg">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-5 h-5 text-muted-foreground" />
@@ -560,9 +562,9 @@ const Index = () => {
         </div>
       </div>
 
-      {/* 3 hạng mục: Kế toán, Hành chính, Nhân sự */}
+      {/* 5 hạng mục: Kế toán, Hành chính, Nhân sự, Công vụ, Mua hàng */}
       <Tabs defaultValue="hr" className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-3 mb-6 h-11">
+        <TabsList className="grid w-full max-w-2xl grid-cols-5 mb-6 h-11">
           <TabsTrigger value="accounting" className="flex items-center gap-2">
             <Calculator className="w-4 h-4" />
             Kế toán
@@ -574,6 +576,14 @@ const Index = () => {
           <TabsTrigger value="hr" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
             Nhân sự
+          </TabsTrigger>
+          <TabsTrigger value="congvu" className="flex items-center gap-2">
+            <Briefcase className="w-4 h-4" />
+            Công vụ
+          </TabsTrigger>
+          <TabsTrigger value="muahang" className="flex items-center gap-2">
+            <ShoppingCart className="w-4 h-4" />
+            Mua hàng
           </TabsTrigger>
         </TabsList>
 
@@ -588,6 +598,24 @@ const Index = () => {
 
         <TabsContent value="administration" className="mt-0">
           <DashboardAdministration
+            filterMode={filterMode}
+            selectedDate={selectedDate}
+            dateRange={dateRange}
+            baseDate={baseDate}
+          />
+        </TabsContent>
+
+        <TabsContent value="congvu" className="mt-0">
+          <DashboardCongVu
+            filterMode={filterMode}
+            selectedDate={selectedDate}
+            dateRange={dateRange}
+            baseDate={baseDate}
+          />
+        </TabsContent>
+
+        <TabsContent value="muahang" className="mt-0">
+          <DashboardMuaHang
             filterMode={filterMode}
             selectedDate={selectedDate}
             dateRange={dateRange}
