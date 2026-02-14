@@ -248,6 +248,7 @@ export default {
   },
   sidebar: {
     home: 'Trang chủ',
+    revisionHistory: 'Lịch sử sửa đổi',
     overview: 'Tổng quan',
     dashboard: 'Dashboard',
     realtime: 'Real-time',

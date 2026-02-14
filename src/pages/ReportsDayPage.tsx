@@ -9,45 +9,40 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { statisticsAPI, timekeepingAPI } from '@/services/api';
 import { DataTable } from '@/components/shared/DataTable';
 import { useI18n } from '@/contexts/I18nContext';
+import { useTimeFilter } from '@/contexts/TimeFilterContext';
 
 const ReportsDayPage = () => {
   const { t } = useI18n();
-  // Mặc định là ngày hôm nay
-  const getToday = () => {
-    const today = new Date();
-    const y = today.getFullYear();
-    const m = String(today.getMonth() + 1).padStart(2, '0');
-    const d = String(today.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
-
-  const [selectedDate, setSelectedDate] = useState(getToday());
+  const { filterMode, selectedDate, baseDate, toLocalYmd } = useTimeFilter();
+  const selectedDateEffective = (filterMode === 'day' || filterMode === 'month' || filterMode === 'year')
+    ? toLocalYmd(new Date())
+    : (selectedDate || baseDate || toLocalYmd(new Date()));
   const [department, setDepartment] = useState('all');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const limit = 20;
 
-  // Fetch statistics cho ngày được chọn
+  // Fetch statistics cho ngày được chọn — dùng bộ lọc chung từ Sidebar
   const { data: stats, isLoading: loadingStats } = useQuery({
-    queryKey: ['statistics-day', selectedDate, department],
+    queryKey: ['statistics-day', selectedDateEffective, department],
     queryFn: () => statisticsAPI.getDashboard({
-      date: selectedDate,
+      date: selectedDateEffective,
     }),
-    enabled: !!selectedDate,
+    enabled: !!selectedDateEffective,
   });
 
   // Fetch timekeeping data cho ngày được chọn
   const { data: timekeepingData, isLoading: loadingData } = useQuery({
-    queryKey: ['timekeeping-day', selectedDate, department, search, page],
+    queryKey: ['timekeeping-day', selectedDateEffective, department, search, page],
     queryFn: () => timekeepingAPI.getAll({
-      date: selectedDate,
+      date: selectedDateEffective,
       department: department === 'all' ? undefined : department,
       search,
       page,
       limit,
       archived: false,
     }),
-    enabled: !!selectedDate,
+    enabled: !!selectedDateEffective,
   });
 
   const handleExport = () => {
@@ -71,22 +66,13 @@ const ReportsDayPage = () => {
         description={t('reports.byDayDescription')}
       />
 
-      {/* Bộ lọc */}
+      {/* Bộ lọc — Ngày dùng chung từ Sidebar (Bộ lọc thời gian) */}
       <div className="mb-6 p-4 bg-card border border-border rounded-lg">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-5 h-5 text-muted-foreground" />
           <h3 className="font-semibold">{t('common.filter')}</h3>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div className="space-y-2">
-            <Label htmlFor="date">{t('reports.selectDate')}</Label>
-            <Input
-              id="date"
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-            />
-          </div>
           <div className="space-y-2">
             <Label htmlFor="department">{t('reports.department')}</Label>
             <Select value={department} onValueChange={setDepartment}>
@@ -122,10 +108,10 @@ const ReportsDayPage = () => {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button onClick={handleSearch} disabled={!selectedDate}>
+          <Button onClick={handleSearch} disabled={!selectedDateEffective}>
             {t('reports.viewReport')}
           </Button>
-          <Button onClick={handleExport} variant="outline" disabled={!selectedDate}>
+          <Button onClick={handleExport} variant="outline" disabled={!selectedDateEffective}>
             <Download className="w-4 h-4 mr-2" />
             {t('reports.exportExcel')}
           </Button>
@@ -135,7 +121,7 @@ const ReportsDayPage = () => {
       {/* Thống kê tổng hợp */}
       {stats && (
         <div className="mb-6 p-4 bg-card border border-border rounded-lg">
-          <h3 className="font-semibold text-lg mb-4">{t('reports.statisticsForDay')} {selectedDate}</h3>
+          <h3 className="font-semibold text-lg mb-4">{t('reports.statisticsForDay')} {selectedDateEffective}</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-4 bg-muted/50 rounded-lg">
               <div className="flex items-center gap-2 mb-2">
@@ -215,7 +201,7 @@ const ReportsDayPage = () => {
           </>
         ) : (
           <div className="text-center py-8 text-muted-foreground">
-            {selectedDate ? t('reports.noDataForDay') : t('reports.pleaseSelectDay')}
+            {selectedDateEffective ? t('reports.noDataForDay') : t('reports.pleaseSelectDay')}
           </div>
         )}
       </div>

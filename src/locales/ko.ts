@@ -248,6 +248,7 @@ export default {
   },
   sidebar: {
     home: '홈',
+    revisionHistory: '재·개정 이력',
     overview: '개요',
     dashboard: '대시보드',
     realtime: '실시간',

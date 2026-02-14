@@ -1,5 +1,5 @@
-import { Bell, Menu, User, LogOut, X, Trash2, AlertTriangle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Bell, Menu, User, LogOut, X, Trash2, AlertTriangle, Search, Settings, Calculator, FileText, Users, Briefcase, ShoppingCart, Home, HelpCircle } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useI18n } from '@/contexts/I18nContext';
 import { Button } from '@/components/ui/button';
@@ -11,11 +11,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationsAPI } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
+import { useDashboardTab } from '@/contexts/DashboardTabContext';
 
 interface TopBarProps {
   onMenuClick: () => void;
@@ -67,9 +69,12 @@ const formatTimeAgo = (dateString: string): string => {
 export const TopBar = ({ onMenuClick }: TopBarProps) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { t, language } = useI18n();
+  const { activeDeptTab, setActiveDeptTab, setSelectedFunction } = useDashboardTab();
+  const isDashboard = location.pathname === '/';
 
   // Fetch notifications
   const { data: notifications = [], refetch: refetchNotifications } = useQuery<Notification[]>({
@@ -168,20 +173,113 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
     logout();
     navigate('/login');
   };
+  const formatHeaderDate = () => {
+    return new Date().toLocaleDateString(language === 'vi' ? 'vi-VN' : 'ko-KR', {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }) + ' (GMT+7)';
+  };
+
   return (
-    <header className="sticky top-0 z-30 h-16 bg-topbar-bg border-b border-border shadow-topbar flex items-center px-4 gap-4 backdrop-blur-sm bg-opacity-95 transition-all duration-300">
+    <header className="sticky top-0 z-30 bg-topbar-bg border-b border-border shadow-topbar backdrop-blur-sm bg-opacity-95 transition-all duration-300">
+      <div className="flex items-center px-4 gap-4 h-14 min-h-[3.5rem]">
       {/* Menu Toggle (Mobile) */}
       <Button
         variant="ghost"
         size="icon"
-        className="lg:hidden"
+        className="lg:hidden shrink-0"
         onClick={onMenuClick}
       >
         <Menu className="w-5 h-5" />
       </Button>
 
+      {/* Left - Local, Config, Date (YS-Smart style) */}
+      <div className="hidden md:flex items-center gap-4 text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">Local</span>
+        <button type="button" className="flex items-center gap-1 hover:text-foreground transition-colors" title="Config">
+          <Settings className="w-4 h-4" />
+          <span>Config</span>
+        </button>
+        <span className="text-xs">{formatHeaderDate()}</span>
+      </div>
+
+      {/* Department tabs - cùng hàng với Local, Config, Search (chỉ khi ở Trang chủ) */}
+      {isDashboard && (
+        <div className="flex items-center gap-1 border-l border-border pl-4 ml-2 overflow-x-auto min-w-0 shrink">
+          {[
+            { value: 'accounting', label: 'Kế toán', icon: Calculator },
+            { value: 'administration', label: 'Hành chính', icon: FileText },
+            { value: 'hr', label: 'Nhân sự', icon: Users },
+            { value: 'congvu', label: 'Công vụ', icon: Briefcase },
+            { value: 'muahang', label: 'Mua hàng', icon: ShoppingCart },
+          ].map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => {
+                setActiveDeptTab(tab.value);
+                setSelectedFunction(null);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors shrink-0 ${
+                activeDeptTab === tab.value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Icon toolbar - Home, Help, Settings (MES 2.0 style) */}
+      <div className="hidden md:flex items-center gap-1 border-l border-border pl-4">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9"
+          onClick={() => navigate('/')}
+          title={language === 'vi' ? 'Trang chủ' : '홈'}
+        >
+          <Home className="w-5 h-5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9"
+          onClick={() => toast({ title: 'Help', description: language === 'vi' ? 'Trợ giúp - YS Smart' : '도움말' })}
+          title={language === 'vi' ? 'Trợ giúp' : '도움말'}
+        >
+          <HelpCircle className="w-5 h-5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9"
+          title="Config"
+        >
+          <Settings className="w-5 h-5" />
+        </Button>
+      </div>
+
+      {/* Center - Search (YS-Smart Quick Search) */}
+      <div className="flex-1 max-w-md mx-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder={language === 'vi' ? 'Tìm kiếm nhanh...' : '빠른 검색...'}
+            className="pl-9 h-9 bg-muted/50 border-0 focus-visible:ring-2"
+          />
+        </div>
+      </div>
+
       {/* Right Side */}
-      <div className="flex items-center gap-2 ml-auto">
+      <div className="flex items-center gap-2 shrink-0">
         {/* Language Switcher */}
         <LanguageSwitcher />
 
@@ -311,6 +409,7 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+      </div>
       </div>
     </header>
   );

@@ -6,89 +6,96 @@
 
 @layer base {
   :root {
-    --background: 220 14% 96%;
-    --foreground: 220 13% 13%;
+    /* YS-Smart: Navy blue primary, light blue accent */
+    --background: 210 20% 98%;
+    --foreground: 215 25% 15%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 13% 13%;
+    --card-foreground: 215 25% 15%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 13% 13%;
+    --popover-foreground: 215 25% 15%;
 
-    --primary: 211 100% 50%;
+    /* Primary: Deep blue (YS-Smart brand) */
+    --primary: 215 75% 38%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 9% 46%;
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 210 20% 92%;
+    --secondary-foreground: 215 25% 15%;
 
-    --muted: 220 14% 90%;
-    --muted-foreground: 220 9% 46%;
+    --muted: 210 20% 94%;
+    --muted-foreground: 215 15% 45%;
 
-    --accent: 220 14% 96%;
-    --accent-foreground: 220 13% 13%;
+    --accent: 200 80% 50%;
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 71% 45%;
+    --success: 142 71% 40%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 45 93% 47%;
+    --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
-    --info: 189 94% 43%;
+    --info: 200 90% 48%;
     --info-foreground: 0 0% 100%;
 
-    --border: 220 13% 85%;
-    --input: 220 13% 91%;
-    --ring: 211 100% 50%;
+    --border: 214 20% 88%;
+    --input: 214 20% 92%;
+    --ring: 215 75% 38%;
 
     --radius: 0.5rem;
 
-    --sidebar-bg: 220 13% 18%;
-    --sidebar-foreground: 220 14% 90%;
-    --sidebar-active: 211 100% 50%;
-    --sidebar-hover: 220 13% 25%;
+    /* YS-Smart sidebar: dark navy */
+    --sidebar-bg: 215 40% 15%;
+    --sidebar-foreground: 210 20% 95%;
+    --sidebar-active: 200 80% 50%;
+    --sidebar-hover: 215 35% 22%;
 
     --topbar-bg: 0 0% 100%;
-    --topbar-shadow: 0 2px 4px 0 rgba(0,0,0,0.08);
+    --topbar-shadow: 0 1px 3px 0 rgba(0,0,0,0.06);
+
+    /* YS-Smart accent colors */
+    --ys-navbar: 215 75% 32%;
+    --ys-accent-light: 200 70% 55%;
   }
 
   .dark {
-    --background: 220 13% 10%;
-    --foreground: 220 14% 96%;
+    --background: 215 30% 8%;
+    --foreground: 210 20% 95%;
 
-    --card: 220 13% 13%;
-    --card-foreground: 220 14% 96%;
+    --card: 215 25% 12%;
+    --card-foreground: 210 20% 95%;
 
-    --popover: 220 13% 13%;
-    --popover-foreground: 220 14% 96%;
+    --popover: 215 25% 12%;
+    --popover-foreground: 210 20% 95%;
 
-    --primary: 211 100% 50%;
+    --primary: 200 80% 50%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 9% 46%;
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 215 25% 18%;
+    --secondary-foreground: 210 20% 95%;
 
-    --muted: 220 13% 20%;
-    --muted-foreground: 220 9% 60%;
+    --muted: 215 25% 18%;
+    --muted-foreground: 215 15% 60%;
 
-    --accent: 220 13% 20%;
-    --accent-foreground: 220 14% 96%;
+    --accent: 200 70% 45%;
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 62% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 13% 30%;
-    --input: 220 13% 20%;
-    --ring: 211 100% 50%;
+    --border: 215 25% 25%;
+    --input: 215 25% 18%;
+    --ring: 200 80% 50%;
 
-    --sidebar-bg: 220 13% 8%;
-    --sidebar-foreground: 220 14% 90%;
-    --sidebar-active: 211 100% 50%;
-    --sidebar-hover: 220 13% 15%;
+    --sidebar-bg: 215 40% 10%;
+    --sidebar-foreground: 210 20% 95%;
+    --sidebar-active: 200 80% 50%;
+    --sidebar-hover: 215 35% 18%;
 
-    --topbar-bg: 220 13% 13%;
+    --topbar-bg: 215 30% 12%;
   }
 }
 

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
+import { DashboardTabProvider } from '@/contexts/DashboardTabContext';
+import { TimeFilterProvider } from '@/contexts/TimeFilterContext';
 import { cn } from '@/lib/utils';
 
 export const AdminLayout = () => {
@@ -9,6 +11,8 @@ export const AdminLayout = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
+    <DashboardTabProvider>
+    <TimeFilterProvider>
     <div className="min-h-screen bg-background">
       {mobileMenuOpen && (
         <div
@@ -34,12 +38,17 @@ export const AdminLayout = () => {
         )}
       >
         <TopBar onMenuClick={() => setMobileMenuOpen(!mobileMenuOpen)} />
-        <main className="flex-1 min-h-0 overflow-auto p-4 md:p-6 page-content">
-          <div className="min-w-max w-full">
+        <main className="flex-1 min-h-0 overflow-auto p-4 md:p-6 page-content flex flex-col">
+          <div className="min-w-max w-full flex-1">
             <Outlet />
           </div>
+          <footer className="py-2 text-center text-xs text-muted-foreground border-t border-border mt-4">
+            New Idea, NO.1 Production
+          </footer>
         </main>
       </div>
     </div>
+    </TimeFilterProvider>
+    </DashboardTabProvider>
   );
 };

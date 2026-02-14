@@ -4,7 +4,6 @@ import {
   LayoutDashboard, 
   Upload, 
   Users, 
-  BarChart3, 
   FileText,
   History,
   ChevronLeft,
@@ -15,9 +14,11 @@ import {
   Clock,
   TrendingUp,
   Calendar,
-  GitCompare
+  GitCompare,
+  ScrollText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { TimeFilter } from '@/components/shared/TimeFilter';
 import {
   Collapsible,
   CollapsibleContent,
@@ -39,6 +40,7 @@ interface MenuItem {
 
 const getMenuItems = (t: (key: string) => string): MenuItem[] => [
   { path: '/', icon: LayoutDashboard, label: t('sidebar.home') },
+  { path: '/revision-history', icon: ScrollText, label: t('sidebar.revisionHistory') },
   {
     icon: TrendingUp,
     label: t('sidebar.overview'),
@@ -205,16 +207,21 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
         collapsed ? "w-16" : "w-64"
       )}
     >
-      {/* Logo */}
-      <div className="flex items-center h-16 px-4 border-b border-sidebar-hover">
+      {/* Logo - YS-Smart branding */}
+      <div className="flex items-center h-16 px-4 border-b border-sidebar-hover shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center flex-shrink-0">
-            <BarChart3 className="w-5 h-5 text-primary-foreground" />
+          <div className="w-10 h-10 bg-[hsl(200,80%,50%)] rounded-lg flex items-center justify-center flex-shrink-0 font-bold text-white text-sm">
+            YS
           </div>
           {!collapsed && (
-            <span className="text-sidebar-foreground font-semibold text-lg whitespace-nowrap">
-              CHẤM CÔNG
-            </span>
+            <div className="flex flex-col">
+              <span className="text-sidebar-foreground font-bold text-base leading-tight">
+                YS-Smart
+              </span>
+              <span className="text-sidebar-foreground/70 text-xs">
+                You Sung Vina
+              </span>
+            </div>
           )}
         </div>
       </div>
@@ -224,7 +231,18 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
         <ul className="space-y-1">
           {menuItems.map((item, index) => renderMenuItem(item, index))}
         </ul>
+        {/* Bộ lọc thời gian - ngay dưới Lịch sử, đồng bộ toàn hệ thống */}
+        <TimeFilter collapsed={collapsed} />
       </nav>
+
+      {/* Footer - New Idea, NO.1 Production */}
+      {!collapsed && (
+        <div className="px-4 py-3 border-t border-sidebar-hover shrink-0">
+          <p className="text-xs text-sidebar-foreground/60 text-center">
+            New Idea, NO.1 Production
+          </p>
+        </div>
+      )}
 
       {/* Toggle Button */}
       <button

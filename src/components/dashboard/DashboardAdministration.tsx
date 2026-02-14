@@ -19,9 +19,11 @@ export interface DashboardAdministrationProps {
   selectedDate?: string | null;
   dateRange?: { start: string; end: string };
   baseDate?: string;
+  /** Khi có view: chỉ hiển thị dashboard của chức năng đó. all = tổng quan */
+  view?: 'all' | 'drug' | 'medical';
 }
 
-export const DashboardAdministration = ({ filterMode, selectedDate, dateRange, baseDate }: DashboardAdministrationProps) => {
+export const DashboardAdministration = ({ filterMode, selectedDate, dateRange, baseDate, view = 'all' }: DashboardAdministrationProps) => {
   const { t } = useI18n();
 
   const formatNum = (v: any) => (Number.isFinite(Number(v)) ? formatNumberPlain(v) : t('dashboard.na'));
@@ -47,30 +49,41 @@ export const DashboardAdministration = ({ filterMode, selectedDate, dateRange, b
     { name: 'Phòng y tế (tổng tiền)', value: Number(hrMedicalMoneySum) || 0, color: '#10B981' },
   ].filter((d) => d.value > 0);
 
+  const showDrug = view === 'all' || view === 'drug';
+  const showMedical = view === 'all' || view === 'medical';
+
   return (
     <div className="space-y-6">
       <p className="text-muted-foreground">
-        Báo cáo Hành chính — Thuốc, Phòng y tế. Số liệu từ file Excel đã upload tại Nhân sự (HR).
+        {view === 'all'
+          ? 'Báo cáo Hành chính — Thuốc, Phòng y tế. Số liệu từ file Excel đã upload tại Nhân sự (HR).'
+          : view === 'drug'
+          ? 'Xuất nhập tồn thuốc. Số liệu từ file Excel đã upload tại Nhân sự (HR).'
+          : 'Phòng y tế — tổng tiền sử dụng. Số liệu từ file Excel đã upload tại Nhân sự (HR).'}
       </p>
 
       {/* Thẻ chỉ số Hành chính */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
-        <StatCard
-          title="Thuốc (xuất qty)"
-          value={hrDrugExportQtyValue}
-          icon={Package}
-          variant="warning"
-        />
-        <StatCard
-          title="Phòng y tế (tổng tiền)"
-          value={hrMedicalMoneyValue}
-          icon={Stethoscope}
-          variant="info"
-        />
+        {showDrug && (
+          <StatCard
+            title="Thuốc (xuất qty)"
+            value={hrDrugExportQtyValue}
+            icon={Package}
+            variant="warning"
+          />
+        )}
+        {showMedical && (
+          <StatCard
+            title="Phòng y tế (tổng tiền)"
+            value={hrMedicalMoneyValue}
+            icon={Stethoscope}
+            variant="info"
+          />
+        )}
       </div>
 
-      {/* Biểu đồ tròn (chỉ khi có dữ liệu) */}
-      {chartData.length > 0 && (
+      {/* Biểu đồ tròn (chỉ khi có dữ liệu và view = all) */}
+      {chartData.length > 0 && view === 'all' && (
         <Card>
           <CardHeader>
             <CardTitle>Phân bổ Hành chính</CardTitle>
@@ -110,7 +123,7 @@ export const DashboardAdministration = ({ filterMode, selectedDate, dateRange, b
         </Card>
       )}
 
-      {chartData.length === 0 && (
+      {chartData.length === 0 && view === 'all' && (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             Chưa có dữ liệu. Upload file Xuất nhập tồn thuốc, Phòng y tế tại Nhân sự (HR) để hiển thị.

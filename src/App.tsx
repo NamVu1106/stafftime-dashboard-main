@@ -23,6 +23,7 @@ import DepartmentsListPage from "./pages/DepartmentsListPage";
 import ComparePage from "./pages/ComparePage";
 import WeeklyTemporaryWorkersPage from "./pages/WeeklyTemporaryWorkersPage";
 import HrReportPage from "./pages/HrReportPage";
+import RevisionHistoryPage from "./pages/RevisionHistoryPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -64,6 +65,7 @@ const App = () => (
             <Route path="/departments" element={<DepartmentsListPage />} />
             <Route path="/departments/:dept" element={<DepartmentPage />} />
             <Route path="/history" element={<HistoryPage />} />
+            <Route path="/revision-history" element={<RevisionHistoryPage />} />
           </Route>
             </Route>
             <Route path="*" element={<Navigate to="/login" replace />} />

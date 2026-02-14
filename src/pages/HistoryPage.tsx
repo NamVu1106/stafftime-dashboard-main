@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Filter, Loader2, Trash2, AlertTriangle } from 'lucide-react';
+import { useTimeFilter } from '@/contexts/TimeFilterContext';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
@@ -17,20 +18,18 @@ const HistoryPage = () => {
   const { t } = useI18n();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
-  // Default to last 90 days to show more historical data
-  const [dateRange, setDateRange] = useState({
-    start: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0],
-  });
+  const { params } = useTimeFilter();
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
 
-  // Fetch archived timekeeping data from API
+  const startDate = params.start_date || params.date || new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const endDate = params.end_date || params.date || new Date().toISOString().split('T')[0];
+
+  // Fetch archived timekeeping data from API — dùng bộ lọc chung từ Sidebar
   const { data: timekeepingResponse, isLoading, error } = useQuery({
-    queryKey: ['timekeeping-history', dateRange.start, dateRange.end, selectedDepartment],
+    queryKey: ['timekeeping-history', startDate, endDate, selectedDepartment],
     queryFn: () => timekeepingAPI.getAll({
-      start_date: dateRange.start,
-      end_date: dateRange.end,
+      start_date: startDate,
+      end_date: endDate,
       department: selectedDepartment !== 'all' ? selectedDepartment : undefined,
       archived: true, // Chỉ lấy dữ liệu lịch sử (đã được archive)
     }),
@@ -162,29 +161,13 @@ const HistoryPage = () => {
         }
       />
 
-      {/* Filters */}
+      {/* Filters — Từ ngày/Đến ngày dùng chung từ Sidebar */}
       <div className="chart-container mb-6">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-5 h-5 text-muted-foreground" />
           <h3 className="font-semibold">{t('history.filter')}</h3>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <Label>{t('history.fromDate')}</Label>
-            <Input
-              type="date"
-              value={dateRange.start}
-              onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>{t('history.toDate')}</Label>
-            <Input
-              type="date"
-              value={dateRange.end}
-              onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-            />
-          </div>
           <div className="space-y-2">
             <Label>{t('history.department')}</Label>
             <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>

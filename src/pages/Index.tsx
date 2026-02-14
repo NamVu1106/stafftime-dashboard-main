@@ -1,16 +1,21 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Users, TrendingUp, Clock, Timer, UserCheck, Users2, Calendar, Building2, Filter, Loader2, Shield, ClipboardList, Calculator, FileText, Briefcase, ShoppingCart } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Users, TrendingUp, Clock, Timer, UserCheck, Users2, Calendar, Building2, Loader2, Shield, ClipboardList, Calculator, FileText, Briefcase, ShoppingCart, Bell, Star, History, ArrowLeft } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DashboardAccounting } from '@/components/dashboard/DashboardAccounting';
 import { DashboardAdministration } from '@/components/dashboard/DashboardAdministration';
 import { DashboardCongVu } from '@/components/dashboard/DashboardCongVu';
 import { DashboardMuaHang } from '@/components/dashboard/DashboardMuaHang';
-import { hrExcelAPI, statisticsAPI, timekeepingAPI } from '@/services/api';
+import { useDashboardTab } from '@/contexts/DashboardTabContext';
+import { useTimeFilter } from '@/contexts/TimeFilterContext';
+import { SiteMapMenuTree } from '@/components/dashboard/SiteMapMenuTree';
+import { administrationMenu, accountingMenu, hrMenu, congvuMenu, muahangMenu, hrMenuRoute } from '@/data/departmentMenu';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+import { hrExcelAPI, statisticsAPI, timekeepingAPI, notificationsAPI } from '@/services/api';
 import { useI18n } from '@/contexts/I18nContext';
 import { formatNumberPlain } from '@/lib/utils';
 import { 
@@ -30,41 +35,22 @@ import {
 } from 'recharts';
 
 const Index = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
+  const navigate = useNavigate();
   // Bộ lọc ngày - mặc định là null để hiển thị tất cả dữ liệu
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [filterMode, setFilterMode] = useState<'day' | 'month' | 'year' | 'single' | 'range'>('day'); // day: hôm nay; month: tháng này; year: năm này; single: 1 ngày; range: giai đoạn
-  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
+  const { activeDeptTab, setActiveDeptTab, selectedFunction, setSelectedFunction } = useDashboardTab();
+  const {
+    filterMode,
+    selectedDate,
+    dateRange,
+    baseDate,
+    params,
+    toLocalYmd,
+    parseYmdLocal,
+    getMonthRange,
+  } = useTimeFilter();
 
-  const toLocalYmd = (dt: Date) => {
-    const y = dt.getFullYear();
-    const m = String(dt.getMonth() + 1).padStart(2, '0');
-    const d = String(dt.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
-
-  const parseYmdLocal = (ymd: string) => {
-    // ymd is expected as YYYY-MM-DD from <input type="date">
-    const parts = ymd.split('-').map(Number);
-    if (parts.length === 3 && parts.every(n => !Number.isNaN(n))) {
-      const [y, m, d] = parts;
-      return new Date(y, m - 1, d);
-    }
-    return new Date(ymd);
-  };
-
-  // Use local date to avoid timezone shift (toISOString() can change day)
   const todayIso = toLocalYmd(new Date());
-  const baseDate = selectedDate || todayIso;
-
-  const getMonthRange = (dateStr: string) => {
-    const d = parseYmdLocal(dateStr);
-    const year = d.getFullYear();
-    const month = d.getMonth(); // 0-based
-    const start = new Date(year, month, 1);
-    const end = new Date(year, month + 1, 0);
-    return { start: toLocalYmd(start), end: toLocalYmd(end) };
-  };
 
   const monthPlaceholderLabel = (() => {
     const d = parseYmdLocal(baseDate);
@@ -81,27 +67,6 @@ const Index = () => {
     const yy = d.getFullYear();
     return `${dd}/${mm}/${yy}`;
   })();
-
-  // Tính toán params cho filter hiện tại
-  // Khi filter "Hôm nay" (day): không truyền date → backend dùng ngày có dữ liệu mới nhất → luôn có tỷ lệ hiển thị
-  const params =
-    filterMode === 'month'
-      ? (() => {
-          const { start, end } = getMonthRange(baseDate);
-          return { date: undefined, start_date: start, end_date: end };
-        })()
-      : filterMode === 'year'
-      ? (() => {
-          const year = new Date().getFullYear();
-          return { date: undefined, start_date: `${year}-01-01`, end_date: `${year}-12-31` };
-        })()
-      : filterMode === 'range'
-      ? { date: undefined, start_date: dateRange.start || undefined, end_date: dateRange.end || undefined }
-      : filterMode === 'single'
-      ? { date: selectedDate || undefined, start_date: undefined, end_date: undefined }
-      : filterMode === 'day'
-      ? { date: undefined, start_date: undefined, end_date: undefined }
-      : { date: todayIso, start_date: undefined, end_date: undefined };
 
   // 3 cột thống kê: "Hôm nay" dùng ngày mới nhất (không truyền date) để luôn có số liệu
   const todayParams = { date: undefined, start_date: undefined, end_date: undefined };
@@ -209,6 +174,11 @@ const Index = () => {
   const { data: attendanceByDate = [] } = useQuery({
     queryKey: ['attendanceByDate'],
     queryFn: () => statisticsAPI.getAttendanceByDate(7),
+  });
+
+  const { data: noticeData = [] } = useQuery({
+    queryKey: ['notifications', 'dashboard'],
+    queryFn: () => notificationsAPI.getAll({ limit: 5 }),
   });
 
   const { data: recentTimekeepingData } = useQuery({
@@ -443,6 +413,12 @@ const Index = () => {
       ? t('dashboard.today').toLowerCase()
       : `${t('dashboard.oneDay')} ${formatDateDisplay(baseDate)}`;
 
+  const recentLinks = [
+    { path: '/', label: t('sidebar.dashboard') },
+    { path: '/reports/day', label: t('sidebar.byDay') },
+    { path: '/employees', label: t('sidebar.list') },
+  ];
+
   return (
     <div>
       <PageHeader 
@@ -450,180 +426,159 @@ const Index = () => {
         description={`${t('dashboard.welcome')} ${headerDateLabel}.`}
       />
 
-      {/* Bộ lọc thời gian — áp dụng cho tất cả tab */}
-      <div className="mb-6 p-4 bg-card border border-border rounded-lg">
-        <div className="flex items-center gap-2 mb-4">
-          <Filter className="w-5 h-5 text-muted-foreground" />
-          <h3 className="font-semibold">{t('dashboard.timeFilter')}</h3>
-        </div>
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="filter-mode"
-                value="day"
-                checked={filterMode === 'day'}
-                onChange={() => {
-                  setFilterMode('day');
-                  setSelectedDate(todayIso);
-                }}
-                className="w-4 h-4 text-primary"
-              />
-              <span className="text-sm">{t('dashboard.today')}</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="filter-mode"
-                value="month"
-                checked={filterMode === 'month'}
-                onChange={() => {
-                  setFilterMode('month');
-                  setSelectedDate(todayIso);
-                }}
-                className="w-4 h-4 text-primary"
-              />
-              <span className="text-sm">{t('dashboard.thisMonth')}</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="filter-mode"
-                value="year"
-                checked={filterMode === 'year'}
-                onChange={() => setFilterMode('year')}
-                className="w-4 h-4 text-primary"
-              />
-              <span className="text-sm">{t('dashboard.thisYear')}</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="filter-mode"
-                value="single"
-                checked={filterMode === 'single'}
-                onChange={() => setFilterMode('single')}
-                className="w-4 h-4 text-primary"
-              />
-              <span className="text-sm">{t('dashboard.oneDay')}</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="filter-mode"
-                value="range"
-                checked={filterMode === 'range'}
-                onChange={() => setFilterMode('range')}
-                className="w-4 h-4 text-primary"
-              />
-              <span className="text-sm">{t('dashboard.period')}</span>
-            </label>
-          </div>
-          <div className="flex items-center gap-4">
-            {filterMode === 'single' && (
-              <div className="space-y-2">
-                <Label htmlFor="date-filter">{t('dashboard.selectDate')}</Label>
-                <Input
-                  id="date-filter"
-                  type="date"
-                  value={selectedDate || ''}
-                  onChange={(e) => setSelectedDate(e.target.value || null)}
-                  max={todayIso}
-                />
+      {/* YS-Smart: Notice & Recent widgets */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <div className="lg:col-span-2 rounded-lg border border-border bg-card overflow-hidden">
+          <Tabs defaultValue="notice" className="w-full">
+            <TabsList className="w-full justify-start rounded-none border-b bg-muted/30 h-11">
+              <TabsTrigger value="notice" className="gap-2">
+                <Bell className="w-4 h-4" />
+                Notice
+              </TabsTrigger>
+              <TabsTrigger value="sns" className="gap-2">SNS</TabsTrigger>
+            </TabsList>
+            <TabsContent value="notice" className="mt-0 p-4">
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {(noticeData as any[]).length > 0 ? (
+                  (noticeData as any[]).map((n: any) => (
+                    <div key={n.id} className="flex items-start justify-between gap-2 py-2 border-b border-border last:border-0">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm truncate">{n.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(n.created_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground py-4">{t('common.noNotifications')}</p>
+                )}
               </div>
-            )}
-            {filterMode === 'range' && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="start-date">{t('dashboard.fromDate')}</Label>
-                  <Input
-                    id="start-date"
-                    type="date"
-                    value={dateRange.start}
-                    onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                    max={dateRange.end || todayIso}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="end-date">{t('dashboard.toDate')}</Label>
-                  <Input
-                    id="end-date"
-                    type="date"
-                    value={dateRange.end}
-                    onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                    min={dateRange.start}
-                    max={todayIso}
-                  />
-                </div>
-              </>
-            )}
+            </TabsContent>
+            <TabsContent value="sns" className="mt-0 p-4">
+              <p className="text-sm text-muted-foreground py-4">
+                {language === 'vi' ? 'Mạng xã hội nội bộ' : 'SNS 기능'}
+              </p>
+            </TabsContent>
+          </Tabs>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="space-y-4">
+            <div>
+              <h3 className="flex items-center gap-2 text-sm font-semibold mb-2">
+                <Star className="w-4 h-4 text-primary" />
+                Favorites
+              </h3>
+              <p className="text-xs text-muted-foreground">—</p>
+            </div>
+            <div>
+              <h3 className="flex items-center gap-2 text-sm font-semibold mb-2">
+                <History className="w-4 h-4 text-primary" />
+                Recent
+              </h3>
+              <ul className="space-y-1">
+                {recentLinks.map((link, i) => (
+                  <li key={link.path}>
+                    <Link to={link.path} className="text-sm text-primary hover:underline flex items-center gap-1">
+                      <span className="text-muted-foreground">{i + 1}.</span>
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* 5 hạng mục: Kế toán, Hành chính, Nhân sự, Công vụ, Mua hàng */}
-      <Tabs defaultValue="hr" className="w-full">
-        <TabsList className="grid w-full max-w-2xl grid-cols-5 mb-6 h-11">
-          <TabsTrigger value="accounting" className="flex items-center gap-2">
-            <Calculator className="w-4 h-4" />
-            Kế toán
-          </TabsTrigger>
-          <TabsTrigger value="administration" className="flex items-center gap-2">
-            <FileText className="w-4 h-4" />
-            Hành chính
-          </TabsTrigger>
-          <TabsTrigger value="hr" className="flex items-center gap-2">
-            <Users className="w-4 h-4" />
-            Nhân sự
-          </TabsTrigger>
-          <TabsTrigger value="congvu" className="flex items-center gap-2">
-            <Briefcase className="w-4 h-4" />
-            Công vụ
-          </TabsTrigger>
-          <TabsTrigger value="muahang" className="flex items-center gap-2">
-            <ShoppingCart className="w-4 h-4" />
-            Mua hàng
-          </TabsTrigger>
-        </TabsList>
+      {/* 5 hạng mục - tabs đã chuyển lên TopBar — Bộ lọc thời gian đã chuyển sang Sidebar */}
+      <div className="w-full">
+        {/* Kế toán */}
+        {activeDeptTab === 'accounting' && (
+          selectedFunction === null ? (
+            <SiteMapMenuTree
+              title="Kế toán — Chọn chức năng"
+              items={accountingMenu}
+              onSelect={(id) => setSelectedFunction(id)}
+            />
+          ) : (
+            <div className="space-y-4">
+              <Button variant="ghost" size="sm" onClick={() => setSelectedFunction(null)} className="gap-2">
+                <ArrowLeft className="w-4 h-4" />
+                Quay lại
+              </Button>
+              <DashboardAccounting
+                filterMode={filterMode}
+                selectedDate={selectedDate}
+                dateRange={dateRange}
+                baseDate={baseDate}
+                view={selectedFunction as 'all' | 'bhxh' | 'payroll' | 'daily-wage' | 'arrears'}
+              />
+            </div>
+          )
+        )}
 
-        <TabsContent value="accounting" className="mt-0">
-          <DashboardAccounting
-            filterMode={filterMode}
-            selectedDate={selectedDate}
-            dateRange={dateRange}
-            baseDate={baseDate}
+        {/* Hành chính */}
+        {activeDeptTab === 'administration' && (
+          selectedFunction === null ? (
+            <SiteMapMenuTree
+              title="Hành chính — Chọn chức năng"
+              items={administrationMenu}
+              onSelect={(id) => setSelectedFunction(id)}
+            />
+          ) : (
+            <div className="space-y-4">
+              <Button variant="ghost" size="sm" onClick={() => setSelectedFunction(null)} className="gap-2">
+                <ArrowLeft className="w-4 h-4" />
+                Quay lại
+              </Button>
+              <DashboardAdministration
+                filterMode={filterMode}
+                selectedDate={selectedDate}
+                dateRange={dateRange}
+                baseDate={baseDate}
+                view={selectedFunction as 'all' | 'drug' | 'medical'}
+              />
+            </div>
+          )
+        )}
+
+        {/* Công vụ */}
+        {activeDeptTab === 'congvu' && (
+          <SiteMapMenuTree
+            title="Công vụ — Đang phát triển"
+            items={congvuMenu}
+            onSelect={() => toast.info('Chức năng đang được phát triển.')}
           />
-        </TabsContent>
+        )}
 
-        <TabsContent value="administration" className="mt-0">
-          <DashboardAdministration
-            filterMode={filterMode}
-            selectedDate={selectedDate}
-            dateRange={dateRange}
-            baseDate={baseDate}
+        {/* Mua hàng */}
+        {activeDeptTab === 'muahang' && (
+          <SiteMapMenuTree
+            title="Mua hàng — Đang phát triển"
+            items={muahangMenu}
+            onSelect={() => toast.info('Chức năng đang được phát triển.')}
           />
-        </TabsContent>
+        )}
 
-        <TabsContent value="congvu" className="mt-0">
-          <DashboardCongVu
-            filterMode={filterMode}
-            selectedDate={selectedDate}
-            dateRange={dateRange}
-            baseDate={baseDate}
-          />
-        </TabsContent>
-
-        <TabsContent value="muahang" className="mt-0">
-          <DashboardMuaHang
-            filterMode={filterMode}
-            selectedDate={selectedDate}
-            dateRange={dateRange}
-            baseDate={baseDate}
-          />
-        </TabsContent>
-
-        <TabsContent value="hr" className="mt-0">
+        {/* Nhân sự */}
+        {activeDeptTab === 'hr' && (
+          selectedFunction === null ? (
+            <SiteMapMenuTree
+              title="Nhân sự — Chọn chức năng"
+              items={hrMenu}
+              onSelect={(id) => {
+                if (id === 'all') setSelectedFunction('all');
+                else if (hrMenuRoute[id]) navigate(hrMenuRoute[id]);
+                else setSelectedFunction(id);
+              }}
+            />
+          ) : selectedFunction === 'all' ? (
+            <div className="space-y-4">
+              <Button variant="ghost" size="sm" onClick={() => setSelectedFunction(null)} className="gap-2">
+                <ArrowLeft className="w-4 h-4" />
+                Quay lại
+              </Button>
       {/* 3 Cột thống kê: Ngày/Tháng/Năm */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {/* Cột 1: Hôm nay */}
@@ -1116,8 +1071,10 @@ const Index = () => {
           </table>
         </div>
       </div>
-        </TabsContent>
-      </Tabs>
+            </div>
+          ) : null)
+        }
+      </div>
     </div>
   );
 };

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Download, Filter, Loader2 } from 'lucide-react';
+import { useTimeFilter } from '@/contexts/TimeFilterContext';
 import * as XLSX from 'xlsx';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
@@ -14,20 +15,18 @@ import { useToast } from '@/hooks/use-toast';
 
 const ReportsPage = () => {
   const { toast } = useToast();
-  
-  // Default to last 90 days to show more data (bao gồm cả tháng trước)
-  const [dateRange, setDateRange] = useState({
-    start: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0],
-  });
+  const { params } = useTimeFilter();
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
 
-  // Fetch timekeeping data from API - CHỈ lấy dữ liệu mới nhất (is_archived = 0)
+  const startDate = params.start_date || params.date || new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const endDate = params.end_date || params.date || new Date().toISOString().split('T')[0];
+
+  // Fetch timekeeping data from API - CHỈ lấy dữ liệu mới nhất (is_archived = 0) — dùng bộ lọc chung từ Sidebar
   const { data: timekeepingResponse, isLoading, error } = useQuery({
-    queryKey: ['timekeeping', dateRange.start, dateRange.end, selectedDepartment],
+    queryKey: ['timekeeping', startDate, endDate, selectedDepartment],
     queryFn: () => timekeepingAPI.getAll({
-      start_date: dateRange.start,
-      end_date: dateRange.end,
+      start_date: startDate,
+      end_date: endDate,
       department: selectedDepartment !== 'all' ? selectedDepartment : undefined,
       archived: false, // CHỈ lấy dữ liệu mới (hiển thị ở Báo cáo)
     }),
@@ -42,7 +41,7 @@ const ReportsPage = () => {
   if (timekeepingData.length > 0) {
     console.log('Timekeeping data loaded:', timekeepingData.length, 'records');
   } else if (!isLoading) {
-    console.log('No timekeeping data found for date range:', dateRange);
+    console.log('No timekeeping data found for date range:', startDate, endDate);
   }
 
   // Get unique departments from data
@@ -182,9 +181,9 @@ const ReportsPage = () => {
       worksheet['!cols'] = columnWidths;
 
       // Generate filename with date range
-      const startDate = dateRange.start.replace(/-/g, '');
-      const endDate = dateRange.end.replace(/-/g, '');
-      const filename = `Bao_cao_cham_cong_${startDate}_${endDate}.xlsx`;
+      const startStr = startDate.replace(/-/g, '');
+      const endStr = endDate.replace(/-/g, '');
+      const filename = `Bao_cao_cham_cong_${startStr}_${endStr}.xlsx`;
 
       // Write file
       XLSX.writeFile(workbook, filename);
@@ -236,29 +235,13 @@ const ReportsPage = () => {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filters — Từ ngày/Đến ngày dùng chung từ Sidebar */}
       <div className="chart-container mb-6">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="w-5 h-5 text-muted-foreground" />
           <h3 className="font-semibold">Bộ lọc</h3>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="space-y-2">
-            <Label>Từ ngày</Label>
-            <Input
-              type="date"
-              value={dateRange.start}
-              onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Đến ngày</Label>
-            <Input
-              type="date"
-              value={dateRange.end}
-              onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-            />
-          </div>
           <div className="space-y-2">
             <Label>Phòng ban</Label>
             <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
