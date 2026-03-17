@@ -1,0 +1,40 @@
+STT;Module;Method;Endpoint;Mô tả
+1;Auth;POST;/api/auth/login;Đăng nhập
+2;Auth;POST;/api/auth/forgot-password;Quên mật khẩu
+3;Employees;GET;/api/employees;Lấy danh sách nhân viên
+4;Employees;GET;/api/employees/official;Nhân viên chính thức
+5;Employees;GET;/api/employees/seasonal;Nhân viên thời vụ
+6;Employees;GET;/api/employees/:id;Chi tiết nhân viên
+7;Employees;POST;/api/employees;Tạo nhân viên
+8;Employees;PUT;/api/employees/:id;Cập nhật nhân viên
+9;Employees;DELETE;/api/employees/:id;Xóa nhân viên
+10;Timekeeping;GET;/api/timekeeping;Lấy dữ liệu chấm công (filter date department search archived)
+11;Upload;POST;/api/upload/employees;Upload nhân viên (chung)
+12;Upload;POST;/api/upload/employees/official;Upload nhân viên chính thức
+13;Upload;POST;/api/upload/employees/seasonal;Upload nhân viên thời vụ
+14;Upload;POST;/api/upload/timekeeping;Upload chấm công
+15;Statistics;GET;/api/statistics/dashboard;Thống kê dashboard
+16;Statistics;GET;/api/statistics/gender;Thống kê giới tính
+17;Statistics;GET;/api/statistics/age;Thống kê độ tuổi
+18;Statistics;GET;/api/statistics/employment-type;Thống kê loại hợp đồng
+19;Statistics;GET;/api/statistics/department;Thống kê theo phòng ban
+20;Statistics;GET;/api/statistics/gender-by-employment-type;Nam nữ theo chính thức thời vụ
+21;Statistics;GET;/api/statistics/attendance-by-date;Đi làm theo ngày (7 ngày)
+22;Statistics;GET;/api/statistics/realtime;Real-time
+23;Statistics;GET;/api/statistics/range;Thống kê theo khoảng
+24;Statistics;GET;/api/statistics/compare;So sánh
+25;Statistics;GET;/api/statistics/weekly-temporary-workers;Công nhân thời vụ 1 ngày
+26;Statistics;GET;/api/departments;Danh sách phòng ban
+27;Statistics;GET;/api/departments/from-excel;Phòng ban từ Excel
+28;Statistics;GET;/api/departments/:dept/stats;Thống kê 1 phòng ban
+29;Notifications;GET;/api/notifications;Danh sách thông báo
+30;Notifications;GET;/api/notifications/unread-count;Số chưa đọc
+31;Notifications;PUT;/api/notifications/:id/read;Đánh dấu đã đọc
+32;Notifications;PUT;/api/notifications/read-all;Đánh dấu tất cả đã đọc
+33;Notifications;DELETE;/api/notifications/:id;Xóa 1 thông báo
+34;Notifications;DELETE;/api/notifications;Xóa tất cả
+35;HR Excel;POST;/api/hr-excel/upload;Upload file HR Excel
+36;HR Excel;GET;/api/hr-excel/latest;File mới nhất theo report_type
+37;HR Excel;GET;/api/hr-excel/stats;Thống kê theo report_type
+38;HR Excel;GET;/api/hr-excel/status;Trạng thái tất cả report types
+39;HR Excel;GET;/api/hr-excel/:uploadId/sheets/:sheetName;Lấy dữ liệu sheet

@@ -1,0 +1,20 @@
+Hạng mục;Công nghệ;Phiên bản/Ghi chú
+Frontend;React;18.3
+Frontend;TypeScript;5.8
+Frontend;Vite;5.4
+Frontend;React Router;6.30
+Frontend;TanStack React Query;5.83
+Frontend;Tailwind CSS;3.4
+Frontend;Radix UI;Nhiều components
+Frontend;Lucide React;Icons
+Frontend;Recharts;Biểu đồ
+Frontend;XLSX;Xuất Excel
+Frontend;date-fns;Xử lý ngày
+Backend;Node.js + Express;-
+Backend;TypeScript;-
+Backend;Prisma;ORM
+Backend;PostgreSQL;Database
+Backend;CORS;-
+Backend;JWT;Xác thực
+Deploy;Static build;Vite build
+Deploy;Express serve;Production

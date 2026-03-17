@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+<<<<<<< HEAD
+package-lock.json
+
+# Build
+dist/
+*.tsbuildinfo
+=======
+
+# Build
+dist/
+>>>>>>> f178c78148686e400d095c59b7e0a1b5bdeeadcd
+
+# Environment
+.env
+.env.local
+
+<<<<<<< HEAD
+# Database
+*.db
+*.db-journal
+
+# Uploads
+uploads/
+*.xlsx
+*.xls
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+=======
+>>>>>>> f178c78148686e400d095c59b7e0a1b5bdeeadcd
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+<<<<<<< HEAD
+*.swp
+*.swo
+
+
+=======
+>>>>>>> f178c78148686e400d095c59b7e0a1b5bdeeadcd

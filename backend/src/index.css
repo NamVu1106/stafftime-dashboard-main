@@ -1,0 +1,516 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* YS-Smart: Navy blue primary, light blue accent */
+    --background: 210 20% 98%;
+    --foreground: 215 25% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 25% 15%;
+
+    /* Primary: Deep blue (YS-Smart brand) */
+    --primary: 215 75% 38%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 20% 92%;
+    --secondary-foreground: 215 25% 15%;
+
+    --muted: 210 20% 94%;
+    --muted-foreground: 215 15% 45%;
+
+    --accent: 200 80% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 40%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --info: 200 90% 48%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 214 20% 88%;
+    --input: 214 20% 92%;
+    --ring: 215 75% 38%;
+
+    --radius: 0.5rem;
+
+    /* YS-Smart sidebar: dark navy */
+    --sidebar-bg: 215 40% 15%;
+    --sidebar-foreground: 210 20% 95%;
+    --sidebar-active: 200 80% 50%;
+    --sidebar-hover: 215 35% 22%;
+
+    --topbar-bg: 0 0% 100%;
+    --topbar-shadow: 0 1px 3px 0 rgba(0,0,0,0.06);
+
+    /* YS-Smart accent colors */
+    --ys-navbar: 215 75% 32%;
+    --ys-accent-light: 200 70% 55%;
+  }
+
+  .dark {
+    --background: 215 30% 8%;
+    --foreground: 210 20% 95%;
+
+    --card: 215 25% 12%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 215 25% 12%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 200 80% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 215 25% 18%;
+    --secondary-foreground: 210 20% 95%;
+
+    --muted: 215 25% 18%;
+    --muted-foreground: 215 15% 60%;
+
+    --accent: 200 70% 45%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 25% 25%;
+    --input: 215 25% 18%;
+    --ring: 200 80% 50%;
+
+    --sidebar-bg: 215 40% 10%;
+    --sidebar-foreground: 210 20% 95%;
+    --sidebar-active: 200 80% 50%;
+    --sidebar-hover: 215 35% 18%;
+
+    --topbar-bg: 215 30% 12%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .stat-card {
+    @apply bg-card rounded-lg shadow-sm border-2 border-border p-6 
+           transition-all duration-300 ease-out
+           hover:shadow-md hover:shadow-primary/5 hover:-translate-y-1
+           animate-fade-in-up;
+  }
+
+  .stat-card-icon {
+    @apply w-12 h-12 rounded-lg flex items-center justify-center
+           transition-all duration-300 ease-out
+           group-hover:scale-110 group-hover:rotate-3;
+  }
+
+  .data-table {
+    @apply w-full text-sm;
+  }
+
+  .data-table th {
+    @apply bg-muted text-muted-foreground font-semibold text-left px-4 py-3 border-b border-border
+           transition-colors duration-200;
+  }
+
+  .data-table thead th {
+    @apply bg-muted;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+
+  .data-table th.sticky {
+    @apply shadow-[2px_0_4px_rgba(0,0,0,0.1)];
+  }
+
+  .data-table td {
+    @apply px-4 py-3 border-b border-border
+           transition-colors duration-200;
+  }
+
+  .data-table td.sticky {
+    @apply shadow-[2px_0_4px_rgba(0,0,0,0.1)];
+  }
+
+  .data-table tbody tr {
+    @apply transition-all duration-200 ease-out animate-fade-in;
+  }
+
+  .data-table tbody tr:hover {
+    @apply bg-muted/50;
+  }
+
+  .data-table tbody tr:hover td.sticky {
+    @apply bg-muted/50;
+  }
+
+  .data-table tbody tr:nth-child(even) {
+    @apply bg-muted/30;
+  }
+
+  .data-table tbody tr:nth-child(even) td.sticky {
+    @apply bg-muted/30;
+  }
+
+  .upload-zone {
+    @apply border-2 border-dashed border-border rounded-lg p-8 text-center 
+           transition-all duration-300 ease-out cursor-pointer
+           hover:border-primary hover:bg-primary/5 hover:shadow-md
+           animate-fade-in;
+  }
+
+  .upload-zone.drag-over {
+    @apply border-primary bg-primary/10 scale-105 shadow-lg;
+  }
+
+  .chart-container {
+    @apply bg-card rounded-lg shadow-sm border-2 border-border p-6
+           transition-all duration-300 ease-out
+           hover:shadow-md
+           animate-fade-in-up;
+  }
+
+  .page-content {
+    @apply animate-fade-in;
+  }
+
+  .card-hover {
+    @apply transition-all duration-300 ease-out
+           hover:shadow-lg hover:-translate-y-1 hover:shadow-primary/5;
+  }
+
+  .button-smooth {
+    @apply transition-all duration-200 ease-out
+           active:scale-95;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 3px;
+    transition: background 0.2s ease;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+
+  /* Animation delays for staggered effects */
+  .animate-delay-75 {
+    animation-delay: 75ms;
+  }
+
+  .animate-delay-100 {
+    animation-delay: 100ms;
+  }
+
+  .animate-delay-150 {
+    animation-delay: 150ms;
+  }
+
+  .animate-delay-200 {
+    animation-delay: 200ms;
+  }
+
+  .animate-delay-300 {
+    animation-delay: 300ms;
+  }
+
+  /* Smooth transitions */
+  .transition-smooth {
+    transition-property: all;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 300ms;
+  }
+
+  /* Login Page Styles */
+  .login-background {
+    background: linear-gradient(-45deg, #667eea, #764ba2, #f093fb, #4facfe);
+    background-size: 400% 400%;
+    animation: gradient-shift 15s ease infinite;
+  }
+
+  .login-card {
+    backdrop-filter: blur(20px);
+    background: rgba(255, 255, 255, 0.98);
+    border-radius: 24px;
+    box-shadow: 
+      0 25px 50px -12px rgba(0, 0, 0, 0.15),
+      0 0 0 1px rgba(255, 255, 255, 0.8),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .dark .login-card {
+    background: rgba(30, 30, 35, 0.98);
+    box-shadow: 
+      0 25px 50px -12px rgba(0, 0, 0, 0.5),
+      0 0 0 1px rgba(255, 255, 255, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .login-input {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .login-input:focus {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+  }
+
+  .login-button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .login-button:hover:not(:disabled) {
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+  }
+
+  .login-button:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .floating-label {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    color: hsl(var(--muted-foreground));
+  }
+
+  .floating-label.focused,
+  .floating-label.has-value {
+    top: -8px;
+    left: 8px;
+    font-size: 0.75rem;
+    background: hsl(var(--background));
+    padding: 0 4px;
+    color: hsl(var(--primary));
+  }
+
+  /* Dept popup - đẹp quá lố, hiệu ứng */
+  .dept-popup-content {
+    animation: dept-popup-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    box-shadow: 
+      0 25px 50px -12px rgba(0, 0, 0, 0.2),
+      0 0 0 1px rgba(59, 130, 246, 0.1),
+      0 0 40px -10px rgba(59, 130, 246, 0.25);
+  }
+  .dept-popup-content:hover {
+    box-shadow: 
+      0 30px 60px -15px rgba(0, 0, 0, 0.25),
+      0 0 0 1px rgba(59, 130, 246, 0.15),
+      0 0 50px -8px rgba(59, 130, 246, 0.3);
+  }
+  @keyframes dept-popup-in {
+    from {
+      opacity: 0;
+      transform: scale(0.92) translateY(-12px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+  .dept-popup-item {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .dept-popup-item:hover {
+    transform: translateX(4px);
+    background: linear-gradient(90deg, hsl(var(--primary) / 0.12) 0%, hsl(var(--primary) / 0.04) 50%, transparent 100%) !important;
+    box-shadow: inset 3px 0 0 hsl(var(--primary));
+  }
+  .dept-popup-card {
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .dept-popup-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 10px -5px rgba(59, 130, 246, 0.1);
+  }
+  .dept-popup-badge {
+    transition: all 0.2s ease;
+  }
+  .dept-popup-badge:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  }
+  .dept-popup-header {
+    position: relative;
+    overflow: hidden;
+  }
+  .dept-popup-header::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    animation: dept-header-shine 3s ease-in-out infinite;
+  }
+  @keyframes dept-header-shine {
+    0%, 100% { left: -100%; }
+    50% { left: 100%; }
+  }
+
+  /* ========== Login Page - Đẹp & Lố ========== */
+  .login-page-bg {
+    background: linear-gradient(135deg, hsl(215, 40%, 96%) 0%, hsl(220, 30%, 94%) 50%, hsl(210, 35%, 97%) 100%);
+    background-size: 400% 400%;
+    animation: login-bg-pulse 8s ease-in-out infinite;
+  }
+  @keyframes login-bg-pulse {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  .login-card-enter {
+    animation: login-card-enter 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+  @keyframes login-card-enter {
+    from {
+      opacity: 0;
+      transform: scale(0.9) translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  .login-card-shadow {
+    box-shadow: 
+      0 0 0 1px rgba(59, 130, 246, 0.08),
+      0 25px 50px -12px rgba(0, 0, 0, 0.15),
+      0 0 60px -15px rgba(59, 130, 246, 0.2);
+    transition: box-shadow 0.4s ease, transform 0.4s ease;
+  }
+  .login-card-shadow:hover {
+    box-shadow: 
+      0 0 0 1px rgba(59, 130, 246, 0.12),
+      0 30px 60px -15px rgba(0, 0, 0, 0.2),
+      0 0 80px -10px rgba(59, 130, 246, 0.25);
+    transform: translateY(-2px);
+  }
+
+  .login-panel-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .login-panel-shimmer::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(
+      45deg,
+      transparent 40%,
+      rgba(255, 255, 255, 0.08) 50%,
+      transparent 60%
+    );
+    animation: login-shimmer 4s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes login-shimmer {
+    0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+    100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+  }
+
+  .login-logo-glow {
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.3), 0 0 40px rgba(59, 130, 246, 0.2);
+    transition: all 0.3s ease;
+  }
+  .login-logo-glow:hover {
+    box-shadow: 0 0 30px rgba(255, 255, 255, 0.4), 0 0 60px rgba(59, 130, 246, 0.3);
+    transform: scale(1.05);
+  }
+
+  .login-btn-primary {
+    background: linear-gradient(135deg, hsl(215, 75%, 42%) 0%, hsl(215, 75%, 32%) 100%);
+    box-shadow: 0 4px 15px -3px rgba(59, 130, 246, 0.4), 0 2px 6px -2px rgba(59, 130, 246, 0.2);
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .login-btn-primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, hsl(215, 75%, 38%) 0%, hsl(215, 75%, 28%) 100%);
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 12px 30px -5px rgba(59, 130, 246, 0.5), 0 4px 12px -4px rgba(59, 130, 246, 0.3);
+  }
+  .login-btn-primary:active:not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  .login-input-field {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .login-input-field:focus {
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15), 0 4px 12px rgba(59, 130, 246, 0.1);
+    transform: translateY(-1px);
+  }
+
+  .login-carousel-img {
+    animation: login-carousel-zoom 0.8s ease-out;
+  }
+  @keyframes login-carousel-zoom {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .login-dot-active {
+    animation: login-dot-pulse 2s ease-in-out infinite;
+  }
+  @keyframes login-dot-pulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(255, 255, 255, 0.6); }
+    50% { box-shadow: 0 0 16px rgba(255, 255, 255, 0.9), 0 0 24px rgba(255, 255, 255, 0.4); }
+  }
+
+}
