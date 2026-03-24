@@ -1597,12 +1597,14 @@ export const uploadTimekeeping = [
         records.push(recordData);
       }
       
-      // Batch process: Get all employee IDs first (in one query)
+      // Lấy map mã NV → id: chia batch để tránh giới hạn 2100 tham số của SQL Server (Prisma sinh IN (@p1,@p2,...)).
       const employeeCodes = [...new Set(records.map(r => r.employee_code).filter(Boolean))];
       const employeeMap = new Map<string, number>();
-      if (employeeCodes.length > 0) {
+      const IN_BATCH = 2000;
+      for (let off = 0; off < employeeCodes.length; off += IN_BATCH) {
+        const chunk = employeeCodes.slice(off, off + IN_BATCH);
         const employees = await prisma.employee.findMany({
-          where: { employee_code: { in: employeeCodes } },
+          where: { employee_code: { in: chunk } },
           select: { id: true, employee_code: true },
         });
         employees.forEach(emp => employeeMap.set(emp.employee_code, emp.id));

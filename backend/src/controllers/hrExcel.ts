@@ -3,7 +3,7 @@ import multer from 'multer';
 import * as XLSX from 'xlsx';
 import path from 'path';
 import fs from 'fs';
-import { prisma } from '../server';
+import { query, queryOne, exec } from '../db/sqlServer';
 
 type HrReportType =
   | 'attendance-rate'
@@ -39,25 +39,7 @@ const getHrUploadDir = () => {
 };
 
 const ensureHrExcelUploadsTable = async () => {
-  // Ensure the table exists even if migrations haven't been applied yet.
-  // This keeps the feature working out-of-the-box for SQLite deployments.
-  await (prisma as any).$executeRawUnsafe?.(`
-    CREATE TABLE IF NOT EXISTS "hr_excel_uploads" (
-      "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-      "report_type" TEXT NOT NULL,
-      "original_file_name" TEXT NOT NULL,
-      "stored_file_name" TEXT NOT NULL,
-      "sheet_names" TEXT NOT NULL,
-      "default_sheet" TEXT NOT NULL,
-      "created_at" TEXT NOT NULL DEFAULT ""
-    );
-  `);
-  await (prisma as any).$executeRawUnsafe?.(
-    `CREATE INDEX IF NOT EXISTS "hr_excel_uploads_report_type_idx" ON "hr_excel_uploads"("report_type");`
-  );
-  await (prisma as any).$executeRawUnsafe?.(
-    `CREATE INDEX IF NOT EXISTS "hr_excel_uploads_created_at_idx" ON "hr_excel_uploads"("created_at");`
-  );
+  /* Bảng tạo bằng script SQL Server (docs/SQL_SERVER_SETUP.md) */
 };
 
 type HrExcelUploadRecord = {
@@ -71,55 +53,24 @@ type HrExcelUploadRecord = {
 };
 
 const hrExcelUploadCreate = async (data: Omit<HrExcelUploadRecord, 'id'>) => {
-  const delegate = (prisma as any).hrExcelUpload;
-  if (delegate?.create) {
-    return delegate.create({ data });
-  }
-
-  // Fallback: raw SQL (works even if Prisma client hasn't been regenerated)
-  await (prisma as any).$executeRawUnsafe(
-    `INSERT INTO "hr_excel_uploads" ("report_type","original_file_name","stored_file_name","sheet_names","default_sheet","created_at")
-     VALUES (?,?,?,?,?,?);`,
-    data.report_type,
-    data.original_file_name,
-    data.stored_file_name,
-    data.sheet_names,
-    data.default_sheet,
-    data.created_at
+  const rows = await query<HrExcelUploadRecord>(
+    `INSERT INTO hr_excel_uploads (report_type, original_file_name, stored_file_name, sheet_names, default_sheet, created_at)
+     OUTPUT INSERTED.id, INSERTED.report_type, INSERTED.original_file_name, INSERTED.stored_file_name, INSERTED.sheet_names, INSERTED.default_sheet, INSERTED.created_at
+     VALUES (@report_type, @original_file_name, @stored_file_name, @sheet_names, @default_sheet, @created_at)`,
+    data as any
   );
-  const rows = await (prisma as any).$queryRawUnsafe(
-    `SELECT * FROM "hr_excel_uploads" WHERE "id" = last_insert_rowid() LIMIT 1;`
-  );
-  return Array.isArray(rows) ? rows[0] : rows;
+  return rows[0];
 };
 
 const hrExcelUploadFindLatestByType = async (report_type: string): Promise<HrExcelUploadRecord | null> => {
-  const delegate = (prisma as any).hrExcelUpload;
-  if (delegate?.findFirst) {
-    return delegate.findFirst({
-      where: { report_type },
-      orderBy: { id: 'desc' },
-    });
-  }
-
-  const rows = await (prisma as any).$queryRawUnsafe(
-    `SELECT * FROM "hr_excel_uploads" WHERE "report_type" = ? ORDER BY "id" DESC LIMIT 1;`,
-    report_type
+  return queryOne(
+    'SELECT TOP 1 * FROM hr_excel_uploads WHERE report_type = @rt ORDER BY id DESC',
+    { rt: report_type }
   );
-  return Array.isArray(rows) ? (rows[0] || null) : (rows || null);
 };
 
 const hrExcelUploadFindUniqueById = async (id: number): Promise<HrExcelUploadRecord | null> => {
-  const delegate = (prisma as any).hrExcelUpload;
-  if (delegate?.findUnique) {
-    return delegate.findUnique({ where: { id } });
-  }
-
-  const rows = await (prisma as any).$queryRawUnsafe(
-    `SELECT * FROM "hr_excel_uploads" WHERE "id" = ? LIMIT 1;`,
-    id
-  );
-  return Array.isArray(rows) ? (rows[0] || null) : (rows || null);
+  return queryOne('SELECT * FROM hr_excel_uploads WHERE id = @id', { id });
 };
 
 const ensureDir = (dir: string) => {

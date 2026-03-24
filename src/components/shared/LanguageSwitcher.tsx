@@ -6,7 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 
 const flagClass = 'w-7 h-5 object-contain rounded-sm shrink-0 select-none';
 const flagStyle: React.CSSProperties = { imageRendering: 'crisp-edges' };

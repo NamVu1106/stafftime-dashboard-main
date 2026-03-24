@@ -1,5 +1,5 @@
 import { Briefcase } from 'lucide-react';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 
 export interface DashboardCongVuProps {
   filterMode?: 'day' | 'month' | 'year' | 'single' | 'range';

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
-import { prisma } from '../server';
+import { query, queryOne } from '../db/sqlServer';
 
 // Normalize employee codes
 const normalizeCode = (code: string | null | undefined) => (code || '').trim().toUpperCase();
@@ -75,11 +75,11 @@ export const getDepartmentsFromExcel = async (_req: Request, res: Response) => {
 export const getDepartmentsList = async (_req: Request, res: Response) => {
   try {
     const [employees, records] = await Promise.all([
-      prisma.employee.findMany({ select: { department: true } }),
-      prisma.timekeepingRecord.findMany({
-        where: { is_archived: 0 },
-        select: { department: true },
-      }),
+      query<{ department: string }>('SELECT department FROM employees', {}),
+      query<{ department: string }>(
+        'SELECT department FROM timekeeping_records WHERE is_archived = 0',
+        {}
+      ),
     ]);
     const set = new Set<string>();
     employees.forEach(e => {
@@ -151,44 +151,49 @@ export const getDepartmentStats = async (req: Request, res: Response) => {
       dateFilter = new Date().toISOString().split('T')[0];
     }
     
-    let whereRecords: any = { is_archived: 0, date: dateFilter };
-    let allRecords = await prisma.timekeepingRecord.findMany({ where: whereRecords });
+    let allRecords = await query(
+      typeof dateFilter === 'string'
+        ? 'SELECT * FROM timekeeping_records WHERE is_archived = 0 AND date = @d'
+        : 'SELECT * FROM timekeeping_records WHERE is_archived = 0 AND date >= @s AND date <= @e',
+      typeof dateFilter === 'string' ? { d: dateFilter } : { s: (dateFilter as any).gte, e: (dateFilter as any).lte }
+    );
     let dateRangeUsed: { start_date: string; end_date: string } | undefined;
     let dateUsed: string | undefined;
 
     // Fallback: nếu khoảng ngày đã chọn không có bản ghi nào → dùng tháng gần nhất có dữ liệu
     if (allRecords.length === 0 && (startDate && endDate)) {
-      const mostRecent = await prisma.timekeepingRecord.findFirst({
-        where: { is_archived: 0 },
-        orderBy: { date: 'desc' },
-        select: { date: true },
-      });
+      const mostRecent = await queryOne<{ date: string }>(
+        'SELECT TOP 1 date FROM timekeeping_records WHERE is_archived = 0 ORDER BY date DESC',
+        {}
+      );
       if (mostRecent?.date) {
         const d = new Date(mostRecent.date);
         const y = d.getFullYear();
         const m = d.getMonth();
         const fallbackStart = new Date(y, m, 1).toISOString().split('T')[0];
         const fallbackEnd = new Date(y, m + 1, 0).toISOString().split('T')[0];
-        whereRecords = { is_archived: 0, date: { gte: fallbackStart, lte: fallbackEnd } };
-        allRecords = await prisma.timekeepingRecord.findMany({ where: whereRecords });
+        allRecords = await query(
+          'SELECT * FROM timekeeping_records WHERE is_archived = 0 AND date >= @s AND date <= @e',
+          { s: fallbackStart, e: fallbackEnd }
+        );
         dateRangeUsed = { start_date: fallbackStart, end_date: fallbackEnd };
       }
     }
-    // Fallback cho lọc "Hôm nay": nếu ngày đã chọn không có bản ghi → dùng ngày gần nhất có dữ liệu
     if (allRecords.length === 0 && targetDate && !startDate && !endDate) {
-      const mostRecent = await prisma.timekeepingRecord.findFirst({
-        where: { is_archived: 0 },
-        orderBy: { date: 'desc' },
-        select: { date: true },
-      });
+      const mostRecent = await queryOne<{ date: string }>(
+        'SELECT TOP 1 date FROM timekeeping_records WHERE is_archived = 0 ORDER BY date DESC',
+        {}
+      );
       if (mostRecent?.date) {
         dateUsed = mostRecent.date;
-        whereRecords = { is_archived: 0, date: dateUsed };
-        allRecords = await prisma.timekeepingRecord.findMany({ where: whereRecords });
+        allRecords = await query(
+          'SELECT * FROM timekeeping_records WHERE is_archived = 0 AND date = @d',
+          { d: dateUsed }
+        );
       }
     }
 
-    const allEmployeesList = await prisma.employee.findMany();
+    const allEmployeesList = await query('SELECT * FROM employees', {});
     const employeeDeptMap = new Map<string, string>();
     allEmployeesList.forEach(emp => {
       employeeDeptMap.set(normalizeCode(emp.employee_code), normDeptCompact(emp.department));

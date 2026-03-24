@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,6 +26,7 @@ import { Loader2, Lock, User, KeyRound, Copy, Check, Globe } from 'lucide-react'
 import { toast } from 'sonner';
 import { authAPI } from '@/services/api';
 import { cn } from '@/lib/utils';
+import { APP_LOGO_SRC } from '@/lib/branding';
 
 const LoginPage = () => {
   const [username, setUsername] = useState('');
@@ -181,9 +182,14 @@ const LoginPage = () => {
             </svg>
           </div>
 
-          <div className="relative z-10 flex items-center gap-3">
-            <div className="w-11 h-11 rounded-lg bg-white/20 flex items-center justify-center font-bold text-white text-lg login-logo-glow cursor-default">
-              YS
+          <div className="relative z-10 flex flex-wrap items-center gap-3">
+            <div className="h-11 min-h-[2.75rem] w-[min(100%,17rem)] max-w-xs rounded-lg bg-white/20 flex items-center justify-center login-logo-glow cursor-default overflow-hidden px-2.5 py-1.5 shrink-0">
+              <img
+                src={APP_LOGO_SRC}
+                alt="You Sung Vina"
+                draggable={false}
+                className="max-h-full w-full object-contain object-center"
+              />
             </div>
             <span className="text-xl font-bold text-white drop-shadow-sm">YS-Smart</span>
           </div>

@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { employeesAPI } from '@/services/api';
 import { Employee, FamilyMember } from '@/data/mockData';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 
 const EmployeesPage = () => {
   const { t } = useI18n();

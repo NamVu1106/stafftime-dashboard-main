@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Building2, Users, TrendingUp } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { statisticsAPI } from '@/services/api';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 import { useTimeFilter } from '@/contexts/TimeFilterContext';
 import { 
   BarChart, 

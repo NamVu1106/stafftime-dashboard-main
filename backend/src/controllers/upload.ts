@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
-import { prisma } from '../server';
+import { query, queryOne, exec, transaction } from '../db/sqlServer';
+import { upsertEmployeeWithFamily } from '../db/employeeSql';
 import path from 'path';
 import fs from 'fs';
 import { createNotification } from './notifications';
@@ -477,52 +478,21 @@ export const uploadEmployees = [
           }
           uploadedCodes.add(empCode);
           try {
-            // Use upsert to create or update employee
-            const employee = await prisma.employee.upsert({
-              where: { employee_code: empCode },
-              update: {
-                name: empName,
-                gender: String(gender || 'Nam').trim(),
-                date_of_birth: finalDob,
-                age: age || 0,
-                department: empDept || 'Chưa xác định',
-                employment_type: String(employment_type || 'Chính thức').trim(),
-                cccd: empCccd,
-                phone: empPhone,
-                hometown: empHometown,
-                permanent_residence: empPermanentResidence,
-                temporary_residence: empTemporaryResidence,
-                marital_status: empMaritalStatus,
-                updated_at: new Date().toISOString(),
-                // Update family members: delete old ones and create new ones
-                family_members: {
-                  deleteMany: {},
-                  create: familyMembers,
-                },
-              },
-              create: {
-                employee_code: empCode,
-                name: empName,
-                gender: String(gender || 'Nam').trim(),
-                date_of_birth: finalDob,
-                age: age || 0,
-                department: empDept || 'Chưa xác định',
-                employment_type: String(employment_type || 'Chính thức').trim(),
-                cccd: empCccd,
-                phone: empPhone,
-                hometown: empHometown,
-                permanent_residence: empPermanentResidence,
-                temporary_residence: empTemporaryResidence,
-                marital_status: empMaritalStatus,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                family_members: familyMembers.length > 0 ? {
-                  create: familyMembers,
-                } : undefined,
-              },
-              include: {
-                family_members: true,
-              },
+            const employee = await upsertEmployeeWithFamily({
+              employee_code: empCode,
+              name: empName,
+              gender: String(gender || 'Nam').trim(),
+              date_of_birth: finalDob,
+              age: age || 0,
+              department: empDept || 'Chưa xác định',
+              employment_type: String(employment_type || 'Chính thức').trim(),
+              cccd: empCccd,
+              phone: empPhone,
+              hometown: empHometown,
+              permanent_residence: empPermanentResidence,
+              temporary_residence: empTemporaryResidence,
+              marital_status: empMaritalStatus,
+              familyMembers,
             });
             employees.push(employee);
             if (employees.length <= 3) {
@@ -547,11 +517,15 @@ export const uploadEmployees = [
       // Delete uploaded file
       fs.unlinkSync(req.file.path);
       if (replaceAll && uploadedCodes.size > 0) {
-        const codes = Array.from(uploadedCodes);
-        const deleted = await prisma.employee.deleteMany({ where: { employee_code: { notIn: codes } } });
-        if (deleted.count > 0) {
-          console.log(`[Upload employees] replace_all: removed ${deleted.count} employees not in file`);
-        }
+        const codes = Array.from(uploadedCodes) as string[];
+        const inList = codes.map((c) => `'${String(c).replace(/'/g, "''")}'`).join(',');
+        const n = await exec(
+          inList
+            ? `DELETE FROM employees WHERE employee_code NOT IN (${inList})`
+            : 'DELETE FROM employees',
+          {}
+        );
+        if (n > 0) console.log(`[Upload employees] replace_all: removed ${n} employees not in file`);
       }
       
       console.log(`\n=== Upload Summary ===`);
@@ -573,9 +547,9 @@ export const uploadEmployees = [
       // Track new employees: check which ones were just created (not updated)
       // We'll check if employee existed before by querying existing codes
       const existingCodes = new Set(
-        (await prisma.employee.findMany({
-          select: { employee_code: true },
-        })).map(e => e.employee_code)
+        (await query<{ employee_code: string }>('SELECT employee_code FROM employees', {})).map(
+          (e) => e.employee_code
+        )
       );
       
       // Get employee codes from the uploaded data (successfully upserted)
@@ -772,15 +746,47 @@ const excelTimeToTimeString = (excelTime: any): string => {
   return '';
 };
 
+/** Số thập phân trong Excel có thể dùng dấu phẩy (2,7; 11,97). */
+const parseDecimalExcel = (v: unknown): number => {
+  const s = String(v ?? '').trim().replace(/,/g, '.');
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const hasAttendanceSignal = (record: {
+  check_in?: string;
+  check_out?: string;
+  workday?: number;
+  total_hours?: number;
+  overtime_hours?: number;
+  total_all_hours?: number;
+  late_minutes?: number;
+  early_minutes?: number;
+}) => {
+  const hasText = (value: unknown) => String(value ?? '').trim() !== '';
+  return (
+    hasText(record.check_in) ||
+    hasText(record.check_out) ||
+    Number(record.workday) > 0 ||
+    Number(record.total_hours) > 0 ||
+    Number(record.overtime_hours) > 0 ||
+    Number(record.total_all_hours) > 0 ||
+    Number(record.late_minutes) > 0 ||
+    Number(record.early_minutes) > 0
+  );
+};
+
 // POST /api/upload/timekeeping - Upload Excel file for timekeeping
 export const uploadTimekeeping = [
   upload.single('file'),
   async (req: Request, res: Response) => {
+    let lastStep = 'start';
     try {
       if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
       }
-      
+      console.log('\n[UPLOAD TIMEKEEPING] Request received, file:', req.file.originalname, req.file.size, 'bytes');
+
       // Read Excel file - CRITICAL FIX for date parsing
       // Strategy: Read with both raw and formatted values to get the best of both worlds
       // If cell is formatted as date, we'll get the formatted string (e.g., "12/16/2025")
@@ -916,6 +922,7 @@ export const uploadTimekeeping = [
       const records: any[] = [];
       let processedRows = 0;
       let skippedRows = 0;
+      let placeholderRows = 0;
       
       for (const row of data as any[]) {
         processedRows++;
@@ -1402,44 +1409,18 @@ export const uploadTimekeeping = [
           '0'
         )) || 0;
         
-        workday = parseFloat(String(
-          normalizedRow['Công'] || 
-          row['Công'] || 
-          row['workday'] || 
-          row['CONG'] || 
-          row['__EMPTY_9'] || 
-          '0'
-        )) || 0;
-        
-        total_hours = parseFloat(String(
-          normalizedRow['Tổng giờ'] || 
-          row['Tổng giờ'] || 
-          row['total_hours'] || 
-          row['TỔNG GIỜ'] || 
-          row['TONG GIO'] || 
-          row['__EMPTY_10'] || 
-          '0'
-        )) || 0;
-        
-        overtime_hours = parseFloat(String(
-          normalizedRow['Tăng ca'] || 
-          row['Tăng ca'] || 
-          row['overtime_hours'] || 
-          row['TĂNG CA'] || 
-          row['TANG CA'] || 
-          row['__EMPTY_11'] || 
-          '0'
-        )) || 0;
-        
-        total_all_hours = parseFloat(String(
-          normalizedRow['Tổng toàn bộ'] || 
-          row['Tổng toàn bộ'] || 
-          row['total_all_hours'] || 
-          row['TỔNG TOÀN BỘ'] || 
-          row['TONG TOAN BO'] || 
-          row['__EMPTY_12'] || 
-          '0'
-        )) || 0;
+        workday = parseDecimalExcel(
+          normalizedRow['Công'] || row['Công'] || row['workday'] || row['CONG'] || row['__EMPTY_9'] || '0'
+        );
+        total_hours = parseDecimalExcel(
+          normalizedRow['Tổng giờ'] || row['Tổng giờ'] || row['total_hours'] || row['TỔNG GIỜ'] || row['TONG GIO'] || row['__EMPTY_10'] || '0'
+        );
+        overtime_hours = parseDecimalExcel(
+          normalizedRow['Tăng ca'] || row['Tăng ca'] || row['overtime_hours'] || row['TĂNG CA'] || row['TANG CA'] || row['__EMPTY_11'] || '0'
+        );
+        total_all_hours = parseDecimalExcel(
+          normalizedRow['Tổng toàn bộ'] || row['Tổng toàn bộ'] || row['total_all_hours'] || row['TỔNG TOÀN BỘ'] || row['TONG TOAN BO'] || row['__EMPTY_12'] || '0'
+        );
         
         // If still using __EMPTY format (fallback)
         if (!employee_code && row['__EMPTY_1']) {
@@ -1470,10 +1451,10 @@ export const uploadTimekeeping = [
           if (!check_out) check_out = excelTimeToTimeString(row['__EMPTY_6']);
           if (late_minutes === 0) late_minutes = parseInt(String(row['__EMPTY_7'] || '0')) || 0;
           if (early_minutes === 0) early_minutes = parseInt(String(row['__EMPTY_8'] || '0')) || 0;
-          if (workday === 0) workday = parseFloat(String(row['__EMPTY_9'] || '0')) || 0;
-          if (total_hours === 0) total_hours = parseFloat(String(row['__EMPTY_10'] || '0')) || 0;
-          if (overtime_hours === 0) overtime_hours = parseFloat(String(row['__EMPTY_11'] || '0')) || 0;
-          if (total_all_hours === 0) total_all_hours = parseFloat(String(row['__EMPTY_12'] || '0')) || 0;
+          if (workday === 0) workday = parseDecimalExcel(row['__EMPTY_9']);
+          if (total_hours === 0) total_hours = parseDecimalExcel(row['__EMPTY_10']);
+          if (overtime_hours === 0) overtime_hours = parseDecimalExcel(row['__EMPTY_11']);
+          if (total_all_hours === 0) total_all_hours = parseDecimalExcel(row['__EMPTY_12']);
           if (!shift || shift === 'CA NGAY') shift = String(row['__EMPTY_13'] || 'CA NGAY').trim();
         }
         
@@ -1491,6 +1472,37 @@ export const uploadTimekeeping = [
               employee_name: employee_name || '(empty)',
               allKeys: Object.keys(row), // Log ALL keys to see what's available
               first10Values: Object.entries(row).slice(0, 10).map(([k, v]) => `${k}: ${v}`),
+            });
+          }
+          continue;
+        }
+
+        if (
+          !hasAttendanceSignal({
+            check_in,
+            check_out,
+            workday,
+            total_hours,
+            overtime_hours,
+            total_all_hours,
+            late_minutes,
+            early_minutes,
+          })
+        ) {
+          placeholderRows++;
+          if (placeholderRows <= 20) {
+            console.log(`⚪ Skipping placeholder row ${processedRows}:`, {
+              employee_code,
+              employee_name,
+              date,
+              check_in,
+              check_out,
+              workday,
+              total_hours,
+              overtime_hours,
+              total_all_hours,
+              late_minutes,
+              early_minutes,
             });
           }
           continue;
@@ -1597,54 +1609,121 @@ export const uploadTimekeeping = [
         records.push(recordData);
       }
       
-      // Batch process: Get all employee IDs first (in one query)
-      const employeeCodes = [...new Set(records.map(r => r.employee_code).filter(Boolean))];
+      // Lấy map mã NV → id: không dùng @p0..@pN (giới hạn 2100 tham số / lệnh).
+      // Dùng IN (N'…',N'…') đã escape — 0 tham số, chia batch tránh câu SQL quá dài.
+      const LITERAL_IN_CHUNK = 400;
+      const employeeCodes = [
+        ...new Set(records.map((r) => String(r.employee_code ?? '').trim()).filter(Boolean)),
+      ];
+      const uploadedDates = [
+        ...new Set(records.map((r) => String(r.date ?? '').trim()).filter(Boolean)),
+      ].sort();
       const employeeMap = new Map<string, number>();
-      if (employeeCodes.length > 0) {
-        const employees = await prisma.employee.findMany({
-          where: { employee_code: { in: employeeCodes } },
-          select: { id: true, employee_code: true },
-        });
-        employees.forEach(emp => employeeMap.set(emp.employee_code, emp.id));
+      const esc = (s: string) => String(s).replace(/'/g, "''");
+      const literalN = (s: string) => {
+        if (!s.includes('@')) return `N'${esc(s)}'`;
+        return s.split('@').map(p => `N'${esc(p)}'`).join('+NCHAR(64)+');
+      };
+      let lastStep = 'employee_lookup';
+      for (let off = 0; off < employeeCodes.length; off += LITERAL_IN_CHUNK) {
+        const chunk = employeeCodes.slice(off, off + LITERAL_IN_CHUNK);
+        const inList = chunk.map((c) => literalN(c)).join(',');
+        const sqlEmployee = `SELECT id, employee_code FROM employees WHERE employee_code IN (${inList})`;
+        if (sqlEmployee.includes('@')) {
+          console.error('[Timekeeping] BUG: employee SQL contains @, chunk', off);
+          throw new Error('Employee lookup SQL must not contain @ (2100 limit)');
+        }
+        const emps = await query<{ id: number; employee_code: string }>(sqlEmployee, {});
+        emps.forEach((emp) => employeeMap.set(emp.employee_code, emp.id));
       }
 
-      // Một transaction duy nhất: archive + insert tất cả → 1 lần commit, nhanh như upload nhân viên
-      const TX_TIMEOUT = 10 * 60 * 1000; // 10 phút cho file lớn
       let insertedCount = 0;
       const insertedRecords: any[] = [];
-      console.log(`\n📦 Archive + insert ${records.length} bản ghi trong 1 transaction...`);
+      let archivedCount = 0;
+      console.log(`\n📦 Replace theo ngày upload (${uploadedDates.join(', ') || 'không có ngày'}), sau đó insert ${records.length} bản ghi...`);
 
-      await prisma.$transaction(async (tx) => {
-        const archiveResult = await tx.timekeepingRecord.updateMany({
-          where: { is_archived: 0 },
-          data: { is_archived: 1 },
-        });
-        console.log(`✓ Đã chuyển ${archiveResult.count} bản ghi cũ sang Lịch sử`);
-
-        for (let i = 0; i < records.length; i++) {
-          const recordData = records[i];
-          try {
-            const record = await tx.timekeepingRecord.create({
-              data: {
-                ...recordData,
-                employee_id: employeeMap.get(recordData.employee_code) || null,
-              },
-            });
-            insertedRecords.push(record);
-            insertedCount++;
-          } catch (error: any) {
-            skippedRows++;
-            if (error.code === 'P2002' && skippedRows <= 5) {
-              console.log(`⚠️ Duplicate skipped: ${recordData.employee_code} - ${recordData.date}`);
-            } else if (error.code !== 'P2002' && skippedRows <= 20) {
-              console.error(`❌ Error record ${i + 1}:`, error.message);
-            }
-          }
-          if ((i + 1) % 500 === 0 || i + 1 === records.length) {
-            console.log(`Processed ${i + 1}/${records.length} (Inserted: ${insertedCount})`);
-          }
+      lastStep = 'UPDATE archive';
+      await transaction(async (_run, runExec) => {
+        if (!uploadedDates.length) {
+          console.log('⚠️ Không có ngày hợp lệ trong file mới, bỏ qua bước archive theo ngày.');
+          return;
         }
-      }, { timeout: TX_TIMEOUT });
+        const DATE_CHUNK = 31;
+        for (let off = 0; off < uploadedDates.length; off += DATE_CHUNK) {
+          const chunk = uploadedDates.slice(off, off + DATE_CHUNK);
+          const inList = chunk.map((date) => literalN(date)).join(',');
+          const ar = await runExec(
+            `UPDATE timekeeping_records
+             SET is_archived = 1
+             WHERE is_archived = 0 AND date IN (${inList})`,
+            {}
+          );
+          archivedCount += Number(ar || 0);
+        }
+        console.log(`✓ Đã chuyển sang lịch sử ${archivedCount} bản ghi cũ thuộc các ngày: ${uploadedDates.join(', ')}`);
+      });
+
+      /** INSERT 100% literal, không ký tự @ trong chuỗi (driver có thể đếm @ thành tham số). */
+      const sqlN = (v: unknown): string => {
+        if (v === null || v === undefined) return "N''";
+        const escaped = (x: string) => x.replace(/'/g, "''");
+        const s = String(v);
+        if (!s.includes('@')) return `N'${escaped(s)}'`;
+        return s.split('@').map(p => `N'${escaped(p)}'`).join('+NCHAR(64)+');
+      };
+      const sqlF = (v: unknown): string => {
+        const n = typeof v === 'number' ? v : parseFloat(String(v));
+        return Number.isFinite(n) ? String(n) : '0';
+      };
+      const sqlI = (v: unknown): string => {
+        const n = typeof v === 'number' ? v : parseInt(String(v), 10);
+        return Number.isFinite(n) ? String(Math.trunc(n)) : '0';
+      };
+      const oneRowValues = (rd: (typeof records)[0], eid: number | null): string => {
+        const eidPart =
+          eid != null && Number.isFinite(Number(eid)) ? String(eid) : 'NULL';
+        return `(${sqlN(rd.employee_code)},${eidPart},${sqlN(rd.employee_name)},${sqlN(rd.date)},${sqlN(
+          rd.day_of_week
+        )},${sqlN(rd.check_in)},${sqlN(rd.check_out)},${sqlI(rd.late_minutes)},${sqlI(
+          rd.early_minutes
+        )},${sqlF(rd.workday)},${sqlF(rd.total_hours)},${sqlF(rd.overtime_hours)},${sqlF(
+          rd.total_all_hours
+        )},${sqlN(rd.shift)},${sqlN(rd.department)},${sqlN(rd.created_at)},0)`;
+      };
+
+      const INSERT_SQL =
+        `INSERT INTO timekeeping_records (
+          employee_code, employee_id, employee_name, date, day_of_week, check_in, check_out,
+          late_minutes, early_minutes, workday, total_hours, overtime_hours, total_all_hours,
+          shift, department, created_at, is_archived
+        ) VALUES `;
+      for (let i = 0; i < records.length; i++) {
+        const rd = records[i];
+        const eid = employeeMap.get(rd.employee_code) ?? null;
+        lastStep = `INSERT row ${i + 1}/${records.length}`;
+        const singleSql = INSERT_SQL + oneRowValues(rd, eid);
+        if (singleSql.includes('@')) {
+          console.error(`[Timekeeping] BUG: INSERT SQL contains @ at row ${i + 1}. Sample:`, singleSql.slice(0, 400));
+          throw new Error('INSERT SQL must not contain @ (2100 limit)');
+        }
+        try {
+          await exec(singleSql, {});
+          insertedCount++;
+          insertedRecords.push({
+            ...rd,
+            employee_id: eid,
+          } as Record<string, unknown>);
+        } catch (rowErr: any) {
+          skippedRows++;
+          const errMsg = String(rowErr?.message ?? rowErr);
+          console.error(`❌ ${lastStep} (${rd.employee_code}):`, errMsg);
+          if (skippedRows <= 20) console.error(`   SQL preview:`, singleSql.slice(0, 300));
+          if (/2100|too many parameters/i.test(errMsg)) throw rowErr;
+        }
+        if ((i + 1) % 500 === 0 || i + 1 === records.length) {
+          console.log(`Processed ${i + 1}/${records.length} (Inserted: ${insertedCount})`);
+        }
+      }
       
       // Delete uploaded file
       fs.unlinkSync(req.file.path);
@@ -1656,6 +1735,8 @@ export const uploadTimekeeping = [
       console.log(`Records parsed successfully: ${records.length}`);
       console.log(`Successfully created: ${insertedCount}`);
       console.log(`Skipped: ${skippedRows}`);
+      console.log(`Placeholder rows skipped: ${placeholderRows}`);
+      console.log(`Dates replaced in active set: ${uploadedDates.join(', ') || '(none)'}`);
       
       if (records.length > 0) {
         const datesInRecords = records.map(r => r.date).filter(Boolean);
@@ -1671,8 +1752,12 @@ export const uploadTimekeeping = [
       }
       
       // Log final archive status
-      const finalArchived = await prisma.timekeepingRecord.count({ where: { is_archived: 1 } });
-      const finalNew = await prisma.timekeepingRecord.count({ where: { is_archived: 0 } });
+      const finalArchived = Number(
+        (await queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM timekeeping_records WHERE is_archived = 1', {}))!.n
+      );
+      const finalNew = Number(
+        (await queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM timekeeping_records WHERE is_archived = 0', {}))!.n
+      );
       console.log(`📊 Sau khi upload: Đã archive: ${finalArchived}, Dữ liệu mới: ${finalNew}`);
       
       // Calculate date range for response
@@ -1700,24 +1785,19 @@ export const uploadTimekeeping = [
         
         // Check for late employees in today's data
         const today = new Date().toISOString().split('T')[0];
-        const todayRecords = await prisma.timekeepingRecord.findMany({
-          where: {
-            is_archived: 0,
-            date: today,
-          },
-        });
+        const todayRecords = await query(
+          'SELECT * FROM timekeeping_records WHERE is_archived = 0 AND date = @d',
+          { d: today }
+        );
         
         // Count unique late employees
         const lateEmployeeCodes = new Set<string>();
-        todayRecords.forEach(r => {
+        todayRecords.forEach((r: any) => {
           let isLate = false;
-          
-          // If late_minutes > 0, count as late
-          if (r.late_minutes > 0) {
+          if (Number(r.late_minutes) > 0) {
             isLate = true;
           } else if (r.check_in) {
-            // Check if check_in time is after 8:00 AM (08:00)
-            const checkInTime = r.check_in.trim();
+            const checkInTime = String(r.check_in).trim();
             if (checkInTime) {
               const timeMatch = checkInTime.match(/(\d{1,2}):(\d{2})/);
               if (timeMatch) {
@@ -1733,8 +1813,8 @@ export const uploadTimekeeping = [
           
           if (isLate) {
             // Use resolveRecordCode logic to get the correct employee code
-            const code1 = (r.employee_code || '').trim().toUpperCase();
-            const code2 = (r.employee_name || '').trim().toUpperCase();
+            const code1 = String(r.employee_code ?? '').trim().toUpperCase();
+            const code2 = String(r.employee_name ?? '').trim().toUpperCase();
             const looksLikeCode = (val: string) => {
               if (!val || /\s/.test(val)) return false;
               return /[0-9]/.test(val);
@@ -1771,15 +1851,29 @@ export const uploadTimekeeping = [
         totalRows: data.length,
         processedRows,
         skippedRows,
+        placeholderRows,
+        replacedDates: uploadedDates,
+        archivedRows: archivedCount,
         parsedRecords: records.length, // Số records đã parse được
         dateRange: dateRangeResponse,
         records: insertedRecords.slice(0, 10), // Return first 10 records
       });
     } catch (error: any) {
-      if (req.file) {
+      if (req.file && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path);
       }
-      res.status(500).json({ error: error.message });
+      const msg = error?.message ?? String(error);
+      console.log('\n*** LỖI UPLOAD TIMEKEEPING ***');
+      console.log('Step:', lastStep);
+      console.log('Message:', msg);
+      console.error('[Upload timekeeping]', lastStep, msg);
+      if (error?.stack) console.log('Stack:', error.stack);
+      const isDev = process.env.NODE_ENV !== 'production';
+      res.status(500).json({
+        error: msg,
+        ...(lastStep && { step: lastStep }),
+        ...(isDev && error?.stack && { detail: error.stack }),
+      });
     }
   },
 ];

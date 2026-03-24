@@ -2,9 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Wallet, Receipt } from 'lucide-react';
 import { StatCard } from '@/components/shared/StatCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { hrExcelAPI } from '@/services/api';
-import { useI18n } from '@/contexts/I18nContext';
+import { hrExcelAPI, hrTemplatesAPI } from '@/services/api';
+import { useI18n } from '@/hooks/useI18n';
 import { formatNumberPlain } from '@/lib/utils';
+import { extractHrBuiltInStats } from '@/lib/hrBuiltInStats';
 import {
   BarChart,
   Bar,
@@ -29,19 +30,46 @@ export const DashboardAccounting = ({ filterMode, selectedDate, dateRange, baseD
 
   const formatNum = (v: any) => (Number.isFinite(Number(v)) ? formatNumberPlain(v) : t('dashboard.na'));
 
+  const range = (() => {
+    const now = new Date();
+    const fallbackMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const sourceDate = baseDate || selectedDate || `${fallbackMonth}-01`;
+    const source = new Date(`${sourceDate}T00:00:00`);
+    const monthStart = `${source.getFullYear()}-${String(source.getMonth() + 1).padStart(2, '0')}-01`;
+    const monthEnd = `${source.getFullYear()}-${String(source.getMonth() + 1).padStart(2, '0')}-${String(new Date(source.getFullYear(), source.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
+
+    if (filterMode === 'range' && dateRange?.start && dateRange?.end) {
+      return { start_date: dateRange.start, end_date: dateRange.end };
+    }
+    if (filterMode === 'year') {
+      return { start_date: `${source.getFullYear()}-01-01`, end_date: `${source.getFullYear()}-12-31` };
+    }
+    if (filterMode === 'single' && selectedDate) {
+      return { start_date: selectedDate, end_date: selectedDate };
+    }
+    if (filterMode === 'day' && baseDate) {
+      return { start_date: baseDate, end_date: baseDate };
+    }
+    return { start_date: monthStart, end_date: monthEnd };
+  })();
+
   const { data: hrBhxhListStats } = useQuery({
     queryKey: ['hrExcel', 'stats', 'bhxh-list'],
     queryFn: () => hrExcelAPI.getStats('bhxh-list'),
   });
 
   const { data: hrPayrollStats } = useQuery({
-    queryKey: ['hrExcel', 'stats', 'payroll'],
-    queryFn: () => hrExcelAPI.getStats('payroll'),
+    queryKey: ['hrTemplates', 'stats', 'payroll', range.start_date, range.end_date],
+    queryFn: async () => ({
+      stats: extractHrBuiltInStats('payroll', await hrTemplatesAPI.getGrid('payroll', range)),
+    }),
   });
 
   const { data: hrDailyWageStats } = useQuery({
-    queryKey: ['hrExcel', 'stats', 'daily-wage'],
-    queryFn: () => hrExcelAPI.getStats('daily-wage'),
+    queryKey: ['hrTemplates', 'stats', 'daily-wage', range.start_date, range.end_date],
+    queryFn: async () => ({
+      stats: extractHrBuiltInStats('daily-wage', await hrTemplatesAPI.getGrid('daily-wage', range)),
+    }),
   });
 
   const { data: hrArrearsCollectionStats } = useQuery({
@@ -80,13 +108,13 @@ export const DashboardAccounting = ({ filterMode, selectedDate, dateRange, baseD
     <div className="space-y-6">
       <p className="text-muted-foreground">
         {view === 'all'
-          ? 'Báo cáo Kế toán — BHXH, Thuế TNCN, Tiền công, Truy thu. Số liệu từ file Excel đã upload tại Nhân sự (HR).'
+          ? 'Báo cáo Kế toán — BHXH, Thuế TNCN, Tiền công, Truy thu. Lương/tiền công lấy tự động từ dữ liệu hệ thống; BHXH và truy thu lấy từ file upload.'
           : view === 'bhxh'
           ? 'BHXH phải nộp. Số liệu từ file Excel.'
           : view === 'payroll'
-          ? 'Lương / Thuế TNCN. Số liệu từ file Excel.'
+          ? 'Lương / Thuế TNCN. Số liệu tự tính từ dữ liệu hệ thống theo kỳ lọc.'
           : view === 'daily-wage'
-          ? 'Tiền công hàng ngày. Số liệu từ file Excel.'
+          ? 'Tiền công hàng ngày. Số liệu tự tính từ dữ liệu hệ thống theo kỳ lọc.'
           : 'Truy thu. Số liệu từ file Excel.'}
       </p>
 
@@ -102,7 +130,7 @@ export const DashboardAccounting = ({ filterMode, selectedDate, dateRange, baseD
         )}
         {showPayroll && (
           <StatCard
-            title="Thuế TNCN (Excel)"
+            title="Thuế TNCN"
             value={hrPayrollTaxValue}
             icon={Receipt}
             variant="primary"
@@ -114,13 +142,6 @@ export const DashboardAccounting = ({ filterMode, selectedDate, dateRange, baseD
             value={hrDailyWageValue}
             icon={Wallet}
             variant="success"
-            description={
-            (hrDailyWageStats as any)?.error === 'FILE_NOT_FOUND'
-              ? 'File đã upload nhưng không tìm thấy trên server.'
-              : hrDailyWageValue === t('dashboard.na')
-                ? 'Upload file Tiền công hàng ngày tại Nhân sự (HR)'
-                : undefined
-          }
           />
         )}
         {showArrears && (
@@ -173,7 +194,7 @@ export const DashboardAccounting = ({ filterMode, selectedDate, dateRange, baseD
       {MOCK_CHART.length === 0 && view === 'all' && (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            Chưa có dữ liệu. Upload file BHXH, Lương/Thuế, Tiền công hàng ngày, Truy thu tại Nhân sự (HR) để hiển thị.
+            Chưa có dữ liệu. BHXH và Truy thu cần upload file; Lương/Thuế và Tiền công sẽ tự hiện khi có dữ liệu chấm công trong kỳ.
           </CardContent>
         </Card>
       )}

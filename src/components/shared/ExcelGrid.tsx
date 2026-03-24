@@ -14,6 +14,10 @@ export type RowStyle = {
   borderRight?: string;
   borderBottom?: string;
   borderLeft?: string;
+  verticalAlign?: 'top' | 'middle' | 'bottom';
+  whiteSpace?: 'normal' | 'nowrap' | 'pre-wrap';
+  fontSize?: string;
+  fontFamily?: string;
 };
 
 export function ExcelGrid({
@@ -21,6 +25,10 @@ export function ExcelGrid({
   merges = [],
   rowStyles = {},
   cellStyles = {},
+  colWidths = {},
+  rowHeights = {},
+  hiddenCols = [],
+  hiddenRows = [],
 }: {
   rows: Array<Array<string | number>>;
   merges?: ExcelMerge[];
@@ -28,10 +36,17 @@ export function ExcelGrid({
   rowStyles?: Record<number, RowStyle>;
   /** Key "r,c" -> style (chữ đỏ...) */
   cellStyles?: Record<string, RowStyle>;
+  colWidths?: Record<number, number>;
+  rowHeights?: Record<number, number>;
+  hiddenCols?: number[];
+  hiddenRows?: number[];
 }) {
-  const { startSpanMap, skipSet } = useMemo(() => {
+  const { startSpanMap, skipSet, hiddenColsSet, hiddenRowsSet, maxCols } = useMemo(() => {
     const startSpanMap = new Map<string, { rowSpan: number; colSpan: number }>();
     const skipSet = new Set<string>();
+    const hiddenColsSet = new Set(hiddenCols);
+    const hiddenRowsSet = new Set(hiddenRows);
+    const maxCols = rows.reduce((max, row) => Math.max(max, row.length), 0);
 
     for (const m of merges) {
       const rowSpan = m.e.r - m.s.r + 1;
@@ -47,8 +62,8 @@ export function ExcelGrid({
       }
     }
 
-    return { startSpanMap, skipSet };
-  }, [merges]);
+    return { startSpanMap, skipSet, hiddenColsSet, hiddenRowsSet, maxCols };
+  }, [hiddenCols, hiddenRows, merges, rows]);
 
   if (!rows.length) {
     return (
@@ -60,21 +75,46 @@ export function ExcelGrid({
 
   return (
     <div className="border rounded-lg overflow-auto max-h-[70vh] bg-background">
-      <table className="min-w-max border-collapse text-xs border border-border">
+      <table className="min-w-max border-collapse text-[11px] border border-border">
+        <colgroup>
+          {Array.from({ length: maxCols }, (_, c) => {
+            const width = colWidths[c];
+            const hidden = hiddenColsSet.has(c);
+            return (
+              <col
+                key={c}
+                style={{
+                  width: width ? `${width}px` : undefined,
+                  minWidth: width ? `${width}px` : undefined,
+                  maxWidth: hidden ? '0px' : undefined,
+                  visibility: hidden ? 'collapse' : undefined,
+                }}
+              />
+            );
+          })}
+        </colgroup>
         <tbody>
           {rows.map((row, r) => {
             const rowStyle = rowStyles[r] || {};
             return (
-              <tr key={r}>
+              <tr
+                key={r}
+                style={{
+                  height: rowHeights[r] ? `${rowHeights[r]}px` : undefined,
+                  display: hiddenRowsSet.has(r) ? 'none' : undefined,
+                }}
+              >
                 {row.map((cell, c) => {
                   const key = `${r},${c}`;
                   if (skipSet.has(key)) return null;
                   const span = startSpanMap.get(key);
                   const cellStyle = cellStyles[key] || {};
+                  const spanCols = Array.from({ length: span?.colSpan || 1 }, (_, idx) => c + idx);
+                  const fullyHidden = spanCols.every((col) => hiddenColsSet.has(col));
                   const style = {
                     ...rowStyle,
                     ...cellStyle,
-                  } as React.CSSProperties;
+                  } as RowStyle;
                   return (
                     <td
                       key={key}
@@ -90,8 +130,17 @@ export function ExcelGrid({
                         borderRight: style.borderRight,
                         borderBottom: style.borderBottom,
                         borderLeft: style.borderLeft,
-                        whiteSpace: 'pre-wrap',
-                        minWidth: '2rem',
+                        verticalAlign: style.verticalAlign,
+                        whiteSpace: style.whiteSpace || 'nowrap',
+                        fontSize: style.fontSize || '11px',
+                        fontFamily: style.fontFamily || '"Times New Roman", serif',
+                        minWidth: colWidths[c] ? `${colWidths[c]}px` : '2rem',
+                        width: colWidths[c] ? `${colWidths[c]}px` : undefined,
+                        lineHeight: 1.25,
+                        maxWidth: fullyHidden ? '0px' : undefined,
+                        padding: fullyHidden ? '0' : undefined,
+                        display: fullyHidden ? 'none' : undefined,
+                        overflow: fullyHidden ? 'hidden' : undefined,
                       }}
                     >
                       {cell === null || cell === undefined ? '' : String(cell)}

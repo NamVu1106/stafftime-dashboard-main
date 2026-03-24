@@ -16,5 +16,21 @@
     "sourceMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/**/*.test.ts",
+    "src/pages",
+    "src/components",
+    "src/hooks",
+    "src/contexts",
+    "src/locales",
+    "src/lib",
+    "src/main.tsx",
+    "src/App.tsx",
+    "src/vite-env.d.ts",
+    "src/services/api.ts",
+    "src/data/departmentMenu.ts",
+    "src/scripts"
+  ]
 }

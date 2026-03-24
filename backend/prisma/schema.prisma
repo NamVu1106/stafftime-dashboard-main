@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "sqlserver"
   url      = env("DATABASE_URL")
 }
 
@@ -92,9 +92,9 @@ model Notification {
   id          Int      @id @default(autoincrement())
   type        String   // 'upload_success' | 'late_employees' | 'new_employees'
   title       String
-  message     String
+  message     String   @db.NVarChar(Max)
   is_read     Int      @default(0) // 0 = unread, 1 = read
-  metadata    String?  // JSON string for additional data (e.g., count, date)
+  metadata    String?  @db.NVarChar(Max) // JSON
   created_at  String   @default("")
   
   @@index([is_read])
@@ -106,8 +106,8 @@ model Notification {
 model EmployeeExcelStore {
   id          Int    @id @default(autoincrement())
   type        String @unique // 'official' | 'seasonal'
-  headers     String // JSON array of column names
-  rows        String // JSON array of row objects
+  headers     String @db.NVarChar(Max) // JSON columns
+  rows        String @db.NVarChar(Max)
   created_at  String @default("")
   updated_at  String @default("")
   @@map("employee_excel_store")
@@ -119,7 +119,7 @@ model HrExcelUpload {
   report_type        String // e.g. 'attendance-official', 'attendance-temp', 'bhxh', ...
   original_file_name String
   stored_file_name   String // filename in /uploads
-  sheet_names        String // JSON string array of sheet names
+  sheet_names        String @db.NVarChar(Max) // JSON array of sheet names
   default_sheet      String
   created_at         String @default("")
 

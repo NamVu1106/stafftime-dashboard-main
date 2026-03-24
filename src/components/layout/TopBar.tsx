@@ -1,8 +1,8 @@
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bell, Menu, User, LogOut, X, Trash2, AlertTriangle, Search, Settings, Calculator, FileText, Users, Briefcase, ShoppingCart, Home, HelpCircle, ShieldCheck, ChevronDown, LayoutGrid, FolderOpen, FileSpreadsheet, ListTree } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 import { Button } from '@/components/ui/button';
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher';
 import {
@@ -237,6 +237,29 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
   const { activeDeptTab, setActiveDeptTab, setSelectedFunction } = useDashboardTab();
   const isDashboard = location.pathname === '/';
 
+  useEffect(() => {
+    const path = location.pathname;
+    if (path === '/') return;
+
+    if (
+      path.startsWith('/hr/') ||
+      path.startsWith('/employees') ||
+      path.startsWith('/reports')
+    ) {
+      if (activeDeptTab !== 'hr') setActiveDeptTab('hr');
+      return;
+    }
+
+    if (
+      path.startsWith('/upload') ||
+      path.startsWith('/history') ||
+      path.startsWith('/departments')
+    ) {
+      if (activeDeptTab !== 'administration') setActiveDeptTab('administration');
+      return;
+    }
+  }, [activeDeptTab, location.pathname, setActiveDeptTab]);
+
   // Fetch notifications
   const { data: notifications = [], refetch: refetchNotifications } = useQuery<Notification[]>({
     queryKey: ['notifications'],
@@ -344,6 +367,12 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
     }) + ' (GMT+7)';
   };
 
+  const openDashboardFunction = (dept: string, id: string) => {
+    setActiveDeptTab(dept);
+    setSelectedFunction(id);
+    if (!isDashboard) navigate('/');
+  };
+
   return (
     <header className="sticky top-0 z-30 bg-topbar-bg border-b border-border shadow-topbar backdrop-blur-sm bg-opacity-95 transition-all duration-300">
       <div className="flex items-center px-4 gap-4 h-14 min-h-[3.5rem]">
@@ -363,81 +392,85 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
         <span className="text-xs">{formatHeaderDate()}</span>
       </div>
 
-      {/* Department tabs - popup chọn chức năng (chỉ khi ở Trang chủ) */}
-      {isDashboard && (
-        <div className="flex items-center gap-1 border-l border-border pl-4 ml-2 overflow-x-auto min-w-0 shrink">
-          <DeptDropdown
-            value="accounting"
-            label={t('deptMenu.accounting')}
-            icon={Calculator}
-            items={accountingMenu}
-            activeDeptTab={activeDeptTab}
-            onSelect={(id) => {
-              setActiveDeptTab('accounting');
+      {/* Department tabs - popup chọn chức năng, luôn giữ cố định trên mọi trang */}
+      <div className="flex items-center gap-1 border-l border-border pl-4 ml-2 overflow-x-auto min-w-0 shrink">
+        <DeptDropdown
+          value="accounting"
+          label={t('deptMenu.accounting')}
+          icon={Calculator}
+          items={accountingMenu}
+          activeDeptTab={activeDeptTab}
+          onSelect={(id) => openDashboardFunction('accounting', id)}
+        />
+        <DeptDropdown
+          value="administration"
+          label={t('deptMenu.administration')}
+          icon={FileText}
+          items={administrationMenu}
+          activeDeptTab={activeDeptTab}
+          onSelect={(id) => {
+            setActiveDeptTab('administration');
+            if (administrationMenuRoute[id]) navigate(administrationMenuRoute[id]);
+            else openDashboardFunction('administration', id);
+          }}
+        />
+        <DeptDropdown
+          value="hr"
+          label={t('deptMenu.hr')}
+          icon={Users}
+          items={hrMenu}
+          activeDeptTab={activeDeptTab}
+          onSelect={(id) => {
+            setActiveDeptTab('hr');
+            if (id === 'all') {
+              openDashboardFunction('hr', 'all');
+              return;
+            }
+            if (HR_REPORT_INLINE_IDS.has(id) && isDashboard) {
               setSelectedFunction(id);
-            }}
-          />
-          <DeptDropdown
-            value="administration"
-            label={t('deptMenu.administration')}
-            icon={FileText}
-            items={administrationMenu}
-            activeDeptTab={activeDeptTab}
-            onSelect={(id) => {
-              setActiveDeptTab('administration');
-              if (administrationMenuRoute[id]) navigate(administrationMenuRoute[id]);
-              else setSelectedFunction(id);
-            }}
-          />
-          <DeptDropdown
-            value="hr"
-            label={t('deptMenu.hr')}
-            icon={Users}
-            items={hrMenu}
-            activeDeptTab={activeDeptTab}
-            onSelect={(id) => {
-              setActiveDeptTab('hr');
-              if (id === 'all') setSelectedFunction('all');
-              else if (HR_REPORT_INLINE_IDS.has(id)) setSelectedFunction(id);
-              else if (hrMenuRoute[id]) navigate(hrMenuRoute[id]);
-              else setSelectedFunction(id);
-            }}
-          />
-          <DeptDropdown
-            value="congvu"
-            label={t('deptMenu.congvu')}
-            icon={Briefcase}
-            items={congvuMenu}
-            activeDeptTab={activeDeptTab}
-            onSelect={() => {
-              setActiveDeptTab('congvu');
-              toast.info(t('deptMenu.comingSoon'));
-            }}
-          />
-          <DeptDropdown
-            value="muahang"
-            label={t('deptMenu.muahang')}
-            icon={ShoppingCart}
-            items={muahangMenu}
-            activeDeptTab={activeDeptTab}
-            onSelect={() => {
-              setActiveDeptTab('muahang');
-              toast.info(t('deptMenu.comingSoon'));
-            }}
-          />
-          <DeptDropdown
-            value="ehs"
-            label={t('deptMenu.ehs')}
-            icon={ShieldCheck}
-            items={ehsMenu}
-            activeDeptTab={activeDeptTab}
-            onSelect={() => {
-              setActiveDeptTab('ehs');
-              toast.info(t('deptMenu.comingSoonEhs'));
-            }}
-          />
-        </div>
-      )}
+              return;
+            }
+            if (hrMenuRoute[id]) {
+              navigate(hrMenuRoute[id]);
+              return;
+            }
+            openDashboardFunction('hr', id);
+          }}
+        />
+        <DeptDropdown
+          value="congvu"
+          label={t('deptMenu.congvu')}
+          icon={Briefcase}
+          items={congvuMenu}
+          activeDeptTab={activeDeptTab}
+          onSelect={() => {
+            setActiveDeptTab('congvu');
+            toast.info(t('deptMenu.comingSoon'));
+          }}
+        />
+        <DeptDropdown
+          value="muahang"
+          label={t('deptMenu.muahang')}
+          icon={ShoppingCart}
+          items={muahangMenu}
+          activeDeptTab={activeDeptTab}
+          onSelect={() => {
+            setActiveDeptTab('muahang');
+            toast.info(t('deptMenu.comingSoon'));
+          }}
+        />
+        <DeptDropdown
+          value="ehs"
+          label={t('deptMenu.ehs')}
+          icon={ShieldCheck}
+          items={ehsMenu}
+          activeDeptTab={activeDeptTab}
+          onSelect={() => {
+            setActiveDeptTab('ehs');
+            toast.info(t('deptMenu.comingSoonEhs'));
+          }}
+        />
+      </div>
 
       {/* Icon toolbar - Home, Help, Settings (MES 2.0 style) */}
       <div className="hidden md:flex items-center gap-1 border-l border-border pl-4">

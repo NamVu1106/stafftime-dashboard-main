@@ -1,108 +1,114 @@
 import { Request, Response } from 'express';
-import { prisma } from '../server';
+import { query, queryOne, exec, transaction } from '../db/sqlServer';
 import { createNotification } from './notifications';
 
-// GET /api/employees - List all employees with filters
+type EmpRow = Record<string, unknown>;
+
+async function loadFamilyMap(employeeIds: number[]): Promise<Map<number, EmpRow[]>> {
+  const m = new Map<number, EmpRow[]>();
+  if (!employeeIds.length) return m;
+  const placeholders = employeeIds.map((_, i) => `@id${i}`).join(',');
+  const params: Record<string, unknown> = {};
+  employeeIds.forEach((id, i) => {
+    params[`id${i}`] = id;
+  });
+  const rows = await query<EmpRow>(
+    `SELECT * FROM family_members WHERE employee_id IN (${placeholders})`,
+    params
+  );
+  for (const r of rows) {
+    const eid = r.employee_id as number;
+    if (!m.has(eid)) m.set(eid, []);
+    m.get(eid)!.push(r);
+  }
+  return m;
+}
+
+function attachFamily(emp: EmpRow, famMap: Map<number, EmpRow[]>) {
+  const id = emp.id as number;
+  return { ...emp, family_members: famMap.get(id) || [] };
+}
+
 export const getEmployees = async (req: Request, res: Response) => {
   try {
     const { search, department, employment_type } = req.query;
-    
-    const where: any = {};
-    
-    // Filter by department
+    let sql = 'SELECT * FROM employees WHERE 1=1';
+    const params: Record<string, unknown> = {};
     if (department && department !== 'all') {
-      where.department = department;
+      sql += ' AND department = @dept';
+      params.dept = department;
     }
-    
-    // Filter by employment type
     if (employment_type) {
-      where.employment_type = employment_type;
+      sql += ' AND employment_type = @et';
+      params.et = employment_type;
     }
-    
-    // Fetch all employees first (we'll filter by search term after)
-    const employees = await prisma.employee.findMany({
-      where,
-      include: {
-        family_members: true,
-      },
-      orderBy: [
-        {
-          updated_at: 'desc', // Dữ liệu mới cập nhật hiển thị trước
-        },
-        {
-          created_at: 'desc', // Nếu updated_at giống nhau, sắp xếp theo created_at
-        },
-      ],
-    });
-    
-    // Filter by employee_code or name (case-insensitive)
-    // SQLite doesn't support case-insensitive search well, so we filter after fetching
-    let filteredEmployees = employees;
+    sql += ' ORDER BY updated_at DESC, created_at DESC';
+    let employees = await query<EmpRow>(sql, params);
+    const ids = employees.map((e) => e.id as number);
+    const famMap = await loadFamilyMap(ids);
+    employees = employees.map((e) => attachFamily(e, famMap) as any);
     if (search) {
-      const searchTerm = (search as string).trim().toLowerCase();
-      if (searchTerm) {
-        filteredEmployees = employees.filter(emp => 
-          emp.employee_code.toLowerCase().includes(searchTerm) ||
-          emp.name.toLowerCase().includes(searchTerm)
+      const term = (search as string).trim().toLowerCase();
+      if (term) {
+        employees = employees.filter(
+          (emp: any) =>
+            String(emp.employee_code).toLowerCase().includes(term) ||
+            String(emp.name).toLowerCase().includes(term)
         );
       }
     }
-    
-    res.json(filteredEmployees);
+    res.json(employees);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// GET /api/employees/official - Raw Excel data for display (chính thức)
-export const getEmployeesOfficial = async (req: Request, res: Response) => {
+export const getEmployeesOfficial = async (_req: Request, res: Response) => {
   try {
-    const store = await prisma.employeeExcelStore.findUnique({ where: { type: 'official' } });
+    const store = await queryOne<{ headers: string; rows: string }>(
+      "SELECT headers, rows FROM employee_excel_store WHERE type = 'official'",
+      {}
+    );
     if (!store) return res.json({ headers: [], rows: [] });
-    const headers = JSON.parse(store.headers || '[]') as string[];
-    const rows = JSON.parse(store.rows || '[]') as Record<string, any>[];
-    res.json({ headers, rows });
+    res.json({
+      headers: JSON.parse(store.headers || '[]'),
+      rows: JSON.parse(store.rows || '[]'),
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// GET /api/employees/seasonal - Raw Excel data for display (thời vụ)
-export const getEmployeesSeasonal = async (req: Request, res: Response) => {
+export const getEmployeesSeasonal = async (_req: Request, res: Response) => {
   try {
-    const store = await prisma.employeeExcelStore.findUnique({ where: { type: 'seasonal' } });
+    const store = await queryOne<{ headers: string; rows: string }>(
+      "SELECT headers, rows FROM employee_excel_store WHERE type = 'seasonal'",
+      {}
+    );
     if (!store) return res.json({ headers: [], rows: [] });
-    const headers = JSON.parse(store.headers || '[]') as string[];
-    const rows = JSON.parse(store.rows || '[]') as Record<string, any>[];
-    res.json({ headers, rows });
+    res.json({
+      headers: JSON.parse(store.headers || '[]'),
+      rows: JSON.parse(store.rows || '[]'),
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// GET /api/employees/:id - Get employee by ID
 export const getEmployeeById = async (req: Request, res: Response) => {
   try {
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    
-    const employee = await prisma.employee.findUnique({
-      where: { id: parseInt(id) },
-      include: {
-        family_members: true,
-      },
-    });
-    
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+    const employee = await queryOne<EmpRow>('SELECT * FROM employees WHERE id = @id', { id });
     if (!employee) {
       return res.status(404).json({ error: 'Employee not found' });
     }
-    
-    res.json(employee);
+    const fam = await query('SELECT * FROM family_members WHERE employee_id = @id', { id });
+    res.json({ ...employee, family_members: fam });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// POST /api/employees - Create new employee
 export const createEmployee = async (req: Request, res: Response) => {
   try {
     const {
@@ -121,18 +127,24 @@ export const createEmployee = async (req: Request, res: Response) => {
       avatar_url,
       family_relations,
     } = req.body;
-    
-    // Calculate age
     const birthDate = new Date(date_of_birth);
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    
-    const employee = await prisma.employee.create({
-      data: {
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age--;
+    const now = new Date().toISOString();
+    const rows = await query<EmpRow>(
+      `INSERT INTO employees (
+        employee_code, name, gender, date_of_birth, age, department, employment_type,
+        cccd, hometown, permanent_residence, temporary_residence, marital_status, phone, avatar_url,
+        created_at, updated_at
+      ) OUTPUT INSERTED.*
+      VALUES (
+        @employee_code, @name, @gender, @date_of_birth, @age, @department, @employment_type,
+        @cccd, @hometown, @permanent_residence, @temporary_residence, @marital_status, @phone, @avatar_url,
+        @created_at, @updated_at
+      )`,
+      {
         employee_code,
         name,
         gender,
@@ -147,46 +159,43 @@ export const createEmployee = async (req: Request, res: Response) => {
         marital_status: marital_status || null,
         phone: phone || null,
         avatar_url: avatar_url || null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        family_members: {
-          create: (family_relations || []).map((member: any) => ({
-            relation: member.relation,
-            name: member.name,
-            occupation: member.occupation,
-          })),
-        },
-      },
-      include: {
-        family_members: true,
-      },
-    });
-    
-    // Create notification for new employee
+        created_at: now,
+        updated_at: now,
+      }
+    );
+    const employee = rows[0];
+    const eid = employee.id as number;
+    for (const member of family_relations || []) {
+      await exec(
+        `INSERT INTO family_members (employee_id, relation, name, occupation) VALUES (@eid, @r, @n, @o)`,
+        {
+          eid,
+          r: member.relation,
+          n: member.name,
+          o: member.occupation || '',
+        }
+      );
+    }
+    const fam = await query('SELECT * FROM family_members WHERE employee_id = @id', { id: eid });
     await createNotification(
       'new_employees',
       'Có 1 nhân viên mới được thêm',
       `Nhân viên ${name} (${employee_code}) đã được thêm vào hệ thống`,
-      {
-        count: 1,
-        employee_code,
-        employee_name: name,
-      }
+      { count: 1, employee_code, employee_name: name }
     );
-    
-    res.status(201).json(employee);
+    res.status(201).json({ ...employee, family_members: fam });
   } catch (error: any) {
-    if (error.code === 'P2002') {
+    if (error.number === 2627 || error.code === 'EREQUEST') {
       return res.status(400).json({ error: 'Employee code already exists' });
     }
     res.status(500).json({ error: error.message });
   }
 };
 
-// PUT /api/employees/:id - Update employee
 export const updateEmployee = async (req: Request, res: Response) => {
   try {
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: 'Invalid employee ID' });
     const {
       employee_code,
       name,
@@ -203,148 +212,97 @@ export const updateEmployee = async (req: Request, res: Response) => {
       avatar_url,
       family_relations,
     } = req.body;
-    
-    // Log for debugging
-    console.log(`Updating employee ID: ${id}`);
-    console.log('Update data:', {
-      employee_code,
-      name,
-      date_of_birth,
-      department,
-      family_relations_count: Array.isArray(family_relations) ? family_relations.length : 'not array',
-    });
-    
-    // Calculate age
-    let age;
+    let age: number | undefined;
     if (date_of_birth) {
-      try {
-        const birthDate = new Date(date_of_birth);
-        if (!isNaN(birthDate.getTime())) {
-          const today = new Date();
-          age = today.getFullYear() - birthDate.getFullYear();
-          const monthDiff = today.getMonth() - birthDate.getMonth();
-          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-            age--;
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to calculate age from date_of_birth:', date_of_birth, error);
+      const birthDate = new Date(date_of_birth);
+      if (!isNaN(birthDate.getTime())) {
+        const today = new Date();
+        age = today.getFullYear() - birthDate.getFullYear();
+        const monthDiff = today.getMonth() - birthDate.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age--;
       }
     }
-    
-    // Update employee - always update all provided fields
-    // If a field is explicitly set to null or empty string, it will be cleared
-    const updateData: any = {
-      updated_at: new Date().toISOString(),
-    };
-    
-    // Required fields - only update if provided
-    if (employee_code !== undefined) updateData.employee_code = employee_code;
-    if (name !== undefined) updateData.name = name;
-    if (gender !== undefined) updateData.gender = gender;
-    if (date_of_birth !== undefined) updateData.date_of_birth = date_of_birth;
-    if (age !== undefined) updateData.age = age;
-    if (department !== undefined) updateData.department = department;
-    if (employment_type !== undefined) updateData.employment_type = employment_type;
-    
-    // Optional fields - update even if null/empty to allow clearing
-    if (cccd !== undefined) updateData.cccd = cccd || null;
-    if (hometown !== undefined) updateData.hometown = hometown || null;
-    if (permanent_residence !== undefined) updateData.permanent_residence = permanent_residence || null;
-    if (temporary_residence !== undefined) updateData.temporary_residence = temporary_residence || null;
-    if (marital_status !== undefined) updateData.marital_status = marital_status || null;
-    if (phone !== undefined) updateData.phone = phone || null;
-    if (avatar_url !== undefined) updateData.avatar_url = avatar_url || null;
-    
-    // Update family members if provided
-    // Always delete existing family members first, then create new ones if provided
-    // This handles both cases: updating with new members, and clearing all members (empty array)
+    const cur = await queryOne<EmpRow>('SELECT * FROM employees WHERE id = @id', { id });
+    if (!cur) return res.status(404).json({ error: 'Employee not found' });
+    const now = new Date().toISOString();
+    await exec(
+      `UPDATE employees SET
+        employee_code = COALESCE(@employee_code, employee_code),
+        name = COALESCE(@name, name),
+        gender = COALESCE(@gender, gender),
+        date_of_birth = COALESCE(@date_of_birth, date_of_birth),
+        age = COALESCE(@age, age),
+        department = COALESCE(@department, department),
+        employment_type = COALESCE(@employment_type, employment_type),
+        cccd = @cccd,
+        hometown = @hometown,
+        permanent_residence = @permanent_residence,
+        temporary_residence = @temporary_residence,
+        marital_status = @marital_status,
+        phone = @phone,
+        avatar_url = @avatar_url,
+        updated_at = @updated_at
+      WHERE id = @id`,
+      {
+        id,
+        employee_code: employee_code ?? cur.employee_code,
+        name: name ?? cur.name,
+        gender: gender ?? cur.gender,
+        date_of_birth: date_of_birth ?? cur.date_of_birth,
+        age: age ?? cur.age,
+        department: department ?? cur.department,
+        employment_type: employment_type ?? cur.employment_type,
+        cccd: cccd !== undefined ? cccd || null : cur.cccd,
+        hometown: hometown !== undefined ? hometown || null : cur.hometown,
+        permanent_residence:
+          permanent_residence !== undefined ? permanent_residence || null : cur.permanent_residence,
+        temporary_residence:
+          temporary_residence !== undefined ? temporary_residence || null : cur.temporary_residence,
+        marital_status: marital_status !== undefined ? marital_status || null : cur.marital_status,
+        phone: phone !== undefined ? phone || null : cur.phone,
+        avatar_url: avatar_url !== undefined ? avatar_url || null : cur.avatar_url,
+        updated_at: now,
+      }
+    );
     if (family_relations !== undefined) {
-      // Delete all existing family members first
-      await prisma.familyMember.deleteMany({
-        where: { employee_id: parseInt(id) },
-      });
-      
-      // Create new family members only if array is not empty
-      if (Array.isArray(family_relations) && family_relations.length > 0) {
-        // Filter out 'id' and 'employee_id' fields - Prisma will auto-generate id and set employee_id
-        const cleanFamilyRelations = family_relations.map((member: any) => ({
-          relation: member.relation,
-          name: member.name,
-          occupation: member.occupation,
-        }));
-        
-        updateData.family_members = {
-          create: cleanFamilyRelations,
-        };
+      await exec('DELETE FROM family_members WHERE employee_id = @id', { id });
+      for (const member of family_relations || []) {
+        await exec(
+          `INSERT INTO family_members (employee_id, relation, name, occupation) VALUES (@id, @r, @n, @o)`,
+          { id, r: member.relation, n: member.name, o: member.occupation || '' }
+        );
       }
-      // If family_relations is an empty array, we just delete and don't create anything
-      // This effectively clears all family members
     }
-    
-    // Validate employee ID
-    const employeeId = parseInt(id);
-    if (isNaN(employeeId)) {
-      return res.status(400).json({ error: 'Invalid employee ID' });
-    }
-    
-    const employee = await prisma.employee.update({
-      where: { id: employeeId },
-      data: updateData,
-      include: {
-        family_members: true,
-      },
-    });
-    
-    res.json(employee);
+    const employee = await queryOne<EmpRow>('SELECT * FROM employees WHERE id = @id', { id });
+    const fam = await query('SELECT * FROM family_members WHERE employee_id = @id', { id });
+    res.json({ ...employee, family_members: fam });
   } catch (error: any) {
-    console.error('Error updating employee:', error);
-    if (error.code === 'P2025') {
-      return res.status(404).json({ error: 'Employee not found' });
-    }
-    if (error.code === 'P2002') {
+    if (error.number === 2627) {
       return res.status(400).json({ error: 'Employee code already exists' });
     }
-    res.status(500).json({ 
-      error: error.message || 'Something went wrong!',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+    res.status(500).json({ error: error.message });
   }
 };
 
-// DELETE /api/employees/:id - Delete employee
 export const deleteEmployee = async (req: Request, res: Response) => {
   try {
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    
-    await prisma.employee.delete({
-      where: { id: parseInt(id) },
-    });
-    
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+    const n = await exec('DELETE FROM employees WHERE id = @id', { id });
+    if (!n) return res.status(404).json({ error: 'Employee not found' });
     res.json({ message: 'Employee deleted successfully' });
   } catch (error: any) {
-    if (error.code === 'P2025') {
-      return res.status(404).json({ error: 'Employee not found' });
-    }
     res.status(500).json({ error: error.message });
   }
 };
 
-// DELETE /api/employees - Delete all employees
-// Lưu ý: Hành động này sẽ xóa toàn bộ nhân viên trong hệ thống.
-// FamilyMember được cấu hình onDelete: Cascade nên sẽ tự xóa theo.
-export const deleteAllEmployees = async (req: Request, res: Response) => {
+export const deleteAllEmployees = async (_req: Request, res: Response) => {
   try {
-    const result = await prisma.employee.deleteMany({});
-
-    res.json({
-      message: 'All employees deleted successfully',
-      count: result.count,
+    await transaction(async (run) => {
+      await run('DELETE FROM family_members', {});
+      await run('DELETE FROM employees', {});
     });
+    res.json({ message: 'All employees deleted successfully', count: 'all' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 };
-
-
-

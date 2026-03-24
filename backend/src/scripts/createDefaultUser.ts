@@ -1,43 +1,29 @@
-import { PrismaClient } from '@prisma/client';
+import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
+import { connectDb, closeDb, queryOne, exec } from '../db/sqlServer';
 
-const prisma = new PrismaClient();
+dotenv.config();
 
-async function createDefaultUser() {
-  try {
-    // Check if admin user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { username: 'admin' },
-    });
-
-    if (existingUser) {
-      console.log('Admin user already exists');
-      return;
-    }
-
-    // Create default admin user
-    const password_hash = await bcrypt.hash('admin123', 10);
-    
-    const user = await prisma.user.create({
-      data: {
-        username: 'admin',
-        password_hash,
-        role: 'admin',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    });
-
-    console.log('✅ Default admin user created successfully!');
-    console.log('Username: admin');
-    console.log('Password: admin123');
-    console.log('⚠️  Please change the password after first login!');
-  } catch (error) {
-    console.error('Error creating default user:', error);
-  } finally {
-    await prisma.$disconnect();
+async function main() {
+  await connectDb();
+  const existing = await queryOne('SELECT id FROM users WHERE username = @u', { u: 'admin' });
+  if (existing) {
+    console.log('User admin already exists');
+    await closeDb();
+    return;
   }
+  const password_hash = await bcrypt.hash('admin123', 10);
+  const now = new Date().toISOString();
+  await exec(
+    `INSERT INTO users (username, password_hash, role, created_at, updated_at)
+     VALUES ('admin', @p, 'admin', @t, @t2)`,
+    { p: password_hash, t: now, t2: now }
+  );
+  console.log('Created admin / admin123');
+  await closeDb();
 }
 
-createDefaultUser();
-
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

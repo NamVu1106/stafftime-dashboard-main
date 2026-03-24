@@ -236,22 +236,32 @@ export const uploadAPI = {
     const formData = new FormData();
     formData.append('file', file);
     const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-    const response = await fetch(`${API_URL}/upload/employees/seasonal`, {
-      method: 'POST',
-      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
-      body: formData,
-    });
-    if (!response.ok) {
-      if (response.status === 401) {
-        localStorage.removeItem('token');
-        sessionStorage.removeItem('token');
-        sessionStorage.removeItem('user');
-        window.location.href = '/login';
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 600000);
+    try {
+      const response = await fetch(`${API_URL}/upload/employees/seasonal`, {
+        method: 'POST',
+        headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+        body: formData,
+        signal: controller.signal,
+      });
+      clearTimeout(t);
+      if (!response.ok) {
+        if (response.status === 401) {
+          localStorage.removeItem('token');
+          sessionStorage.removeItem('token');
+          sessionStorage.removeItem('user');
+          window.location.href = '/login';
+        }
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `API error: ${response.statusText}`);
       }
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || `API error: ${response.statusText}`);
+      return response.json();
+    } catch (e: any) {
+      clearTimeout(t);
+      if (e?.name === 'AbortError') throw new Error('Upload quá lâu — thử lại hoặc giảm kích thước file.');
+      throw e;
     }
-    return response.json();
   },
   uploadEmployees: async (file: File) => {
     const formData = new FormData();
@@ -296,10 +306,49 @@ export const uploadAPI = {
         sessionStorage.removeItem('user');
         window.location.href = '/login';
       }
-      throw new Error(`API error: ${response.statusText}`);
+      const text = await response.text();
+      let errMsg = response.statusText;
+      try {
+        const j = JSON.parse(text);
+        if (j && typeof j.error === 'string') errMsg = j.error;
+      } catch {
+        if (text) errMsg = text.slice(0, 200);
+      }
+      throw new Error(errMsg);
     }
-    
     return response.json();
+  },
+};
+
+export const vendorAssignmentsAPI = {
+  list: () => request<{ items: { employee_code: string; vendor_name: string; updated_at: string }[] }>('/vendor-assignments'),
+  save: (items: { employee_code: string; vendor_name: string }[]) =>
+    request<{ ok: boolean; upserted: number }>('/vendor-assignments', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    }),
+  /** Có NCC thì lưu, để trống thì xóa gán — dùng trên trang báo cáo */
+  sync: (rows: { employee_code: string; vendor_name: string }[]) =>
+    request<{ ok: boolean; saved: number; removed: number }>('/vendor-assignments/sync', {
+      method: 'POST',
+      body: JSON.stringify({ rows }),
+    }),
+  delete: (code: string) =>
+    request<{ ok: boolean }>(`/vendor-assignments/${encodeURIComponent(code)}`, { method: 'DELETE' }),
+  upload: async (file: File) => {
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${API_URL}/vendor-assignments/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error((err as any).error || response.statusText);
+    }
+    return response.json() as Promise<{ ok: boolean; upserted: number; message?: string }>;
   },
 };
 
@@ -382,8 +431,29 @@ export const hrTemplatesAPI = {
     if (params.start_date) queryParams.append('start_date', params.start_date);
     if (params.end_date) queryParams.append('end_date', params.end_date);
     return request<
-      | { rows: (string | number)[][]; merges?: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }> }
-      | { sheets: Array<{ name: string; rows: (string | number)[][] }> }
+      | {
+          rows: (string | number)[][];
+          merges?: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }>;
+          rowStyles?: Record<number, Record<string, string | undefined>>;
+          cellStyles?: Record<string, Record<string, string | undefined>>;
+          colWidths?: Record<number, number>;
+          rowHeights?: Record<number, number>;
+          hiddenCols?: number[];
+          hiddenRows?: number[];
+        }
+      | {
+          sheets: Array<{
+            name: string;
+            rows: (string | number)[][];
+            merges?: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }>;
+            rowStyles?: Record<number, Record<string, string | undefined>>;
+            cellStyles?: Record<string, Record<string, string | undefined>>;
+            colWidths?: Record<number, number>;
+            rowHeights?: Record<number, number>;
+            hiddenCols?: number[];
+            hiddenRows?: number[];
+          }>;
+        }
     >(`/hr-templates/${encodeURIComponent(reportType)}/grid?${queryParams.toString()}`);
   },
 };

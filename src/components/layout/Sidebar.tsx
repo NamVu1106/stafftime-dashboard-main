@@ -16,7 +16,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
+import { APP_LOGO_SRC } from '@/lib/branding';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -159,10 +160,25 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
       )}
     >
       {/* Logo - YS-Smart branding */}
-      <div className="flex items-center h-16 px-4 border-b border-sidebar-hover shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[hsl(200,80%,50%)] rounded-lg flex items-center justify-center flex-shrink-0 font-bold text-white text-sm">
-            YS
+      <div
+        className={cn(
+          'flex items-center border-b border-sidebar-hover shrink-0',
+          collapsed ? 'h-16 px-2 justify-center' : 'min-h-16 py-2 px-4'
+        )}
+      >
+        <div className={cn('flex items-center gap-3 min-w-0', collapsed && 'justify-center')}>
+          <div
+            className={cn(
+              'rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden bg-[hsl(200,80%,50%)]',
+              collapsed ? 'w-8 h-8 p-1' : 'h-10 w-full max-w-[11.5rem] px-2 py-1'
+            )}
+          >
+            <img
+              src={APP_LOGO_SRC}
+              alt="You Sung Vina"
+              draggable={false}
+              className={cn('object-contain', collapsed ? 'h-full w-full' : 'h-full w-full max-h-10')}
+            />
           </div>
           {!collapsed && (
             <div className="flex flex-col">

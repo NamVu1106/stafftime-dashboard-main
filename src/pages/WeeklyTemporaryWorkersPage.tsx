@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { DataTable } from '@/components/shared/DataTable';
 import { statisticsAPI } from '@/services/api';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 import { useToast } from '@/hooks/use-toast';
 import * as XLSX from 'xlsx';
 

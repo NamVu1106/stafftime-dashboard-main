@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { FolderOpen, FileSpreadsheet, ListTree } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { cn } from '@/lib/utils';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,

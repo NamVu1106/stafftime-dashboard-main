@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { statisticsAPI, timekeepingAPI } from '@/services/api';
 import { DataTable } from '@/components/shared/DataTable';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 import { useTimeFilter } from '@/contexts/TimeFilterContext';
 
 const ReportsDayPage = () => {

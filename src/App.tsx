@@ -4,12 +4,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
-import { I18nProvider } from "@/contexts/I18nContext";
+import { I18nProvider } from "@/contexts/IntlProvider";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import LoginPage from "./pages/LoginPage";
 import Index from "./pages/Index";
 import UploadPage from "./pages/UploadPage";
+import VendorAssignmentsPage from "./pages/VendorAssignmentsPage";
 import EmployeesPage from "./pages/EmployeesPage";
 import ReportsPage from "./pages/ReportsPage";
 import HistoryPage from "./pages/HistoryPage";
@@ -23,6 +24,7 @@ import DepartmentsListPage from "./pages/DepartmentsListPage";
 import ComparePage from "./pages/ComparePage";
 import WeeklyTemporaryWorkersPage from "./pages/WeeklyTemporaryWorkersPage";
 import HrReportPage from "./pages/HrReportPage";
+import HrSummaryPage from "./pages/HrSummaryPage";
 import RevisionHistoryPage from "./pages/RevisionHistoryPage";
 import NotFound from "./pages/NotFound";
 
@@ -61,6 +63,8 @@ const App = () => (
             <Route path="/reports/range" element={<ReportsRangePage />} />
             <Route path="/reports/compare" element={<ComparePage />} />
             <Route path="/reports/weekly-temporary-workers" element={<WeeklyTemporaryWorkersPage />} />
+            <Route path="/hr/vendor-assignments" element={<VendorAssignmentsPage />} />
+            <Route path="/hr/summary" element={<HrSummaryPage />} />
             <Route path="/hr/:reportType" element={<HrReportPage />} />
             <Route path="/departments" element={<DepartmentsListPage />} />
             <Route path="/departments/:dept" element={<DepartmentPage />} />

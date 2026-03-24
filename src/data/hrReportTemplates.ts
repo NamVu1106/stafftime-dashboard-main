@@ -1,6 +1,7 @@
 /**
  * Map reportType (menu Nhân sự) ↔ file Excel mẫu trong "New folder".
- * Dùng để hiển thị báo cáo từ dữ liệu hệ thống (timekeeping + employees) theo đúng layout mẫu.
+ * `hasBuiltInGrid=true` cho báo cáo tự sinh từ dữ liệu hệ thống.
+ * `hasBuiltInGrid=false` cho báo cáo chỉ xem theo file Excel upload riêng.
  */
 export type HrTemplateId =
   | 'temp-timesheet'      // Bảng chốt công Thời vụ
@@ -36,14 +37,14 @@ export const HR_REPORT_TEMPLATE_MAP: HrTemplateMapping[] = [
   { reportType: 'weekly-one-day-workers', templateId: 'weekly-one-day', excelFileName: 'BC so luong lam 1 cong trong tuan.xlsx', sheetName: 'Sheet1', hasBuiltInGrid: true },
   { reportType: 'labor-rate', templateId: 'labor-rate', excelFileName: 'BC ti le CC nhan luc .xlsx', sheetName: 'Sheet1', hasBuiltInGrid: true },
   { reportType: 'daily-wage', templateId: 'daily-wage', excelFileName: 'Báo cáo tiền công hàng ngày T1.02 mẫu.xlsx', sheetName: 'Sheet1', hasBuiltInGrid: true },
-  { reportType: 'bhxh-list', templateId: 'bhxh-list', excelFileName: 'DANH SACH Tham gia BHXH MẪU..xlsx', sheetName: 'Sheet1', hasBuiltInGrid: true },
-  { reportType: 'insurance-master', templateId: 'insurance-master', excelFileName: 'file mẫu bảo hiểm.xlsx', sheetName: 'Sheet1', hasBuiltInGrid: true },
+  { reportType: 'bhxh-list', templateId: 'bhxh-list', excelFileName: 'DANH SACH Tham gia BHXH MẪU..xlsx', sheetName: 'Sheet1', hasBuiltInGrid: false },
+  { reportType: 'insurance-master', templateId: 'insurance-master', excelFileName: 'file mẫu bảo hiểm.xlsx', sheetName: 'Sheet1', hasBuiltInGrid: false },
   { reportType: 'payroll', templateId: 'payroll', excelFileName: '01 월 전체 직원 급여 mẫu.xlsx', sheetName: 'Sheet1', hasBuiltInGrid: true },
   { reportType: 'payroll-kpi', templateId: 'payroll-kpi', excelFileName: '01 월 전체 직원 급여 mẫu KPI.xlsx', sheetName: '인건비 현황', hasBuiltInGrid: true },
   { reportType: 'workforce-summary', templateId: 'workforce-summary', excelFileName: '근태 현황 보고서_Rev.3 260209 mẫu.xlsx', sheetName: '근태종합(02월)', hasBuiltInGrid: true },
-  { reportType: 'drug-inventory', templateId: 'drug-inventory', excelFileName: 'BÁO CÁO XUẤT NHẬP TỒN THUỐC  mẫuy.xlsx', sheetName: 'Sheet1', hasBuiltInGrid: true },
-  { reportType: 'medical-room-usage', templateId: 'medical-room-usage', excelFileName: 'BC hiện trạng sử dụng phòng yte hàng ngày mẫu.xlsx', sheetName: 'Sheet1', hasBuiltInGrid: true },
-  { reportType: 'arrears-collection', templateId: 'arrears-collection', excelFileName: 'TRUY THU MẪU -.xlsx', sheetName: 'Sheet1', hasBuiltInGrid: true },
+  { reportType: 'drug-inventory', templateId: 'drug-inventory', excelFileName: 'BÁO CÁO XUẤT NHẬP TỒN THUỐC  mẫuy.xlsx', sheetName: 'Sheet1', hasBuiltInGrid: false },
+  { reportType: 'medical-room-usage', templateId: 'medical-room-usage', excelFileName: 'BC hiện trạng sử dụng phòng yte hàng ngày mẫu.xlsx', sheetName: 'Sheet1', hasBuiltInGrid: false },
+  { reportType: 'arrears-collection', templateId: 'arrears-collection', excelFileName: 'TRUY THU MẪU -.xlsx', sheetName: 'Sheet1', hasBuiltInGrid: false },
 ];
 
 export function getTemplateByReportType(reportType: string): HrTemplateMapping | undefined {

@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { Building2 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { statisticsAPI } from '@/services/api';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 
 // Fallback khi chưa có file Excel: 7 bộ phận (không có Khác)
 const FALLBACK_DEPTS = ['VPQL', 'MM', 'QC', 'CS', 'SM', 'EQM', 'PROD'] as const;

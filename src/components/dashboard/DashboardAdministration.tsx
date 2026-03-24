@@ -3,7 +3,7 @@ import { Package, Stethoscope } from 'lucide-react';
 import { StatCard } from '@/components/shared/StatCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { hrExcelAPI } from '@/services/api';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 import { formatNumberPlain } from '@/lib/utils';
 import {
   PieChart,

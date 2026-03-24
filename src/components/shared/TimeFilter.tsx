@@ -2,7 +2,7 @@ import { Filter } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useTimeFilter } from '@/contexts/TimeFilterContext';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 import { cn } from '@/lib/utils';
 
 interface TimeFilterProps {

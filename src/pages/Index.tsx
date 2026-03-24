@@ -27,9 +27,10 @@ function DeptPlaceholder({ dept, comingSoon, t }: { dept: string; comingSoon?: b
   );
 }
 import { toast } from 'sonner';
-import { hrExcelAPI, statisticsAPI, timekeepingAPI, notificationsAPI } from '@/services/api';
-import { useI18n } from '@/contexts/I18nContext';
+import { hrExcelAPI, hrTemplatesAPI, statisticsAPI, timekeepingAPI, notificationsAPI } from '@/services/api';
+import { useI18n } from '@/hooks/useI18n';
 import { formatNumberPlain } from '@/lib/utils';
+import { extractHrBuiltInStats } from '@/lib/hrBuiltInStats';
 import { 
   LineChart, 
   Line, 
@@ -107,6 +108,19 @@ const Index = () => {
     const year = new Date().getFullYear();
     return { date: undefined, start_date: `${year}-01-01`, end_date: `${year}-12-31` };
   })();
+
+  const hrTemplateRange = (() => {
+    if (params.start_date && params.end_date) {
+      return { start_date: params.start_date, end_date: params.end_date };
+    }
+    if (filterMode === 'single' && selectedDate) {
+      return { start_date: selectedDate, end_date: selectedDate };
+    }
+    if (filterMode === 'day' && baseDate) {
+      return { start_date: baseDate, end_date: baseDate };
+    }
+    return { start_date: monthParams.start_date!, end_date: monthParams.end_date! };
+  })();
   
   // Fetch data from API - nếu không có date thì không filter
   const { data: dashboardStats, isLoading: loadingStats } = useQuery({
@@ -116,33 +130,63 @@ const Index = () => {
 
   // HR Excel stats (hiển thị KPI trên dashboard nếu đã upload)
   const { data: hrAttendanceExcelStats } = useQuery({
-    queryKey: ['hrExcel', 'stats', 'attendance-rate'],
-    queryFn: () => hrExcelAPI.getStats('attendance-rate'),
+    queryKey: ['hrTemplates', 'stats', 'attendance-rate', hrTemplateRange.start_date, hrTemplateRange.end_date],
+    queryFn: async () => ({
+      stats: extractHrBuiltInStats(
+        'attendance-rate',
+        await hrTemplatesAPI.getGrid('attendance-rate', hrTemplateRange)
+      ),
+    }),
   });
 
   const { data: hrWeeklyOneDayStats } = useQuery({
-    queryKey: ['hrExcel', 'stats', 'weekly-one-day-workers'],
-    queryFn: () => hrExcelAPI.getStats('weekly-one-day-workers'),
+    queryKey: ['hrTemplates', 'stats', 'weekly-one-day-workers', hrTemplateRange.start_date, hrTemplateRange.end_date],
+    queryFn: async () => ({
+      stats: extractHrBuiltInStats(
+        'weekly-one-day-workers',
+        await hrTemplatesAPI.getGrid('weekly-one-day-workers', hrTemplateRange)
+      ),
+    }),
   });
 
   const { data: hrLaborRateStats } = useQuery({
-    queryKey: ['hrExcel', 'stats', 'labor-rate'],
-    queryFn: () => hrExcelAPI.getStats('labor-rate'),
+    queryKey: ['hrTemplates', 'stats', 'labor-rate', hrTemplateRange.start_date, hrTemplateRange.end_date],
+    queryFn: async () => ({
+      stats: extractHrBuiltInStats(
+        'labor-rate',
+        await hrTemplatesAPI.getGrid('labor-rate', hrTemplateRange)
+      ),
+    }),
   });
 
   const { data: hrAttendanceCountStats } = useQuery({
-    queryKey: ['hrExcel', 'stats', 'attendance-count'],
-    queryFn: () => hrExcelAPI.getStats('attendance-count'),
+    queryKey: ['hrTemplates', 'stats', 'attendance-count', hrTemplateRange.start_date, hrTemplateRange.end_date],
+    queryFn: async () => ({
+      stats: extractHrBuiltInStats(
+        'attendance-count',
+        await hrTemplatesAPI.getGrid('attendance-count', hrTemplateRange)
+      ),
+    }),
   });
 
   const { data: hrTempTimesheetStats } = useQuery({
-    queryKey: ['hrExcel', 'stats', 'temp-timesheet'],
-    queryFn: () => hrExcelAPI.getStats('temp-timesheet'),
+    queryKey: ['hrTemplates', 'stats', 'temp-timesheet', hrTemplateRange.start_date, hrTemplateRange.end_date],
+    queryFn: async () => ({
+      stats: extractHrBuiltInStats(
+        'temp-timesheet',
+        await hrTemplatesAPI.getGrid('temp-timesheet', hrTemplateRange)
+      ),
+    }),
   });
 
   const { data: hrOfficialTimesheetStats } = useQuery({
-    queryKey: ['hrExcel', 'stats', 'official-timesheet'],
-    queryFn: () => hrExcelAPI.getStats('official-timesheet'),
+    queryKey: ['hrTemplates', 'stats', 'official-timesheet', hrTemplateRange.start_date, hrTemplateRange.end_date],
+    queryFn: async () => ({
+      stats: extractHrBuiltInStats(
+        'official-timesheet',
+        await hrTemplatesAPI.getGrid('official-timesheet', hrTemplateRange)
+      ),
+    }),
   });
 
   const { data: hrInsuranceMasterStats } = useQuery({
@@ -186,7 +230,11 @@ const Index = () => {
     queryFn: () => statisticsAPI.getEmploymentType(),
   });
 
-  const { data: attendanceRateByDept = [] } = useQuery({
+  const {
+    data: attendanceRateByDept = [],
+    isLoading: loadingAttendanceRateByDept,
+    error: attendanceRateByDeptError,
+  } = useQuery({
     queryKey: ['department', params.date, params.start_date, params.end_date],
     queryFn: () => statisticsAPI.getDepartment(params),
   });
@@ -285,24 +333,51 @@ const Index = () => {
     DEPT_ORDER.forEach((g: string) => { byGroup[g] = { attendance: 0, totalEmployees: 0 }; });
     const excelNormToDept: Record<string, string> = {};
     DEPT_ORDER.forEach((d: string) => { excelNormToDept[normDept(d)] = d; });
+    const productionGroup =
+      excelNormToDept.sanxuat ||
+      excelNormToDept.prod ||
+      (DEPT_ORDER.includes('SAN XUAT') ? 'SAN XUAT' : DEPT_ORDER.includes('PROD') ? 'PROD' : '');
+    const unmatchedGroups = new Map<string, { attendance: number; totalEmployees: number }>();
+
     raw.forEach((d: any) => {
       const n = normDept(d.department);
-      const group = compactToGroup[n] || excelNormToDept[n];
+      let group = compactToGroup[n] || excelNormToDept[n];
+      if (productionGroup && ['prod', 'p', 'p2', 'phongprod', 'sanxuat', 'sanxuất', 'sx', 'production'].includes(n)) {
+        group = productionGroup;
+      }
       if (group && byGroup[group] != null) {
         byGroup[group].attendance += Number(d.attendance) || 0;
         byGroup[group].totalEmployees += Number(d.totalEmployees) || 0;
+        return;
       }
+      const fallbackLabel = String(d.department || '').trim();
+      if (!fallbackLabel) return;
+      const prev = unmatchedGroups.get(fallbackLabel) || { attendance: 0, totalEmployees: 0 };
+      prev.attendance += Number(d.attendance) || 0;
+      prev.totalEmployees += Number(d.totalEmployees) || 0;
+      unmatchedGroups.set(fallbackLabel, prev);
     });
-    const list = DEPT_ORDER.map((group: string) => {
-      const { attendance, totalEmployees } = byGroup[group];
-      const rate = totalEmployees > 0 ? Math.min(100, (attendance / totalEmployees) * 100) : 0;
-      return {
-        department: group,
-        attendanceRate: parseFloat(rate.toFixed(1)),
-        attendance,
-        totalEmployees,
-      };
-    });
+    const list = [
+      ...DEPT_ORDER.map((group: string) => {
+        const { attendance, totalEmployees } = byGroup[group];
+        const rate = totalEmployees > 0 ? Math.min(100, (attendance / totalEmployees) * 100) : 0;
+        return {
+          department: group,
+          attendanceRate: parseFloat(rate.toFixed(1)),
+          attendance,
+          totalEmployees,
+        };
+      }),
+      ...[...unmatchedGroups.entries()].map(([department, values]) => {
+        const rate = values.totalEmployees > 0 ? Math.min(100, (values.attendance / values.totalEmployees) * 100) : 0;
+        return {
+          department,
+          attendanceRate: parseFloat(rate.toFixed(1)),
+          attendance: values.attendance,
+          totalEmployees: values.totalEmployees,
+        };
+      }),
+    ];
     return list;
   }, [attendanceRateByDept, departmentsFromExcel]);
 
@@ -386,12 +461,46 @@ const Index = () => {
   };
 
   const hrTempTimesheetWorkHours = (hrTempTimesheetStats as any)?.stats?.timesheet?.sums?.workHours;
-  const hrTempTimesheetHoursValue = formatNum(hrTempTimesheetWorkHours);
+  const hrTempTimesheetEmployeesCount = (hrTempTimesheetStats as any)?.stats?.timesheet?.employeesCount;
 
   const hrOfficialPaidHours = (hrOfficialTimesheetStats as any)?.stats?.timesheet?.sums?.paidHours;
   const hrOfficialWorkHours = (hrOfficialTimesheetStats as any)?.stats?.timesheet?.sums?.workHours;
-  const hrOfficialTimesheetHoursValue = formatNum(
-    hrOfficialPaidHours !== null && hrOfficialPaidHours !== undefined ? hrOfficialPaidHours : hrOfficialWorkHours
+  const hrOfficialEmployeesCount = (hrOfficialTimesheetStats as any)?.stats?.timesheet?.employeesCount;
+  const isSingleDayHrRange = hrTemplateRange.start_date === hrTemplateRange.end_date;
+
+  const buildTimesheetCardDisplay = (hoursValue: any, employeesCount: any) => {
+    const hoursNum = Number(hoursValue);
+    const employeesNum = Number(employeesCount);
+    const hasHours = Number.isFinite(hoursNum) && hoursNum > 0;
+    const hasEmployees = Number.isFinite(employeesNum) && employeesNum > 0;
+
+    if (hasHours) {
+      return {
+        value: formatNumberPlain(hoursNum),
+        description: undefined as string | undefined,
+      };
+    }
+
+    if (isSingleDayHrRange && hasEmployees) {
+      return {
+        value: `${formatNumberPlain(employeesNum)} ${t('common.people')}`,
+        description: 'Ngày này chưa chốt giờ công, đang hiển thị số NV đi làm.',
+      };
+    }
+
+    return {
+      value: formatNum(hoursValue),
+      description: undefined as string | undefined,
+    };
+  };
+
+  const hrTempTimesheetCard = buildTimesheetCardDisplay(
+    hrTempTimesheetWorkHours,
+    hrTempTimesheetEmployeesCount
+  );
+  const hrOfficialTimesheetCard = buildTimesheetCardDisplay(
+    hrOfficialPaidHours !== null && hrOfficialPaidHours !== undefined ? hrOfficialPaidHours : hrOfficialWorkHours,
+    hrOfficialEmployeesCount
   );
 
   const hrInsuranceEmployees = (hrInsuranceMasterStats as any)?.stats?.insuranceMaster?.employeesCount;
@@ -702,7 +811,7 @@ const Index = () => {
         />
       </div>
 
-      {/* Stats Cards - HR Excel (chỉ Nhân sự: chấm công, nhân lực) */}
+      {/* Stats Cards - HR tự động / upload (chỉ Nhân sự: chấm công, nhân lực) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <StatCard
           title={`HR - ${t('sidebar.hrAttendanceRate')}`}
@@ -743,26 +852,21 @@ const Index = () => {
         />
       </div>
 
-      {/* Stats Cards - HR Excel (Công TV, Công CT - dữ liệu nhân sự) */}
+      {/* Stats Cards - HR tự động (Công TV, Công CT - dữ liệu nhân sự) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 mb-6">
         <StatCard
           title={`HR - ${t('dashboard.hrTempTimesheetHours')}`}
-          value={hrTempTimesheetHoursValue}
+          value={hrTempTimesheetCard.value}
           icon={ClipboardList}
           variant="info"
-          description={
-            (hrTempTimesheetStats as any)?.error === 'FILE_NOT_FOUND'
-              ? t('dashboard.fileNotFoundOnServer')
-              : hrTempTimesheetHoursValue === t('dashboard.na')
-                ? t('dashboard.uploadAtHr')
-                : undefined
-          }
+          description={hrTempTimesheetCard.description}
         />
         <StatCard
           title={`HR - ${t('dashboard.hrOfficialTimesheetHours')}`}
-          value={hrOfficialTimesheetHoursValue}
+          value={hrOfficialTimesheetCard.value}
           icon={ClipboardList}
           variant="info"
+          description={hrOfficialTimesheetCard.description}
         />
       </div>
 
@@ -929,33 +1033,49 @@ const Index = () => {
             Tỷ lệ % = (số người đi làm / tổng nhân viên bộ phận) × 100. Chỉ hiển thị bộ phận có dữ liệu.
           </p>
           <div className="h-[220px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={attendanceRateByDeptFiltered} barGap={4}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="department" stroke="hsl(var(--muted-foreground))" fontSize={10} angle={-45} textAnchor="end" height={60} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} />
-                <Tooltip 
-                  content={renderDeptTooltip}
-                />
-                <Bar
-                  dataKey="attendanceRate"
-                  name={t('dashboard.percentage')}
-                  fill="hsl(var(--primary))"
-                  radius={[4, 4, 0, 0]}
-                  label={{ position: 'top', formatter: (val: number) => `${val}%` }}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="grid grid-cols-3 gap-1 mt-3">
-            {attendanceRateByDeptFiltered.map((item: any) => (
-              <div key={item.department} className="text-center p-1 rounded-lg bg-muted/50">
-                <p className="text-[10px] text-muted-foreground">{item.department}</p>
-                <p className="text-sm font-bold">{item.attendanceRate}%</p>
-                <p className="text-[10px] text-muted-foreground">{formatNumberPlain(item.attendance)}/{formatNumberPlain(item.totalEmployees)}</p>
+            {loadingAttendanceRateByDept ? (
+              <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+                Đang tải dữ liệu bộ phận...
               </div>
-            ))}
+            ) : attendanceRateByDeptError ? (
+              <div className="h-full flex items-center justify-center text-sm text-destructive text-center px-4">
+                Không tải được dữ liệu bộ phận.
+              </div>
+            ) : attendanceRateByDeptFiltered.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+                Chưa có dữ liệu bộ phận để hiển thị.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={attendanceRateByDeptFiltered} barGap={4}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="department" stroke="hsl(var(--muted-foreground))" fontSize={10} angle={-45} textAnchor="end" height={60} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                  <Tooltip 
+                    content={renderDeptTooltip}
+                  />
+                  <Bar
+                    dataKey="attendanceRate"
+                    name={t('dashboard.percentage')}
+                    fill="hsl(var(--primary))"
+                    radius={[4, 4, 0, 0]}
+                    label={{ position: 'top', formatter: (val: number) => `${val}%` }}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
+          {attendanceRateByDeptFiltered.length > 0 && (
+            <div className="grid grid-cols-3 gap-1 mt-3">
+              {attendanceRateByDeptFiltered.map((item: any) => (
+                <div key={item.department} className="text-center p-1 rounded-lg bg-muted/50">
+                  <p className="text-[10px] text-muted-foreground">{item.department}</p>
+                  <p className="text-sm font-bold">{item.attendanceRate}%</p>
+                  <p className="text-[10px] text-muted-foreground">{formatNumberPlain(item.attendance)}/{formatNumberPlain(item.totalEmployees)}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

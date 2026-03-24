@@ -1,10 +1,17 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
-import { prisma } from '../server';
+import { transaction, query, exec } from '../db/sqlServer';
 import path from 'path';
 import fs from 'fs';
 import { createNotification } from './notifications';
+
+/** Bắt reject từ async handler → gọi next(err) để Express error middleware log và trả 500. */
+function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<void | Response>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -118,55 +125,81 @@ export const uploadEmployeesOfficial = [
         });
       }
       // Một transaction duy nhất → 1 lần commit, upload nhanh hơn rất nhiều
-      const TX_TIMEOUT = 10 * 60 * 1000; // 10 phút cho file lớn
       let upserted = 0;
-      await prisma.$transaction(async (tx) => {
+      const h = JSON.stringify(headerRow);
+      const rw = JSON.stringify(rawRows);
+      await transaction(async (run, runExec) => {
         for (const e of toUpsert) {
           try {
-            await tx.employee.upsert({
-              where: { employee_code: e.empCode },
-              update: {
-                name: e.name,
-                gender: e.gender,
-                date_of_birth: e.date_of_birth,
-                age: e.age,
-                department: e.department,
-                employment_type: 'Chính thức',
-                cccd: e.cccd,
-                phone: e.phone,
-                hometown: e.hometown,
-                permanent_residence: e.permanent_residence,
-                marital_status: e.marital_status,
-                updated_at: now,
-              },
-              create: {
-                employee_code: e.empCode,
-                name: e.name,
-                gender: e.gender,
-                date_of_birth: e.date_of_birth,
-                age: e.age,
-                department: e.department,
-                employment_type: 'Chính thức',
-                cccd: e.cccd,
-                phone: e.phone,
-                hometown: e.hometown,
-                permanent_residence: e.permanent_residence,
-                marital_status: e.marital_status,
-                created_at: now,
-                updated_at: now,
-              },
-            });
+            const ex = await run<{ id: number }>(
+              'SELECT id FROM employees WHERE employee_code = @c',
+              { c: e.empCode }
+            );
+            if (ex[0]) {
+              await runExec(
+                `UPDATE employees SET name=@n, gender=@g, date_of_birth=@dob, age=@age, department=@dept,
+                 employment_type=@et, cccd=@cccd, phone=@ph, hometown=@ht, permanent_residence=@pr,
+                 marital_status=@ms, updated_at=@u WHERE id=@id`,
+                {
+                  n: e.name,
+                  g: e.gender,
+                  dob: e.date_of_birth,
+                  age: e.age,
+                  dept: e.department,
+                  et: 'Chính thức',
+                  cccd: e.cccd,
+                  ph: e.phone,
+                  ht: e.hometown,
+                  pr: e.permanent_residence,
+                  ms: e.marital_status,
+                  u: now,
+                  id: ex[0].id,
+                }
+              );
+            } else {
+              await runExec(
+                `INSERT INTO employees (employee_code, name, gender, date_of_birth, age, department, employment_type,
+                  cccd, phone, hometown, permanent_residence, temporary_residence, marital_status, created_at, updated_at)
+                 VALUES (@ec, @n, @g, @dob, @age, @dept, @et, @cccd, @ph, @ht, @pr, NULL, @ms, @c, @u)`,
+                {
+                  ec: e.empCode,
+                  n: e.name,
+                  g: e.gender,
+                  dob: e.date_of_birth,
+                  age: e.age,
+                  dept: e.department,
+                  et: 'Chính thức',
+                  cccd: e.cccd,
+                  ph: e.phone,
+                  ht: e.hometown,
+                  pr: e.permanent_residence,
+                  ms: e.marital_status,
+                  c: now,
+                  u: now,
+                }
+              );
+            }
             upserted++;
           } catch (err: any) {
             console.error('Employee upsert error:', e.empCode, err.message);
           }
         }
-        await tx.employeeExcelStore.upsert({
-          where: { type: 'official' },
-          update: { headers: JSON.stringify(headerRow), rows: JSON.stringify(rawRows), updated_at: now },
-          create: { type: 'official', headers: JSON.stringify(headerRow), rows: JSON.stringify(rawRows), created_at: now, updated_at: now },
-        });
-      }, { timeout: TX_TIMEOUT });
+        const st = await run<{ id: number }>(
+          "SELECT id FROM employee_excel_store WHERE type = 'official'",
+          {}
+        );
+        if (st[0]) {
+          await runExec(
+            'UPDATE employee_excel_store SET headers=@h, rows=@rw, updated_at=@u WHERE type=@typ',
+            { h, rw, u: now, typ: 'official' }
+          );
+        } else {
+          await runExec(
+            `INSERT INTO employee_excel_store (type, headers, rows, created_at, updated_at) VALUES (@typ, @h, @rw, @c, @u)`,
+            { typ: 'official', h, rw, c: now, u: now }
+          );
+        }
+      });
       fs.unlinkSync(req.file.path);
       if (upserted > 0) {
         await createNotification('new_employees', `Đã đồng bộ ${upserted} nhân viên chính thức`, `Upload file chính thức: ${upserted} bản ghi`, { count: upserted });
@@ -179,22 +212,39 @@ export const uploadEmployeesOfficial = [
   },
 ];
 
-// POST /api/upload/employees/seasonal - File mẫu Thời vụ tổng 2024 (sheet TT, header row 3, data from row 5)
+// POST /api/upload/employees/seasonal - File mẫu Thời vụ (sheet TT hoặc sheet đầu, tìm dòng có "Mã NV")
 export const uploadEmployeesSeasonal = [
   upload.single('file'),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     try {
       if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
       const workbook = XLSX.readFile(req.file.path, { cellDates: true, sheetStubs: true });
-      const sheetName = workbook.SheetNames[0];
-      const ws = workbook.Sheets[sheetName];
-      if (!ws || !ws['!ref']) {
+      const sheetNamesToTry = [...new Set(['TT', 'Sheet1', 'Data', workbook.SheetNames[0]].filter(Boolean))];
+      let ws: XLSX.WorkSheet | undefined;
+      let sheetName = '';
+      for (const name of sheetNamesToTry) {
+        if (!name || !workbook.SheetNames.includes(name)) continue;
+        const s = workbook.Sheets[name];
+        if (s && s['!ref']) {
+          ws = s;
+          sheetName = name;
+          break;
+        }
+      }
+      if (!ws || !sheetName) {
         fs.unlinkSync(req.file.path);
-        return res.status(400).json({ error: 'Sheet empty' });
+        return res.status(400).json({ error: 'Không tìm thấy sheet có dữ liệu. Thử sheet TT hoặc Sheet1.' });
       }
       const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as any[][];
-      const headerRowIndex = 2; // row 3 in Excel
-      const dataStartIndex = 4; // row 5 (skip row 4 sub-header)
+      let headerRowIndex = 2;
+      for (let r = 0; r < Math.min(10, rawData.length); r++) {
+        const row = (rawData[r] || []).map((c: any) => (c != null ? String(c).trim() : ''));
+        if (row.some((c: string) => c === 'Mã NV' || c === 'Ma NV')) {
+          headerRowIndex = r;
+          break;
+        }
+      }
+      const dataStartIndex = headerRowIndex + 2;
       const headerRow = (rawData[headerRowIndex] || []).map((c: any) => (c != null ? String(c).trim() : ''));
       const rawRows: Record<string, any>[] = [];
       const toUpsert: Array<{
@@ -217,8 +267,8 @@ export const uploadEmployeesSeasonal = [
           if (h) rowObj[h] = row[idx] != null ? row[idx] : '';
         });
         rawRows.push(rowObj);
-        const empCode = String(rowObj['Mã NV'] ?? '').trim();
-        const name = String(rowObj['HỌ VÀ TÊN'] ?? rowObj['Họ và tên'] ?? '').trim();
+        const empCode = String(rowObj['Mã NV'] ?? rowObj['Ma NV'] ?? '').trim();
+        const name = String(rowObj['HỌ VÀ TÊN'] ?? rowObj['Họ và tên'] ?? rowObj['Họ tên'] ?? '').trim();
         if (!empCode || !name) continue;
         const gender = String(rowObj['Giới tính'] ?? 'Nam').trim();
         const dobRaw = rowObj['NGÀY SINH'] ?? rowObj['Ngày sinh'];
@@ -244,72 +294,172 @@ export const uploadEmployeesSeasonal = [
           permanent_residence: permanent_residence || null,
         });
       }
-      const TX_TIMEOUT = 10 * 60 * 1000; // 10 phút
-      let upserted = 0;
-      await prisma.$transaction(async (tx) => {
-        for (const e of toUpsert) {
-          try {
-            await tx.employee.upsert({
-              where: { employee_code: e.empCode },
-              update: {
-                name: e.name,
-                gender: e.gender,
-                date_of_birth: e.date_of_birth,
-                age: e.age,
-                department: e.department,
-                employment_type: 'Thời vụ',
-                cccd: e.cccd,
-                phone: e.phone,
-                permanent_residence: e.permanent_residence,
-                updated_at: now,
-              },
-              create: {
-                employee_code: e.empCode,
-                name: e.name,
-                gender: e.gender,
-                date_of_birth: e.date_of_birth,
-                age: e.age,
-                department: e.department,
-                employment_type: 'Thời vụ',
-                cccd: e.cccd,
-                phone: e.phone,
-                permanent_residence: e.permanent_residence,
-                created_at: now,
-                updated_at: now,
-              },
-            });
-            upserted++;
-          } catch (err: any) {
-            console.error('Employee upsert error:', e.empCode, err.message);
-          }
-        }
-        // Sau khi upload danh sách thời vụ: xóa khỏi DB những NV thời vụ không còn trong file (để Tổng nhân viên giảm đúng khi cắt giảm)
-        if (toUpsert.length > 0) {
-          const seasonalCodes = toUpsert.map((e) => e.empCode);
-          const deleted = await tx.employee.deleteMany({
-            where: {
-              employment_type: 'Thời vụ',
-              employee_code: { notIn: seasonalCodes },
-            },
-          });
-          if (deleted.count > 0) {
-            console.log(`[Upload seasonal] Removed ${deleted.count} seasonal employees no longer in file`);
-          }
-        }
-        await tx.employeeExcelStore.upsert({
-          where: { type: 'seasonal' },
-          update: { headers: JSON.stringify(headerRow), rows: JSON.stringify(rawRows), updated_at: now },
-          create: { type: 'seasonal', headers: JSON.stringify(headerRow), rows: JSON.stringify(rawRows), created_at: now, updated_at: now },
+      const byCode = new Map<string, (typeof toUpsert)[0]>();
+      for (const e of toUpsert) byCode.set(String(e.empCode).trim(), e);
+      const unique = [...byCode.values()];
+      if (unique.length === 0) {
+        fs.unlinkSync(req.file.path);
+        return res.status(400).json({
+          error:
+            'Không đọc được dòng nào (cần cột Mã NV + Họ tên). Kiểm tra sheet có dòng tiêu đề «Mã NV».',
         });
-      }, { timeout: TX_TIMEOUT });
-      fs.unlinkSync(req.file.path);
-      if (upserted > 0) {
-        await createNotification('new_employees', `Đã đồng bộ ${upserted} nhân viên thời vụ`, `Upload file thời vụ: ${upserted} bản ghi`, { count: upserted });
       }
-      res.json({ message: 'OK', count: rawRows.length, upserted, headers: headerRow.length });
+
+      let upserted = 0;
+      const MERGE_BATCH = 25;
+
+      async function upsertSequential(e: (typeof unique)[0]) {
+        const rows = await query<{ id: number }>('SELECT id FROM dbo.employees WHERE employee_code = @c', {
+          c: e.empCode,
+        });
+        if (rows[0]) {
+          await exec(
+            `UPDATE dbo.employees SET name=@n, gender=@g, date_of_birth=@dob, age=@age, department=@dept,
+             employment_type=@et, cccd=@cccd, phone=@ph, permanent_residence=@pr, updated_at=@u WHERE id=@id`,
+            {
+              n: e.name,
+              g: e.gender,
+              dob: e.date_of_birth,
+              age: e.age,
+              dept: e.department,
+              et: 'Thời vụ',
+              cccd: e.cccd,
+              ph: e.phone,
+              pr: e.permanent_residence,
+              u: now,
+              id: rows[0].id,
+            }
+          );
+        } else {
+          await exec(
+            `INSERT INTO dbo.employees (employee_code, name, gender, date_of_birth, age, department, employment_type,
+              cccd, phone, permanent_residence, created_at, updated_at)
+             VALUES (@ec, @n, @g, @dob, @age, @dept, @et, @cccd, @ph, @pr, @c, @u)`,
+            {
+              ec: e.empCode,
+              n: e.name,
+              g: e.gender,
+              dob: e.date_of_birth,
+              age: e.age,
+              dept: e.department,
+              et: 'Thời vụ',
+              cccd: e.cccd,
+              ph: e.phone,
+              pr: e.permanent_residence,
+              c: now,
+              u: now,
+            }
+          );
+        }
+        upserted++;
+      }
+
+      try {
+        for (let b = 0; b < unique.length; b += MERGE_BATCH) {
+          const batch = unique.slice(b, b + MERGE_BATCH);
+          const vals: string[] = [];
+          const params: Record<string, unknown> = { u: now, et: 'Thời vụ' };
+          batch.forEach((e, i) => {
+            vals.push(`(@ec${i},@n${i},@g${i},@dob${i},@age${i},@dept${i},@cc${i},@ph${i},@pr${i})`);
+            params[`ec${i}`] = String(e.empCode).slice(0, 400);
+            params[`n${i}`] = String(e.name).slice(0, 400);
+            params[`g${i}`] = String(e.gender).slice(0, 200);
+            params[`dob${i}`] = e.date_of_birth;
+            params[`age${i}`] = e.age;
+            params[`dept${i}`] = String(e.department).slice(0, 400);
+            params[`cc${i}`] = e.cccd;
+            params[`ph${i}`] = e.phone;
+            params[`pr${i}`] = e.permanent_residence;
+          });
+          const mergeSql = `MERGE dbo.employees AS T
+USING (VALUES ${vals.join(',')}) AS S(ec,n,g,dob,age,dept,cc,ph,pr)
+ON T.employee_code COLLATE DATABASE_DEFAULT = S.ec COLLATE DATABASE_DEFAULT
+WHEN MATCHED THEN UPDATE SET
+  name=S.n, gender=S.g, date_of_birth=S.dob, age=S.age, department=S.dept,
+  employment_type=@et, cccd=S.cc, phone=S.ph, permanent_residence=S.pr, updated_at=@u
+WHEN NOT MATCHED THEN INSERT (employee_code,name,gender,date_of_birth,age,department,employment_type,cccd,phone,permanent_residence,created_at,updated_at)
+VALUES (S.ec,S.n,S.g,S.dob,S.age,S.dept,@et,S.cc,S.ph,S.pr,@u,@u)`;
+          await exec(mergeSql, params);
+          upserted += batch.length;
+        }
+      } catch (mergeErr: any) {
+        console.warn('[Upload seasonal] MERGE batch lỗi, chuyển sang từng dòng:', mergeErr?.message);
+        upserted = 0;
+        for (const e of unique) {
+          try {
+            await upsertSequential(e);
+          } catch (one: any) {
+            console.error('[Upload seasonal]', e.empCode, one?.message);
+          }
+        }
+      }
+
+      const keepSet = new Set(unique.map((e) => String(e.empCode).trim()));
+      const seasonalDb = await query<{ employee_code: string }>(
+        `SELECT employee_code FROM dbo.employees WHERE employment_type = N'Thời vụ'`
+      );
+      const toRemove = seasonalDb.filter((r) => !keepSet.has(String(r.employee_code).trim()));
+      const DEL_CHUNK = 200;
+      for (let i = 0; i < toRemove.length; i += DEL_CHUNK) {
+        const chunk = toRemove.slice(i, i + DEL_CHUNK);
+        const inList = chunk.map((r) => `'${String(r.employee_code).replace(/'/g, "''")}'`).join(',');
+        await exec(`DELETE FROM dbo.employees WHERE employee_code IN (${inList})`);
+      }
+
+      const storeRows = rawRows.length > 3000 ? rawRows.slice(0, 3000) : rawRows;
+      const h2 = JSON.stringify(headerRow);
+      const rw2 = JSON.stringify(storeRows);
+      const h2Trunc = h2.length > 3500000 ? h2.slice(0, 3500000) : h2;
+      const rw2Trunc = rw2.length > 3500000 ? rw2.slice(0, 3500000) : rw2;
+      const st = await query<{ id: number }>("SELECT id FROM dbo.employee_excel_store WHERE type = N'seasonal'", {});
+      if (st[0]) {
+        await exec(
+          'UPDATE dbo.employee_excel_store SET headers=@h, rows=@rw, updated_at=@u WHERE type=@typ',
+          { h: h2Trunc, rw: rw2Trunc, u: now, typ: 'seasonal' }
+        );
+      } else {
+        await exec(
+          `INSERT INTO dbo.employee_excel_store (type, headers, rows, created_at, updated_at) VALUES (@typ, @h, @rw, @c, @u)`,
+          { typ: 'seasonal', h: h2Trunc, rw: rw2Trunc, c: now, u: now }
+        );
+      }
+
+      fs.unlinkSync(req.file.path);
+      try {
+        if (upserted > 0) {
+          await createNotification(
+            'new_employees',
+            `Đã đồng bộ ${upserted} nhân viên thời vụ`,
+            `Upload file thời vụ: ${upserted} bản ghi`,
+            { count: upserted }
+          );
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      res.json({
+        message: 'OK',
+        count: rawRows.length,
+        upserted,
+        removed: toRemove.length,
+        headers: headerRow.length,
+      });
     } catch (error: any) {
       if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-      res.status(500).json({ error: error.message });
+      const msg = error?.message ?? String(error);
+      const stack = error?.stack;
+      console.error('[Upload seasonal] LỖI:', msg);
+      if (stack) console.error('[Upload seasonal] Stack:', stack);
+      try {
+        if (!res.headersSent) {
+          res.status(500).json({
+            error: msg || 'Lỗi khi xử lý file thời vụ',
+            detail: process.env.NODE_ENV !== 'production' ? stack : undefined,
+          });
+        }
+      } catch (e2: any) {
+        console.error('[Upload seasonal] Gửi 500 thất bại:', e2?.message ?? e2);
+      }
     }
-  },
+  }),
 ];

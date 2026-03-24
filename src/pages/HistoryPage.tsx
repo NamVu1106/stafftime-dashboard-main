@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { timekeepingAPI } from '@/services/api';
 import { TimekeepingRecord } from '@/data/mockData';
 import { useToast } from '@/hooks/use-toast';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 
 const HistoryPage = () => {
   const { t } = useI18n();

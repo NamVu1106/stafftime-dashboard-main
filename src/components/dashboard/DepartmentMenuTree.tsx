@@ -1,7 +1,7 @@
 import { LucideIcon } from 'lucide-react';
 import { ChevronDown, FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 
 export interface MenuTreeItem {
   id: string;

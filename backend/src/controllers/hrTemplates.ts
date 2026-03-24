@@ -1,10 +1,20 @@
 import { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
+import ExcelJS from 'exceljs';
 import XLSX from 'xlsx';
-import { prisma } from '../server';
+import { query, queryOne } from '../db/sqlServer';
 
-type GridResponse = { rows: (string | number)[][]; merges?: { s: { r: number; c: number }; e: { r: number; c: number } }[] };
+type GridResponse = {
+  rows: (string | number)[][];
+  merges?: { s: { r: number; c: number }; e: { r: number; c: number } }[];
+  rowStyles?: Record<number, Record<string, string | undefined>>;
+  cellStyles?: Record<string, Record<string, string | undefined>>;
+  colWidths?: Record<number, number>;
+  rowHeights?: Record<number, number>;
+  hiddenCols?: number[];
+  hiddenRows?: number[];
+};
 
 /** Số cột ngày trong tháng (1-31) */
 const DAY_COLS = 31;
@@ -350,6 +360,513 @@ const OFFICIAL_HOURLY_RATE = 32000;
 const SEASONAL_HOURLY_RATE = 26000;
 const OVERTIME_MULTIPLIER = 1.5;
 
+type SheetRowStyle = {
+  backgroundColor?: string;
+  color?: string;
+  fontWeight?: string;
+  textAlign?: 'left' | 'center' | 'right';
+  borderTop?: string;
+  borderRight?: string;
+  borderBottom?: string;
+  borderLeft?: string;
+  verticalAlign?: 'top' | 'middle' | 'bottom';
+  whiteSpace?: 'normal' | 'nowrap' | 'pre-wrap';
+  fontSize?: string;
+  fontFamily?: string;
+};
+
+type SheetCellStyle = SheetRowStyle;
+
+type EmployeeLite = {
+  employee_code: string;
+  name: string;
+  department: string;
+  employment_type: string;
+  date_of_birth?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type TimekeepingLite = {
+  id?: number;
+  employee_code: string;
+  employee_name: string;
+  date: string;
+  check_in?: string;
+  check_out?: string;
+  workday?: number;
+  total_hours?: number;
+  total_all_hours?: number;
+  overtime_hours?: number;
+  late_minutes?: number;
+  early_minutes?: number;
+  shift?: string;
+  department?: string;
+  created_at?: string;
+  is_archived?: number;
+};
+
+type EmployeeAggregate = {
+  employee_code: string;
+  name: string;
+  department: string;
+  employment_type: string;
+  date_of_birth: string;
+  created_at: string;
+  totalWorkday: number;
+  totalHours: number;
+  overtimeHours: number;
+  dayWorkdays: number[];
+  dayHours: number[];
+  workedDates: Set<string>;
+};
+
+type WorkforceGroupKey =
+  | '관리(QL)'
+  | '제조 기술 (EQM)'
+  | '관리(HQ)'
+  | '생산(SX)'
+  | '품질(QC)'
+  | '자재(MM)'
+  | '영업(SM)';
+
+const normalizeCode = (code: unknown) => String(code ?? '').trim().toUpperCase();
+
+const looksLikeCode = (val: unknown) => {
+  const v = String(val ?? '').trim();
+  return !!v && !/\s/.test(v) && /[0-9]/.test(v);
+};
+
+const resolveRecordCode = (record: { employee_code?: unknown; employee_name?: unknown }) => {
+  const code1 = normalizeCode(record.employee_code);
+  const code2 = normalizeCode(record.employee_name);
+  if (looksLikeCode(code1)) return code1;
+  if (looksLikeCode(code2)) return code2;
+  return code1 || code2;
+};
+
+const normalizeTextValue = (val: unknown) =>
+  String(val ?? '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const normDeptCompact = (dept: unknown) => normalizeTextValue(dept).replace(/\s+/g, '');
+
+const isOfficialEmployee = (employmentType: unknown) => {
+  const normalized = normalizeTextValue(employmentType);
+  return normalized.includes('chinh thuc') || normalized.includes('정규');
+};
+
+const isSeasonalDepartment = (department: unknown) => {
+  const normalized = normalizeTextValue(department);
+  return (
+    normalized.includes('thoi vu') ||
+    normalized.includes('thoivu') ||
+    normalized.includes('seasonal') ||
+    normalized.includes('temp')
+  );
+};
+
+const isSeasonalEmployee = (employmentType: unknown) => {
+  const normalized = normalizeTextValue(employmentType);
+  return (
+    normalized.includes('thoi vu') ||
+    normalized.includes('seasonal') ||
+    normalized.includes('temp') ||
+    normalized.includes('계약') ||
+    normalized.includes('비정규')
+  );
+};
+
+const resolveEmploymentCategory = (employmentType: unknown, department?: unknown) => {
+  if (isSeasonalEmployee(employmentType) || isSeasonalDepartment(department)) return 'Thời vụ';
+  if (isOfficialEmployee(employmentType)) return 'Chính thức';
+  return String(employmentType ?? '').trim();
+};
+
+const toLocalYmd = (dt: Date) => {
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const d = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const parseYmdLocal = (ymd: string) => {
+  const [y, m, d] = ymd.split('-').map((part) => parseInt(part, 10));
+  return new Date(y, (m || 1) - 1, d || 1);
+};
+
+const clampYmd = (ymd: string) => (/^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : '');
+
+async function resolveReportRange(start_date: string, end_date: string) {
+  let start = clampYmd(String(start_date || '').trim());
+  let end = clampYmd(String(end_date || '').trim());
+
+  if (!start || !end) {
+    const latest = await queryOne<{ date: string }>(
+      'SELECT TOP 1 date FROM timekeeping_records WHERE is_archived = 0 ORDER BY date DESC',
+      {}
+    );
+    const refDate = latest?.date ? parseYmdLocal(String(latest.date).slice(0, 10)) : new Date();
+    start = toLocalYmd(new Date(refDate.getFullYear(), refDate.getMonth(), 1));
+    end = toLocalYmd(new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0));
+  }
+
+  if (start > end) {
+    [start, end] = [end, start];
+  }
+
+  const startDt = parseYmdLocal(start);
+  const endDt = parseYmdLocal(end);
+  const dates: string[] = [];
+  for (let dt = new Date(startDt); dt <= endDt; dt.setDate(dt.getDate() + 1)) {
+    dates.push(toLocalYmd(dt));
+  }
+
+  return {
+    start,
+    end,
+    dates,
+    monthLabel: `${start.slice(5, 7)}/${start.slice(0, 4)}`,
+    snapshotDate: dates[dates.length - 1] || end,
+  };
+}
+
+async function loadEmployeesLite(): Promise<EmployeeLite[]> {
+  const [employees, typeOverrides] = await Promise.all([
+    query<EmployeeLite>(
+      `SELECT employee_code, name, department, employment_type, date_of_birth, created_at, updated_at
+       FROM employees
+       ORDER BY department, employee_code`,
+      {}
+    ),
+    loadEmploymentTypeOverrides(),
+  ]);
+
+  return employees.map((emp) => {
+    const code = normalizeCode(emp.employee_code);
+    return {
+      ...emp,
+      employment_type: resolveEmploymentCategory(typeOverrides.get(code) || emp.employment_type, emp.department),
+    };
+  });
+}
+
+async function loadTimekeepingLite(start: string, end: string): Promise<TimekeepingLite[]> {
+  const rows = await query<TimekeepingLite>(
+    `SELECT id, employee_code, employee_name, date, check_in, check_out, workday, total_hours, total_all_hours,
+            overtime_hours, late_minutes, early_minutes, shift, department, created_at, is_archived
+     FROM timekeeping_records
+     WHERE date >= @sd AND date <= @ed
+     ORDER BY date, employee_code, created_at DESC`,
+    { sd: start, ed: end }
+  );
+  return dedupeLatestTimekeepingRecords(rows).filter(hasAttendanceSignal);
+}
+
+async function loadEmployeeStoreRows(type: 'official' | 'seasonal'): Promise<Record<string, unknown>[]> {
+  const store = await queryOne<{ rows: string }>(
+    'SELECT rows FROM employee_excel_store WHERE type = @typ',
+    { typ: type }
+  );
+  if (!store?.rows) return [];
+  try {
+    const parsed = JSON.parse(store.rows);
+    return Array.isArray(parsed)
+      ? parsed.filter((row): row is Record<string, unknown> => !!row && typeof row === 'object' && !Array.isArray(row))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseLooseDate(value: unknown): string {
+  if (value == null || value === '') return '';
+
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    const epoch = new Date(1899, 11, 30);
+    const dt = new Date(epoch.getTime() + value * 24 * 60 * 60 * 1000);
+    return toLocalYmd(dt);
+  }
+
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return toLocalYmd(value);
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  const parts = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$/);
+  if (parts) {
+    const a = parseInt(parts[1], 10);
+    const b = parseInt(parts[2], 10);
+    let year = parseInt(parts[3], 10);
+    if (year < 100) year += 2000;
+    const dayFirst = a > 12;
+    const month = dayFirst ? b : a;
+    const day = dayFirst ? a : b;
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+
+  const parsed = new Date(raw);
+  return isNaN(parsed.getTime()) ? raw : toLocalYmd(parsed);
+}
+
+function getRowValueByHeader(
+  row: Record<string, unknown> | undefined,
+  needleGroups: string[][]
+): string {
+  if (!row) return '';
+  for (const [key, value] of Object.entries(row)) {
+    const normalizedKey = normalizeTextValue(key);
+    if (needleGroups.some((group) => group.every((needle) => normalizedKey.includes(needle)))) {
+      return String(value ?? '').trim();
+    }
+  }
+  return '';
+}
+
+function isLikelyEmployeeCodeToken(value: unknown): boolean {
+  const raw = String(value ?? '').trim();
+  const token = normalizeCode(raw);
+  if (!token || /\s/.test(token)) return false;
+  if (token.length < 4 || token.length > 20) return false;
+  if (!/[0-9]/.test(token)) return false;
+  if (/^\d{1,3}$/.test(token)) return false;
+  if (/^\d{9,}$/.test(token)) return false;
+  if (/^\d{4}-\d{2}-\d{2}/.test(token)) return false;
+  if (/GMT|:\d{2}|T\d{2}/i.test(raw)) return false;
+  return true;
+}
+
+function scoreEmployeeCodeToken(value: unknown): number {
+  const token = normalizeCode(value);
+  let score = 0;
+  if (/[A-Z]/.test(token) && /[0-9]/.test(token)) score += 6;
+  if (/^[A-Z]{0,4}\d{4,}[A-Z]{0,4}$/.test(token)) score += 5;
+  if (/\d{6,}/.test(token)) score += 2;
+  if (token.length >= 6 && token.length <= 14) score += 2;
+  if (/^\d+$/.test(token)) score -= 2;
+  return score;
+}
+
+function extractEmployeeCodeFromStoreRow(row: Record<string, unknown>): string {
+  const byHeader = normalizeCode(
+    getRowValueByHeader(row, [
+      ['ma nv'],
+      ['mã nv'],
+      ['ma nhan vien'],
+      ['mã nhân viên'],
+      ['employee', 'code'],
+    ])
+  );
+  if (byHeader) return byHeader;
+
+  const valueCandidates: string[] = [];
+  for (const value of Object.values(row)) {
+    if (isLikelyEmployeeCodeToken(value)) valueCandidates.push(normalizeCode(value));
+  }
+  if (valueCandidates.length > 0) {
+    valueCandidates.sort((a, b) => scoreEmployeeCodeToken(b) - scoreEmployeeCodeToken(a) || a.localeCompare(b, 'vi'));
+    return valueCandidates[0] || '';
+  }
+
+  const keyCandidates: string[] = [];
+  for (const key of Object.keys(row)) {
+    if (isLikelyEmployeeCodeToken(key)) keyCandidates.push(normalizeCode(key));
+  }
+  if (!keyCandidates.length) return '';
+  keyCandidates.sort((a, b) => scoreEmployeeCodeToken(b) - scoreEmployeeCodeToken(a) || a.localeCompare(b, 'vi'));
+  return keyCandidates[0] || '';
+}
+
+function buildStoreRowMap(rows: Record<string, unknown>[]): Map<string, Record<string, unknown>> {
+  const map = new Map<string, Record<string, unknown>>();
+  for (const row of rows) {
+    const code = extractEmployeeCodeFromStoreRow(row);
+    if (code) map.set(code, row);
+  }
+  return map;
+}
+
+async function loadEmploymentTypeOverrides(): Promise<Map<string, string>> {
+  const [officialRows, seasonalRows] = await Promise.all([
+    loadEmployeeStoreRows('official'),
+    loadEmployeeStoreRows('seasonal'),
+  ]);
+
+  const typeMap = new Map<string, string>();
+  for (const code of buildStoreRowMap(officialRows).keys()) {
+    typeMap.set(code, 'Chính thức');
+  }
+  for (const code of buildStoreRowMap(seasonalRows).keys()) {
+    typeMap.set(code, 'Thời vụ');
+  }
+  return typeMap;
+}
+
+function buildEmployeeAggregates(
+  employees: EmployeeLite[],
+  records: TimekeepingLite[]
+): Map<string, EmployeeAggregate> {
+  const aggregates = new Map<string, EmployeeAggregate>();
+
+  for (const emp of employees) {
+    const code = normalizeCode(emp.employee_code);
+    if (!code) continue;
+    aggregates.set(code, {
+      employee_code: code,
+      name: String(emp.name ?? '').trim(),
+      department: String(emp.department ?? '').trim(),
+      employment_type: String(emp.employment_type ?? '').trim(),
+      date_of_birth: String(emp.date_of_birth ?? '').trim(),
+      created_at: String(emp.created_at ?? '').trim(),
+      totalWorkday: 0,
+      totalHours: 0,
+      overtimeHours: 0,
+      dayWorkdays: Array(DAY_COLS).fill(0),
+      dayHours: Array(DAY_COLS).fill(0),
+      workedDates: new Set<string>(),
+    });
+  }
+
+  for (const record of records) {
+    const code = resolveRecordCode(record);
+    if (!code) continue;
+
+    let agg = aggregates.get(code);
+    if (!agg) {
+      agg = {
+        employee_code: code,
+        name: String(record.employee_name ?? '').trim(),
+        department: String(record.department ?? '').trim(),
+        employment_type: resolveEmploymentCategory('', record.department),
+        date_of_birth: '',
+        created_at: '',
+        totalWorkday: 0,
+        totalHours: 0,
+        overtimeHours: 0,
+        dayWorkdays: Array(DAY_COLS).fill(0),
+        dayHours: Array(DAY_COLS).fill(0),
+        workedDates: new Set<string>(),
+      };
+      aggregates.set(code, agg);
+    }
+
+    const dateStr = String(record.date ?? '').slice(0, 10);
+    const day = parseInt(dateStr.slice(8, 10), 10);
+    const workday = Number(record.workday) || 0;
+    const hours = getHours(record);
+    const overtime = Number(record.overtime_hours) || 0;
+
+    agg.totalWorkday += workday;
+    agg.totalHours += hours;
+    agg.overtimeHours += overtime;
+
+    if (day >= 1 && day <= DAY_COLS) {
+      agg.dayWorkdays[day - 1] += workday;
+      agg.dayHours[day - 1] += hours;
+    }
+
+    if (dateStr) agg.workedDates.add(dateStr);
+    if (!agg.name) agg.name = String(record.employee_name ?? '').trim();
+    if (!agg.department) agg.department = String(record.department ?? '').trim();
+  }
+
+  return aggregates;
+}
+
+function sortAggregates(a: EmployeeAggregate, b: EmployeeAggregate) {
+  return (
+    String(a.department || '').localeCompare(String(b.department || ''), 'vi') ||
+    String(a.employee_code || '').localeCompare(String(b.employee_code || ''), 'vi')
+  );
+}
+
+function buildSimpleTableSheet(args: {
+  name: string;
+  title: string;
+  subtitle: string;
+  headers: (string | number)[];
+  dataRows: (string | number)[][];
+  dayStartCol?: number;
+}): TemplateSheetGrid {
+  const cols = Math.max(args.headers.length, 1, ...args.dataRows.map((row) => row.length));
+  const rows: (string | number)[][] = [
+    padRow([args.title], cols),
+    padRow([args.subtitle], cols),
+    padRow(args.headers, cols),
+    ...args.dataRows.map((row) => padRow(row, cols)),
+  ];
+
+  const rowStyles: Record<number, SheetRowStyle> = {
+    0: { backgroundColor: '#1e3a5f', color: '#fff', fontWeight: 'bold', textAlign: 'center' },
+    1: { backgroundColor: '#f8fafc', color: '#334155', fontWeight: 'normal', textAlign: 'center' },
+    2: { backgroundColor: '#e5e7eb', color: '#111827', fontWeight: 'bold', textAlign: 'center' },
+  };
+  const cellStyles: Record<string, SheetCellStyle> = {};
+
+  if (args.dayStartCol !== undefined) {
+    for (const day of [7, 14, 21, 28]) {
+      const col = args.dayStartCol + day - 1;
+      if (col >= cols) continue;
+      for (let r = 2; r < rows.length; r++) {
+        cellStyles[`${r},${col}`] = { backgroundColor: '#fdba74' };
+      }
+    }
+  }
+
+  const colWidths: Record<number, number> = {};
+  for (let c = 0; c < cols; c++) {
+    const header = String(args.headers[c] ?? '').trim().toLowerCase();
+    if (c === 0 || header === 'stt' || header === 'no') {
+      colWidths[c] = 52;
+    } else if (args.dayStartCol !== undefined && c >= args.dayStartCol && c < args.dayStartCol + DAY_COLS) {
+      colWidths[c] = 48;
+    } else if (/mã|ma nv|no cc|id mới|id moi|code/.test(header)) {
+      colWidths[c] = 92;
+    } else if (/họ tên|ho ten|name/.test(header)) {
+      colWidths[c] = 180;
+    } else if (/bp|bộ phận|bo phan|dept/.test(header)) {
+      colWidths[c] = 120;
+    } else if (/ngày|ngay|date/.test(header)) {
+      colWidths[c] = 96;
+    } else if (/ghi chú|ghi chu|note/.test(header)) {
+      colWidths[c] = 140;
+    } else {
+      colWidths[c] = 84;
+    }
+  }
+
+  return {
+    name: args.name,
+    rows,
+    merges: [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: cols - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: cols - 1 } },
+    ],
+    rowStyles,
+    cellStyles,
+    colWidths,
+  };
+}
+
+function mapWorkforceGroup(dept: unknown): WorkforceGroupKey {
+  const compact = normDeptCompact(dept);
+  if (['vpql'].includes(compact)) return '관리(QL)';
+  if (['eqm', 'phongeqm', 'e'].includes(compact)) return '제조 기술 (EQM)';
+  if (['qc', 'phongqc', 'q'].includes(compact)) return '품질(QC)';
+  if (['mm', 'phongmm', 'm'].includes(compact)) return '자재(MM)';
+  if (['sm', 'phongsm', 's'].includes(compact)) return '영업(SM)';
+  if (['sx', 'sanxuat', 'sanxuất', 'prod', 'production', 'p', 'p2'].includes(compact)) return '생산(SX)';
+  return '관리(HQ)';
+}
+
 function toFixed1(n: number): number {
   return Math.round((n || 0) * 10) / 10;
 }
@@ -358,8 +875,65 @@ function toFixed0(n: number): number {
   return Math.round(n || 0);
 }
 
-function getHours(record: { total_all_hours: number; total_hours: number }): number {
-  return record.total_all_hours || record.total_hours || 0;
+/** Row từ DB — total_hours có thể null/Decimal */
+function getHours(record: { total_all_hours?: unknown; total_hours?: unknown }): number {
+  const t1 = Number(record.total_all_hours);
+  const t2 = Number(record.total_hours);
+  if (Number.isFinite(t1) && t1 > 0) return t1;
+  if (Number.isFinite(t2) && t2 > 0) return t2;
+  return 0;
+}
+
+function hasAttendanceSignal(record: {
+  check_in?: unknown;
+  check_out?: unknown;
+  workday?: unknown;
+  total_hours?: unknown;
+  total_all_hours?: unknown;
+  overtime_hours?: unknown;
+  late_minutes?: unknown;
+  early_minutes?: unknown;
+}) {
+  const hasText = (value: unknown) => String(value ?? '').trim() !== '';
+  return (
+    hasText(record.check_in) ||
+    hasText(record.check_out) ||
+    Number(record.workday) > 0 ||
+    Number(record.total_hours) > 0 ||
+    Number(record.total_all_hours) > 0 ||
+    Number(record.overtime_hours) > 0 ||
+    Number(record.late_minutes) > 0 ||
+    Number(record.early_minutes) > 0
+  );
+}
+
+function compareTimekeepingVersion(a: TimekeepingLite, b: TimekeepingLite) {
+  const activeA = Number(a.is_archived || 0) === 0 ? 1 : 0;
+  const activeB = Number(b.is_archived || 0) === 0 ? 1 : 0;
+  if (activeA !== activeB) return activeA - activeB;
+  const createdA = String(a.created_at || '');
+  const createdB = String(b.created_at || '');
+  if (createdA !== createdB) return createdA.localeCompare(createdB, 'vi');
+  return Number(a.id || 0) - Number(b.id || 0);
+}
+
+function dedupeLatestTimekeepingRecords(records: TimekeepingLite[]) {
+  const latest = new Map<string, TimekeepingLite>();
+  for (const record of records) {
+    const code = resolveRecordCode(record);
+    const date = String(record.date || '').slice(0, 10);
+    if (!code || !date) continue;
+    const key = `${code}\t${date}`;
+    const prev = latest.get(key);
+    if (!prev || compareTimekeepingVersion(record, prev) > 0) {
+      latest.set(key, record);
+    }
+  }
+  return [...latest.values()].sort(
+    (a, b) =>
+      String(a.date || '').localeCompare(String(b.date || ''), 'vi') ||
+      resolveRecordCode(a).localeCompare(resolveRecordCode(b), 'vi')
+  );
 }
 
 function getHourlyRate(employmentType: string): number {
@@ -396,7 +970,14 @@ function buildMonthOverviewSheet(
       }
     }
   }
-  return { rows, merges, rowStyles, cellStyles };
+  const colWidths: Record<number, number> = {
+    0: 110,
+    1: 180,
+    33: 96,
+    34: 120,
+  };
+  for (let c = 2; c < 33; c++) colWidths[c] = 48;
+  return { rows, merges, rowStyles, cellStyles, colWidths };
 }
 
 const COLS_KPI = 45;
@@ -696,7 +1277,133 @@ type TemplateSheetGrid = {
   name: string;
   rows: (string | number)[][];
   merges: { s: { r: number; c: number }; e: { r: number; c: number } }[];
+  rowStyles?: Record<number, SheetRowStyle>;
+  cellStyles?: Record<string, SheetCellStyle>;
+  colWidths?: Record<number, number>;
+  rowHeights?: Record<number, number>;
+  hiddenCols?: number[];
+  hiddenRows?: number[];
 };
+
+type TemplateWorkbookBundle = {
+  workbook: ExcelJS.Workbook;
+  loadedAt: number;
+};
+
+const templateWorkbookBundleCache = new Map<string, TemplateWorkbookBundle>();
+
+async function getTemplateWorkbookBundle(filePath: string): Promise<TemplateWorkbookBundle> {
+  const cached = templateWorkbookBundleCache.get(filePath);
+  if (cached) return cached;
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  const next = { workbook, loadedAt: Date.now() };
+  templateWorkbookBundleCache.set(filePath, next);
+  return next;
+}
+
+const DEFAULT_THEME_COLORS: Record<number, string> = {
+  0: '#ffffff',
+  1: '#000000',
+  2: '#eeece1',
+  3: '#1f497d',
+  4: '#4f81bd',
+  5: '#c0504d',
+  6: '#9bbb59',
+  7: '#8064a2',
+  8: '#4bacc6',
+  9: '#f79646',
+};
+
+function normalizeArgbColor(argb: string | undefined): string | undefined {
+  if (!argb) return undefined;
+  const clean = String(argb).trim();
+  if (clean.length === 8) return `#${clean.slice(2)}`.toLowerCase();
+  if (clean.length === 6) return `#${clean}`.toLowerCase();
+  return undefined;
+}
+
+function excelColorToCss(color: any): string | undefined {
+  if (!color) return undefined;
+  if (typeof color.argb === 'string') return normalizeArgbColor(color.argb);
+  if (typeof color.theme === 'number') return DEFAULT_THEME_COLORS[color.theme];
+  return undefined;
+}
+
+function borderStyleToCss(style?: string): string {
+  switch (style) {
+    case 'thick':
+      return '2px solid';
+    case 'double':
+      return '3px double';
+    case 'dashed':
+    case 'mediumDashed':
+      return '1px dashed';
+    case 'dotted':
+      return '1px dotted';
+    case 'hair':
+      return '1px solid';
+    case 'medium':
+    case 'mediumDashDot':
+    case 'mediumDashDotDot':
+      return '2px solid';
+    case 'dashDot':
+    case 'dashDotDot':
+    case 'slantDashDot':
+      return '1px dashed';
+    case 'thin':
+    default:
+      return '1px solid';
+  }
+}
+
+const DEFAULT_CELL_BORDER = '1px solid #94a3b8';
+
+function excelBorderToCss(borderPart: any): string | undefined {
+  if (!borderPart?.style) return undefined;
+  const color = excelColorToCss(borderPart.color) || '#94a3b8';
+  return `${borderStyleToCss(borderPart.style)} ${color}`;
+}
+
+function extractExcelCellStyle(cell: ExcelJS.Cell): SheetCellStyle {
+  const style: SheetCellStyle = {};
+  const fillColor = excelColorToCss((cell.fill as any)?.fgColor) || excelColorToCss((cell.fill as any)?.bgColor);
+  if (fillColor) style.backgroundColor = fillColor;
+  const fontColor = excelColorToCss((cell.font as any)?.color);
+  if (fontColor) style.color = fontColor;
+  if ((cell.font as any)?.bold) style.fontWeight = 'bold';
+  if (typeof (cell.font as any)?.size === 'number' && Math.round((cell.font as any).size) !== 11) {
+    style.fontSize = `${Math.round((cell.font as any).size)}px`;
+  }
+  if ((cell.font as any)?.name && !/times new roman/i.test(String((cell.font as any).name))) {
+    style.fontFamily = String((cell.font as any).name);
+  }
+
+  const horizontal = (cell.alignment as any)?.horizontal;
+  if (horizontal === 'center' || horizontal === 'right') {
+    style.textAlign = horizontal;
+  }
+  const vertical = (cell.alignment as any)?.vertical;
+  if (vertical === 'middle' || vertical === 'bottom') {
+    style.verticalAlign = vertical;
+  }
+  if ((cell.alignment as any)?.wrapText === false) style.whiteSpace = 'nowrap';
+
+  const border = cell.border as any;
+  const borderTop = excelBorderToCss(border?.top);
+  const borderRight = excelBorderToCss(border?.right);
+  const borderBottom = excelBorderToCss(border?.bottom);
+  const borderLeft = excelBorderToCss(border?.left);
+  if (borderTop && borderTop !== DEFAULT_CELL_BORDER) style.borderTop = borderTop;
+  if (borderRight && borderRight !== DEFAULT_CELL_BORDER) style.borderRight = borderRight;
+  if (borderBottom && borderBottom !== DEFAULT_CELL_BORDER) style.borderBottom = borderBottom;
+  if (borderLeft && borderLeft !== DEFAULT_CELL_BORDER) style.borderLeft = borderLeft;
+  return style;
+}
+
+function hasStyleFields(style: SheetCellStyle): boolean {
+  return Object.values(style).some((value) => value !== undefined && value !== '');
+}
 
 let workforceTemplateCache: { workbook: XLSX.WorkBook; loadedAt: number } | null = null;
 
@@ -744,6 +1451,79 @@ function sheetToTemplateGrid(workbook: XLSX.WorkBook, sheetName: string): Templa
     }));
 
   return { name: sheetName, rows, merges };
+}
+
+async function sheetToStyledTemplateGrid(
+  workbook: XLSX.WorkBook,
+  sheetName: string,
+  filePath: string
+): Promise<TemplateSheetGrid> {
+  const baseGrid = sheetToTemplateGrid(workbook, sheetName);
+  const ws = workbook.Sheets[sheetName];
+  if (!ws || !ws['!ref']) return baseGrid;
+
+  const bundle = await getTemplateWorkbookBundle(filePath);
+  const excelSheet = bundle.workbook.getWorksheet(sheetName);
+  if (!excelSheet) return baseGrid;
+
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  const cellStyles: Record<string, SheetCellStyle> = {};
+  const colWidths: Record<number, number> = {};
+  const rowHeights: Record<number, number> = {};
+  const hiddenCols: number[] = [];
+  const hiddenRows: number[] = [];
+  const totalCells = (range.e.r - range.s.r + 1) * (range.e.c - range.s.c + 1);
+  const maxStyledRows = totalCells > 12000 ? 40 : Number.POSITIVE_INFINITY;
+
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const col = excelSheet.getColumn(c + 1);
+    const localCol = c - range.s.c;
+    if (typeof col.width === 'number' && Number.isFinite(col.width)) {
+      colWidths[localCol] = Math.max(Math.round(col.width * 7.2), 24);
+    }
+    if (col.hidden) hiddenCols.push(localCol);
+  }
+
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const row = excelSheet.getRow(r + 1);
+    const localRow = r - range.s.r;
+    if (typeof row.height === 'number' && Number.isFinite(row.height)) {
+      rowHeights[localRow] = row.height;
+    }
+    if (row.hidden) hiddenRows.push(localRow);
+
+    if (localRow >= maxStyledRows) continue;
+
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = excelSheet.getCell(r + 1, c + 1);
+      const localCol = c - range.s.c;
+      const style = extractExcelCellStyle(cell);
+      const displayValue = baseGrid.rows[localRow]?.[localCol];
+      const hasDisplayValue =
+        displayValue !== null &&
+        displayValue !== undefined &&
+        String(displayValue).trim() !== '';
+      if (!hasDisplayValue) {
+        delete style.textAlign;
+        delete style.verticalAlign;
+        delete style.fontSize;
+        delete style.fontFamily;
+        delete style.whiteSpace;
+      }
+      if (hasStyleFields(style)) {
+        cellStyles[`${localRow},${localCol}`] = style;
+      }
+    }
+  }
+
+  return {
+    ...baseGrid,
+    ...(Object.keys(cellStyles).length ? { cellStyles } : {}),
+    ...(Object.keys(colWidths).length ? { colWidths } : {}),
+    ...(Object.keys(rowHeights).length ? { rowHeights } : {}),
+    ...(hiddenCols.length ? { hiddenCols } : {}),
+    ...(hiddenRows.length ? { hiddenRows } : {}),
+  };
 }
 
 function isDateLikeCell(val: string | number): boolean {
@@ -861,6 +1641,582 @@ function loadAttendanceRateTemplateSheet(dateStr: string): TemplateSheetGrid {
   return { ...grid, rows: blankAttendanceRateRows(grid.rows) };
 }
 
+function normTkCode(c: unknown): string {
+  return String(c ?? '')
+    .trim()
+    .toUpperCase();
+}
+
+function isNightShiftTk(shift: unknown): boolean {
+  const s = String(shift ?? '').toUpperCase();
+  return /DEM|ĐÊM|DÊM|NIGHT|CA\s*ĐÊM|CA\s*2\b/.test(s);
+}
+
+const UNASSIGNED_VENDOR = '— Chưa gán NCC —';
+
+type AttendanceRateBlock =
+  | { kind: 'month'; label: string; dates: string[] }
+  | { kind: 'week'; label: string; dates: string[] }
+  | { kind: 'day'; label: string; date: string };
+
+type AttendanceRateMetric = {
+  totalSl: number;
+  totalDl: number;
+  daySl: number;
+  dayDl: number;
+  nightSl: number;
+  nightDl: number;
+};
+
+type AttendanceRateShiftStats = {
+  dayHits: number;
+  nightHits: number;
+  latestDate: string;
+  latestShift: 'day' | 'night';
+};
+
+type AttendanceRateBase = {
+  totalCodes: Set<string>;
+  dayCodes: Set<string>;
+  nightCodes: Set<string>;
+};
+
+type AttendanceRateDailyAgg = {
+  totalCodes: Set<string>;
+  dayCodes: Set<string>;
+  nightCodes: Set<string>;
+};
+
+const ZERO_ATTENDANCE_RATE_METRIC: AttendanceRateMetric = {
+  totalSl: 0,
+  totalDl: 0,
+  daySl: 0,
+  dayDl: 0,
+  nightSl: 0,
+  nightDl: 0,
+};
+
+function formatAttendanceRateDayLabel(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-');
+  return `${Number(month)}/${Number(day)}/${year.slice(2)}`;
+}
+
+function getAttendanceRateWeekOfMonth(dateStr: string): number {
+  const dt = parseYmdLocal(dateStr);
+  const firstDay = new Date(dt.getFullYear(), dt.getMonth(), 1);
+  return Math.floor((dt.getDate() + firstDay.getDay() - 1) / 7) + 1;
+}
+
+function getAttendanceRateWeekKey(dateStr: string): string {
+  const month = Number(dateStr.slice(5, 7));
+  return `W${getAttendanceRateWeekOfMonth(dateStr)}/T${month}`;
+}
+
+function buildAttendanceRateBlocks(dates: string[]): AttendanceRateBlock[] {
+  if (!dates.length) return [];
+
+  const uniqueMonths = [...new Set(dates.map((date) => date.slice(0, 7)))];
+  const monthLabel = uniqueMonths.length === 1 ? `Tháng ${dates[0].slice(5, 7)}` : 'TB kỳ';
+  const weekKeys = new Set(dates.map((date) => `${date.slice(0, 7)}-${getAttendanceRateWeekOfMonth(date)}`));
+  const shouldShowWeekTotals = weekKeys.size > 1;
+
+  const blocks: AttendanceRateBlock[] = [{ kind: 'month', label: monthLabel, dates: [...dates] }];
+  let weekBucket: string[] = [];
+
+  for (let index = 0; index < dates.length; index += 1) {
+    const dateStr = dates[index];
+    const nextDate = dates[index + 1];
+
+    blocks.push({
+      kind: 'day',
+      label: formatAttendanceRateDayLabel(dateStr),
+      date: dateStr,
+    });
+    weekBucket.push(dateStr);
+
+    const currentWeekKey = `${dateStr.slice(0, 7)}-${getAttendanceRateWeekOfMonth(dateStr)}`;
+    const nextWeekKey = nextDate ? `${nextDate.slice(0, 7)}-${getAttendanceRateWeekOfMonth(nextDate)}` : '';
+    const isWeekBoundary = !nextDate || currentWeekKey !== nextWeekKey;
+
+    if (shouldShowWeekTotals && isWeekBoundary && weekBucket.length > 0) {
+      blocks.push({
+        kind: 'week',
+        label: getAttendanceRateWeekKey(dateStr),
+        dates: [...weekBucket],
+      });
+    }
+
+    if (isWeekBoundary) {
+      weekBucket = [];
+    }
+  }
+
+  return blocks;
+}
+
+function createAttendanceRateBase(): AttendanceRateBase {
+  return {
+    totalCodes: new Set<string>(),
+    dayCodes: new Set<string>(),
+    nightCodes: new Set<string>(),
+  };
+}
+
+function createAttendanceRateDailyAgg(): AttendanceRateDailyAgg {
+  return {
+    totalCodes: new Set<string>(),
+    dayCodes: new Set<string>(),
+    nightCodes: new Set<string>(),
+  };
+}
+
+function sumAttendanceRateMetrics(metrics: AttendanceRateMetric[]): AttendanceRateMetric {
+  const sum = { ...ZERO_ATTENDANCE_RATE_METRIC };
+  for (const metric of metrics) {
+    sum.totalSl += metric.totalSl;
+    sum.totalDl += metric.totalDl;
+    sum.daySl += metric.daySl;
+    sum.dayDl += metric.dayDl;
+    sum.nightSl += metric.nightSl;
+    sum.nightDl += metric.nightDl;
+  }
+  return sum;
+}
+
+function averageAttendanceRateMetrics(metrics: AttendanceRateMetric[]): AttendanceRateMetric {
+  if (!metrics.length) return { ...ZERO_ATTENDANCE_RATE_METRIC };
+  const sum = sumAttendanceRateMetrics(metrics);
+  const divisor = metrics.length;
+  return {
+    totalSl: sum.totalSl / divisor,
+    totalDl: sum.totalDl / divisor,
+    daySl: sum.daySl / divisor,
+    dayDl: sum.dayDl / divisor,
+    nightSl: sum.nightSl / divisor,
+    nightDl: sum.nightDl / divisor,
+  };
+}
+
+function formatAttendanceRateCount(value: number): string | number {
+  if (!Number.isFinite(value) || Math.abs(value) < 0.0001) return 0;
+  const rounded = Math.round(value * 10) / 10;
+  return Math.abs(rounded - Math.round(rounded)) < 0.0001 ? Math.round(rounded) : rounded;
+}
+
+function formatAttendanceRatePercent(attended: number, total: number): string {
+  const rawRate = total > 0 ? (attended / total) * 100 : 0;
+  const rate = Math.max(0, Math.min(100, Math.round(rawRate * 10) / 10));
+  const formatted = Number.isInteger(rate) ? rate.toFixed(0) : rate.toFixed(1).replace(/\.0$/, '');
+  return `${formatted}%`;
+}
+
+function getDailyAttendanceRateMetric(
+  base: AttendanceRateBase | undefined,
+  dailyAgg?: AttendanceRateDailyAgg
+): AttendanceRateMetric {
+  const totalBase = base?.totalCodes.size || 0;
+  const totalDl = dailyAgg?.totalCodes.size || 0;
+  const dayDl = dailyAgg?.dayCodes.size || 0;
+  const nightDl = dailyAgg?.nightCodes.size || 0;
+
+  if (!base || totalBase <= 0) {
+    return {
+      totalSl: totalDl,
+      totalDl,
+      daySl: dayDl,
+      dayDl,
+      nightSl: nightDl,
+      nightDl,
+    };
+  }
+
+  let daySl = base.dayCodes.size;
+  let nightSl = Math.max(totalBase - daySl, 0);
+
+  if (dayDl > daySl) {
+    const need = dayDl - daySl;
+    const movable = Math.max(nightSl - nightDl, 0);
+    const moved = Math.min(need, movable);
+    daySl += moved;
+    nightSl -= moved;
+  }
+
+  if (nightDl > nightSl) {
+    const need = nightDl - nightSl;
+    const movable = Math.max(daySl - dayDl, 0);
+    const moved = Math.min(need, movable);
+    nightSl += moved;
+    daySl -= moved;
+  }
+
+  daySl = Math.max(daySl, dayDl);
+  nightSl = Math.max(nightSl, nightDl);
+  const totalSl = Math.max(totalBase, daySl + nightSl, totalDl);
+
+  return {
+    totalSl,
+    totalDl,
+    daySl,
+    dayDl,
+    nightSl,
+    nightDl,
+  };
+}
+
+function buildAttendanceRateMetricCells(
+  metric: AttendanceRateMetric,
+  kind: AttendanceRateBlock['kind']
+): (string | number)[] {
+  if (kind === 'day') {
+    return [
+      formatAttendanceRateCount(metric.totalSl),
+      formatAttendanceRateCount(metric.totalDl),
+      formatAttendanceRatePercent(metric.totalDl, metric.totalSl),
+      formatAttendanceRateCount(metric.daySl),
+      formatAttendanceRateCount(metric.dayDl),
+      formatAttendanceRatePercent(metric.dayDl, metric.daySl),
+      formatAttendanceRateCount(metric.nightSl),
+      formatAttendanceRateCount(metric.nightDl),
+      formatAttendanceRatePercent(metric.nightDl, metric.nightSl),
+    ];
+  }
+
+  return [
+    formatAttendanceRateCount(metric.totalSl),
+    formatAttendanceRateCount(metric.totalDl),
+    formatAttendanceRatePercent(metric.totalDl, metric.totalSl),
+  ];
+}
+
+/**
+ * Tỉ lệ đi làm: Vendor = nhà cung cấp (bảng employee_vendor_map), không dùng phòng ban.
+ * Gán NV → NCC tại trang «Gán Vendor» hoặc upload Excel 2 cột (Mã NV, Vendor).
+ */
+async function buildAttendanceRateFromTimekeeping(
+  start_date: string,
+  end_date: string
+): Promise<TemplateSheetGrid> {
+  let sd = start_date;
+  let ed = end_date;
+  if (!sd || !ed) {
+    const n = new Date();
+    const y = n.getFullYear();
+    const m = n.getMonth();
+    sd = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+    ed = `${y}-${String(m + 1).padStart(2, '0')}-${String(new Date(y, m + 1, 0).getDate()).padStart(2, '0')}`;
+  }
+  if (sd > ed) {
+    return {
+      name: 'Tỉ lệ đi làm',
+      rows: [['Chọn khoảng ngày hợp lệ (Bộ lọc thời gian). start_date ≤ end_date.', '']],
+      merges: [],
+    };
+  }
+
+  const tkRowsAllRaw = await query<TimekeepingLite>(
+    `SELECT id, employee_code, employee_name, date, shift, workday, check_in, department, created_at, is_archived
+     FROM timekeeping_records
+     WHERE date >= @sd AND date <= @ed
+     ORDER BY date, employee_code, created_at DESC`,
+    { sd, ed }
+  );
+  const tkRowsAllLatest = dedupeLatestTimekeepingRecords(tkRowsAllRaw);
+  const availableDates = [...new Set(
+    tkRowsAllLatest
+      .map((row) => String(row.date || '').slice(0, 10))
+      .filter(Boolean)
+  )].sort();
+  const dates = availableDates.length > 62 ? availableDates.slice(-62) : availableDates;
+  const dateSet = new Set(dates);
+
+  if (dates.length === 0) {
+    return {
+      name: 'Tỉ lệ đi làm',
+      rows: [['Chưa có dữ liệu chấm công trong khoảng lọc hiện tại.', '']],
+      merges: [],
+    };
+  }
+
+  let vrows: { employee_code: string; vendor_name: string }[] = [];
+  try {
+    vrows = await query(
+      'SELECT employee_code, vendor_name FROM employee_vendor_map',
+      {}
+    );
+  } catch {
+    vrows = [];
+  }
+  const codeToVendorName = new Map<string, string>();
+  for (const v of vrows) {
+    const c = normTkCode(v.employee_code);
+    if (c) codeToVendorName.set(c, String(v.vendor_name || '').trim() || UNASSIGNED_VENDOR);
+  }
+
+  const employeesAll = await loadEmployeesLite();
+  const masterSeasonalCodes = new Set<string>();
+  for (const e of employeesAll.filter((emp) => isSeasonalEmployee(emp.employment_type))) {
+    const code = normTkCode(e.employee_code);
+    if (code) masterSeasonalCodes.add(code);
+  }
+
+  const codeToVendor = new Map<string, string>();
+  const ensureVendorCode = (code: string) => {
+    const vendor = codeToVendorName.get(code) || UNASSIGNED_VENDOR;
+    codeToVendor.set(code, vendor);
+  };
+  for (const code of codeToVendorName.keys()) {
+    ensureVendorCode(code);
+  }
+
+  const isAttendanceRateSeasonalCode = (code: string, department?: string) =>
+    masterSeasonalCodes.has(code) || codeToVendorName.has(code) || isSeasonalDepartment(department);
+
+  const periodSeasonalCodes = new Set<string>();
+  const shiftStatsByCode = new Map<string, AttendanceRateShiftStats>();
+  const tkRowsAll = tkRowsAllLatest.filter((row) => dateSet.has(String(row.date || '').slice(0, 10)));
+  for (const row of tkRowsAll) {
+    const code = normTkCode(row.employee_code);
+    if (!code) continue;
+    if (!isAttendanceRateSeasonalCode(code, row.department)) continue;
+
+    periodSeasonalCodes.add(code);
+    ensureVendorCode(code);
+
+    const bucket = isNightShiftTk(row.shift) ? 'night' : 'day';
+    const dateStr = String(row.date || '').slice(0, 10);
+    const current = shiftStatsByCode.get(code) || {
+      dayHits: 0,
+      nightHits: 0,
+      latestDate: '',
+      latestShift: bucket as 'day' | 'night',
+    };
+    if (bucket === 'night') current.nightHits += 1;
+    else current.dayHits += 1;
+    if (!current.latestDate || dateStr >= current.latestDate) {
+      current.latestDate = dateStr;
+      current.latestShift = bucket;
+    }
+    shiftStatsByCode.set(code, current);
+  }
+
+  const baseByVendor = new Map<string, AttendanceRateBase>();
+  for (const code of periodSeasonalCodes) {
+    const vendor = codeToVendor.get(code) || codeToVendorName.get(code) || UNASSIGNED_VENDOR;
+    const shiftStats = shiftStatsByCode.get(code);
+    const shiftBucket =
+      shiftStats?.latestShift ||
+      ((shiftStats?.nightHits || 0) > (shiftStats?.dayHits || 0) ? 'night' : 'day');
+
+    if (!baseByVendor.has(vendor)) {
+      baseByVendor.set(vendor, createAttendanceRateBase());
+    }
+    const base = baseByVendor.get(vendor)!;
+    base.totalCodes.add(code);
+    if (shiftBucket === 'night') base.nightCodes.add(code);
+    else base.dayCodes.add(code);
+  }
+
+  const tkRows = tkRowsAll.filter(hasAttendanceSignal);
+  const aggKey = (vendor: string, dateStr: string) => `${vendor}\t${dateStr}`;
+  const agg = new Map<string, AttendanceRateDailyAgg>();
+  const ensureAgg = (vendor: string, d: string): AttendanceRateDailyAgg => {
+    const k = aggKey(vendor, d);
+    if (!agg.has(k)) agg.set(k, createAttendanceRateDailyAgg());
+    return agg.get(k)!;
+  };
+
+  for (const r of tkRows as { employee_code: string; date: string; shift: string; workday: number; check_in: string; department?: string }[]) {
+    const dateStr = String(r.date || '').slice(0, 10);
+    if (!dateStr) continue;
+    const wd = Number(r.workday) || 0;
+    const cin = String(r.check_in || '').trim();
+    if (wd <= 0 && !cin) continue;
+    const code = normTkCode(r.employee_code);
+    if (!code) continue;
+    if (!isAttendanceRateSeasonalCode(code, r.department)) continue;
+
+    ensureVendorCode(code);
+    const vendor = codeToVendor.get(code) || codeToVendorName.get(code) || UNASSIGNED_VENDOR;
+    if (!vendor) continue;
+    const a = ensureAgg(vendor, dateStr);
+    a.totalCodes.add(code);
+    if (isNightShiftTk(r.shift)) a.nightCodes.add(code);
+    else a.dayCodes.add(code);
+  }
+
+  const vendors = [...baseByVendor.keys()].filter((v) => v !== UNASSIGNED_VENDOR).sort((a, b) => a.localeCompare(b, 'vi'));
+  if (baseByVendor.has(UNASSIGNED_VENDOR)) vendors.push(UNASSIGNED_VENDOR);
+
+  const blocks = buildAttendanceRateBlocks(dates);
+  const blockWidth = (block: AttendanceRateBlock) => (block.kind === 'day' ? 9 : 3);
+  const numCols = 2 + blocks.reduce((sum, block) => sum + blockWidth(block), 0);
+  const merges: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(numCols - 1, 1) } });
+  merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: Math.max(numCols - 1, 1) } });
+  merges.push({ s: { r: 2, c: 0 }, e: { r: 4, c: 0 } });
+  merges.push({ s: { r: 2, c: 1 }, e: { r: 4, c: 1 } });
+
+  const rows: (string | number)[][] = [];
+  rows.push([
+    'BÁO CÁO TỈ LỆ ĐI LÀM THỜI VỤ THEO NCC',
+    ...Array(Math.max(numCols - 1, 0)).fill(''),
+  ]);
+  rows.push([
+    `Khoảng lọc ${sd} → ${ed} | Ngày có dữ liệu: ${dates[0]} → ${dates[dates.length - 1]} | Tháng/Tuần = trung bình theo ngày có dữ liệu.`,
+    ...Array(Math.max(numCols - 1, 0)).fill(''),
+  ]);
+  const h1: (string | number)[] = ['No', 'Vendor'];
+  const h2: (string | number)[] = ['', ''];
+  const h3: (string | number)[] = ['', ''];
+  let c = 2;
+  for (const block of blocks) {
+    if (block.kind === 'day') {
+      merges.push({ s: { r: 2, c }, e: { r: 2, c: c + 8 } });
+      merges.push({ s: { r: 3, c }, e: { r: 3, c: c + 2 } });
+      merges.push({ s: { r: 3, c: c + 3 }, e: { r: 3, c: c + 5 } });
+      merges.push({ s: { r: 3, c: c + 6 }, e: { r: 3, c: c + 8 } });
+      h1.push(block.label, '', '', '', '', '', '', '', '');
+      h2.push('Tổng', '', '', 'Ca ngày', '', '', 'Ca đêm', '', '');
+      h3.push(
+        'Số lượng',
+        'Đi làm',
+        'Tỉ lệ',
+        'Số lượng',
+        'Đi làm',
+        'Tỉ lệ',
+        'Số lượng',
+        'Đi làm',
+        'Tỉ lệ'
+      );
+      c += 9;
+    } else {
+      merges.push({ s: { r: 2, c }, e: { r: 2, c: c + 2 } });
+      merges.push({ s: { r: 3, c }, e: { r: 3, c: c + 2 } });
+      h1.push(block.label, '', '');
+      h2.push('Tổng', '', '');
+      h3.push('Số lượng', 'Đi làm', 'Tỉ lệ');
+      c += 3;
+    }
+  }
+  rows.push(h1);
+  rows.push(h2);
+  rows.push(h3);
+
+  const metricCache = new Map<string, AttendanceRateMetric>();
+  const getBlockMetric = (vendor: string, block: AttendanceRateBlock): AttendanceRateMetric => {
+    const key = `${vendor}\t${block.kind}\t${block.label}\t${block.kind === 'day' ? block.date : block.dates.join(',')}`;
+    if (metricCache.has(key)) return metricCache.get(key)!;
+
+    const base = baseByVendor.get(vendor);
+    let metric = { ...ZERO_ATTENDANCE_RATE_METRIC };
+    if (block.kind === 'day') {
+      metric = getDailyAttendanceRateMetric(base, agg.get(aggKey(vendor, block.date)));
+    } else {
+      metric = averageAttendanceRateMetrics(
+        block.dates.map((dateStr) => getDailyAttendanceRateMetric(base, agg.get(aggKey(vendor, dateStr))))
+      );
+    }
+    metricCache.set(key, metric);
+    return metric;
+  };
+
+  const totalRow: (string | number)[] = ['', 'Total'];
+  for (const block of blocks) {
+    const totalMetric = sumAttendanceRateMetrics(vendors.map((vendor) => getBlockMetric(vendor, block)));
+    totalRow.push(...buildAttendanceRateMetricCells(totalMetric, block.kind));
+  }
+  rows.push(totalRow);
+
+  let no = 1;
+  for (const vendor of vendors) {
+    const row: (string | number)[] = [no++, vendor];
+    for (const block of blocks) {
+      row.push(...buildAttendanceRateMetricCells(getBlockMetric(vendor, block), block.kind));
+    }
+    rows.push(row);
+  }
+
+  if (vendors.length === 0) {
+    rows.push([
+      1,
+      '(Chưa có dữ liệu NCC thời vụ)',
+      ...Array(Math.max(numCols - 2, 0)).fill(''),
+    ]);
+  }
+
+  const rowStyles: Record<number, SheetRowStyle> = {
+    0: { backgroundColor: '#1e3a5f', color: '#fff', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap' },
+    1: { backgroundColor: '#f8fafc', color: '#334155', textAlign: 'left', whiteSpace: 'nowrap' },
+    2: { backgroundColor: '#1f497d', color: '#fff', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap' },
+    3: { backgroundColor: '#dbeafe', color: '#0f172a', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap' },
+    4: { backgroundColor: '#eff6ff', color: '#0f172a', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap' },
+    5: { backgroundColor: '#f8fafc', color: '#0f172a', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap' },
+  };
+  const cellStyles: Record<string, SheetCellStyle> = {};
+  const colWidths: Record<number, number> = {
+    0: 56,
+    1: 220,
+  };
+  for (let r = 5; r < rows.length; r += 1) {
+    cellStyles[`${r},0`] = { textAlign: 'center', whiteSpace: 'nowrap' };
+    cellStyles[`${r},1`] = { textAlign: 'left', whiteSpace: 'nowrap' };
+  }
+  let blockStart = 2;
+  for (const block of blocks) {
+    const borderColor = block.kind === 'month' ? '#d97706' : block.kind === 'week' ? '#64748b' : '#94a3b8';
+    if (block.kind === 'day') {
+      const totalColor = '#e0f2fe';
+      const dayColor = '#dcfce7';
+      const nightColor = '#ede9fe';
+      const rateColor = '#f8fafc';
+
+      for (let offset = 0; offset < 9; offset += 1) {
+        colWidths[blockStart + offset] = offset % 3 === 2 ? 72 : 62;
+        cellStyles[`3,${blockStart + offset}`] = {
+          backgroundColor: offset < 3 ? totalColor : offset < 6 ? dayColor : nightColor,
+          textAlign: 'center',
+          fontWeight: 'bold',
+          whiteSpace: 'nowrap',
+        };
+        cellStyles[`4,${blockStart + offset}`] = {
+          backgroundColor:
+            offset % 3 === 2 ? rateColor : offset < 3 ? totalColor : offset < 6 ? dayColor : nightColor,
+          textAlign: 'center',
+          fontWeight: 'bold',
+          whiteSpace: 'nowrap',
+        };
+      }
+      cellStyles[`2,${blockStart}`] = { borderLeft: `2px solid ${borderColor}` };
+      cellStyles[`3,${blockStart}`] = { ...cellStyles[`3,${blockStart}`], borderLeft: `2px solid ${borderColor}` };
+      cellStyles[`4,${blockStart}`] = { ...cellStyles[`4,${blockStart}`], borderLeft: `2px solid ${borderColor}` };
+      blockStart += 9;
+    } else {
+      const blockColor = block.kind === 'month' ? '#fef3c7' : '#e2e8f0';
+      for (let offset = 0; offset < 3; offset += 1) {
+        colWidths[blockStart + offset] = offset === 2 ? 72 : 62;
+        cellStyles[`3,${blockStart + offset}`] = {
+          backgroundColor: blockColor,
+          textAlign: 'center',
+          fontWeight: 'bold',
+          whiteSpace: 'nowrap',
+        };
+        cellStyles[`4,${blockStart + offset}`] = {
+          backgroundColor: blockColor,
+          textAlign: 'center',
+          fontWeight: 'bold',
+          whiteSpace: 'nowrap',
+        };
+      }
+      cellStyles[`2,${blockStart}`] = { borderLeft: `2px solid ${borderColor}` };
+      cellStyles[`3,${blockStart}`] = { ...cellStyles[`3,${blockStart}`], borderLeft: `2px solid ${borderColor}` };
+      cellStyles[`4,${blockStart}`] = { ...cellStyles[`4,${blockStart}`], borderLeft: `2px solid ${borderColor}` };
+      blockStart += 3;
+    }
+  }
+
+  return { name: 'Tỉ lệ đi làm (NCC)', rows, merges, rowStyles, cellStyles, colWidths };
+}
+
 let tempTimesheetTemplateCache: { workbook: XLSX.WorkBook; loadedAt: number } | null = null;
 
 function resolveTempTimesheetTemplatePath(): string {
@@ -975,7 +2331,8 @@ function blankInsuranceRows(rows: (string | number)[][]): (string | number)[][] 
   return next;
 }
 
-function loadInsuranceTemplateSheets(): TemplateSheetGrid[] {
+async function loadInsuranceTemplateSheets(): Promise<TemplateSheetGrid[]> {
+  const filePath = resolveInsuranceTemplatePath();
   const wb = getInsuranceTemplateWorkbook();
   const dataName =
     wb.SheetNames.find((s) => s.toLowerCase().includes('dữ liệu')) ||
@@ -988,8 +2345,8 @@ function loadInsuranceTemplateSheets(): TemplateSheetGrid[] {
     throw new Error('Không tìm thấy 2 sheet Dữ Liệu / Phụ lục trong file mẫu bảo hiểm');
   }
 
-  const dataSheet = sheetToTemplateGrid(wb, dataName);
-  const appendixSheet = sheetToTemplateGrid(wb, appendixName);
+  const dataSheet = await sheetToStyledTemplateGrid(wb, dataName, filePath);
+  const appendixSheet = await sheetToStyledTemplateGrid(wb, appendixName, filePath);
   return [
     { ...dataSheet, rows: blankInsuranceRows(dataSheet.rows) },
     { ...appendixSheet, rows: blankInsuranceRows(appendixSheet.rows) },
@@ -1273,14 +2630,15 @@ function blankBhxhListRows(rows: (string | number)[][]): (string | number)[][] {
   return next;
 }
 
-function loadBhxhListTemplateSheet(): TemplateSheetGrid {
+async function loadBhxhListTemplateSheet(): Promise<TemplateSheetGrid> {
+  const filePath = resolveBhxhListTemplatePath();
   const wb = getBhxhListTemplateWorkbook();
   const sheetName =
     wb.SheetNames.find((s) => s.toLowerCase().includes('tháng') || s.toLowerCase().includes('thang')) ||
     wb.SheetNames.find((s) => wb.Sheets[s]?.['!ref']) ||
     wb.SheetNames[0];
   if (!sheetName) throw new Error('Không tìm thấy sheet mẫu danh sách tham gia BHXH');
-  const grid = sheetToTemplateGrid(wb, sheetName);
+  const grid = await sheetToStyledTemplateGrid(wb, sheetName, filePath);
   return { ...grid, rows: blankBhxhListRows(grid.rows) };
 }
 
@@ -1337,14 +2695,15 @@ function blankDrugInventoryRows(rows: (string | number)[][]): (string | number)[
   return next;
 }
 
-function loadDrugInventoryTemplateSheet(): TemplateSheetGrid {
+async function loadDrugInventoryTemplateSheet(): Promise<TemplateSheetGrid> {
+  const filePath = resolveDrugInventoryTemplatePath();
   const wb = getDrugInventoryTemplateWorkbook();
   const sheetName =
     wb.SheetNames.find((s) => /thang\s*\d|tháng\s*\d|sheet1/i.test(s) && wb.Sheets[s]?.['!ref']) ||
     wb.SheetNames.find((s) => wb.Sheets[s]?.['!ref']) ||
     wb.SheetNames[0];
   if (!sheetName) throw new Error('Không tìm thấy sheet mẫu xuất nhập tồn thuốc');
-  const grid = sheetToTemplateGrid(wb, sheetName);
+  const grid = await sheetToStyledTemplateGrid(wb, sheetName, filePath);
   return { ...grid, rows: blankDrugInventoryRows(grid.rows) };
 }
 
@@ -1391,7 +2750,8 @@ function blankMedicalRoomUsageRows(rows: (string | number)[][]): (string | numbe
   return next;
 }
 
-function loadMedicalRoomUsageTemplateSheet(): TemplateSheetGrid {
+async function loadMedicalRoomUsageTemplateSheet(): Promise<TemplateSheetGrid> {
+  const filePath = resolveMedicalRoomUsageTemplatePath();
   const wb = getMedicalRoomUsageTemplateWorkbook();
   const sheetName =
     wb.SheetNames.find((s) => s === 'BC' && wb.Sheets[s]?.['!ref']) ||
@@ -1399,7 +2759,7 @@ function loadMedicalRoomUsageTemplateSheet(): TemplateSheetGrid {
     wb.SheetNames.find((s) => wb.Sheets[s]?.['!ref']) ||
     wb.SheetNames[0];
   if (!sheetName) throw new Error('Không tìm thấy sheet mẫu phòng y tế');
-  const grid = sheetToTemplateGrid(wb, sheetName);
+  const grid = await sheetToStyledTemplateGrid(wb, sheetName, filePath);
   return { ...grid, rows: blankMedicalRoomUsageRows(grid.rows) };
 }
 
@@ -1477,12 +2837,13 @@ function blankArrearsCollectionRows(rows: (string | number)[][]): (string | numb
   return next;
 }
 
-function loadArrearsCollectionTemplateSheet(): TemplateSheetGrid {
+async function loadArrearsCollectionTemplateSheet(): Promise<TemplateSheetGrid> {
+  const filePath = resolveArrearsCollectionTemplatePath();
   const wb = getArrearsCollectionTemplateWorkbook();
   const sheetName =
     wb.SheetNames.find((s) => wb.Sheets[s]?.['!ref']) || wb.SheetNames[0];
   if (!sheetName) throw new Error('Không tìm thấy sheet mẫu truy thu');
-  const grid = sheetToTemplateGrid(wb, sheetName);
+  const grid = await sheetToStyledTemplateGrid(wb, sheetName, filePath);
   return { ...grid, rows: blankArrearsCollectionRows(grid.rows) };
 }
 
@@ -1566,6 +2927,951 @@ function loadPayrollKpiTemplateSheets(): TemplateSheetGrid[] {
   ];
 }
 
+async function buildTempTimesheetFromSystem(
+  start_date: string,
+  end_date: string
+): Promise<TemplateSheetGrid[]> {
+  const range = await resolveReportRange(start_date, end_date);
+  const [employeesAll, records, seasonalStoreRows] = await Promise.all([
+    loadEmployeesLite(),
+    loadTimekeepingLite(range.start, range.end),
+    loadEmployeeStoreRows('seasonal'),
+  ]);
+
+  const seasonalEmployees = employeesAll.filter((emp) => isSeasonalEmployee(emp.employment_type));
+  const aggregates = buildEmployeeAggregates(seasonalEmployees, records);
+  const storeMap = buildStoreRowMap(seasonalStoreRows);
+  const includeFallbackRecords = seasonalEmployees.length === 0;
+
+  const dayPeople = Array.from({ length: DAY_COLS }, () => new Set<string>());
+  const dayWorkday = Array(DAY_COLS).fill(0);
+  const dayHours = Array(DAY_COLS).fill(0);
+  const dayOt = Array(DAY_COLS).fill(0);
+
+  for (const record of records) {
+    const code = resolveRecordCode(record);
+    const agg = aggregates.get(code);
+    if (!agg) continue;
+    if (!includeFallbackRecords && !isSeasonalEmployee(agg.employment_type)) continue;
+
+    const day = parseInt(String(record.date || '').slice(8, 10), 10);
+    if (day < 1 || day > DAY_COLS) continue;
+    dayPeople[day - 1].add(code);
+    dayWorkday[day - 1] += Number(record.workday) || 0;
+    dayHours[day - 1] += getHours(record);
+    dayOt[day - 1] += Number(record.overtime_hours) || 0;
+  }
+
+  const summary = buildMonthOverviewSheet(
+    `TỔNG QUAN CÔNG THỜI VỤ (${range.monthLabel})`,
+    `Tự động từ dữ liệu chấm công | Khoảng ${range.start} → ${range.end}`,
+    [
+      {
+        group: 'Thời vụ',
+        metric: 'Số NV đi làm',
+        values: dayPeople.map((set) => set.size),
+        summary: dayPeople.reduce((sum, set) => sum + set.size, 0),
+        note: 'Người/ngày',
+      },
+      {
+        group: 'Thời vụ',
+        metric: 'Tổng công',
+        values: dayWorkday,
+        summary: toFixed1(dayWorkday.reduce((sum, value) => sum + value, 0)),
+        note: 'Công',
+      },
+      {
+        group: 'Thời vụ',
+        metric: 'Tổng giờ công',
+        values: dayHours,
+        summary: toFixed1(dayHours.reduce((sum, value) => sum + value, 0)),
+        note: 'Giờ',
+      },
+      {
+        group: 'Thời vụ',
+        metric: 'OT',
+        values: dayOt,
+        summary: toFixed1(dayOt.reduce((sum, value) => sum + value, 0)),
+        note: 'Giờ',
+      },
+    ]
+  );
+
+  const activeRows = [...aggregates.values()]
+    .filter((agg) => (includeFallbackRecords || isSeasonalEmployee(agg.employment_type)) && (agg.totalHours > 0 || agg.totalWorkday > 0))
+    .sort(sortAggregates);
+
+  const detailRows =
+    activeRows.length > 0
+      ? activeRows.map((agg, index) => {
+          const storeRow = storeMap.get(agg.employee_code);
+          const startDateValue =
+            parseLooseDate(
+              getRowValueByHeader(storeRow, [
+                ['ngay vao'],
+                ['ngay bat dau'],
+                ['ngay nhan viec'],
+                ['ngay ky hd'],
+                ['tu ngay'],
+                ['start'],
+              ])
+            ) || parseLooseDate(agg.created_at);
+          const endDateValue = parseLooseDate(
+            getRowValueByHeader(storeRow, [['ngay ket thuc'], ['ngay het han'], ['den ngay'], ['end']])
+          );
+          const birthdayValue =
+            parseLooseDate(getRowValueByHeader(storeRow, [['ngay sinh']])) ||
+            parseLooseDate(agg.date_of_birth);
+          return [
+            index + 1,
+            agg.employee_code,
+            agg.employee_code,
+            agg.name,
+            agg.department,
+            startDateValue,
+            endDateValue,
+            birthdayValue,
+            ...Array.from({ length: DAY_COLS }, (_, i) =>
+              agg.dayWorkdays[i] > 0 ? toFixed1(agg.dayWorkdays[i]) : ''
+            ),
+            toFixed1(agg.totalWorkday),
+            toFixed1(agg.totalHours),
+            toFixed1(agg.overtimeHours),
+            '',
+            '',
+          ];
+        })
+      : [['(Chưa có dữ liệu thời vụ trong khoảng đã chọn)']];
+
+  return [
+    {
+      name: 'Tổng quan tháng',
+      rows: summary.rows,
+      merges: summary.merges,
+      rowStyles: summary.rowStyles,
+      cellStyles: summary.cellStyles,
+      colWidths: summary.colWidths,
+    },
+    buildSimpleTableSheet({
+      name: 'Data',
+      title: `BẢNG CHẤM CÔNG THỜI VỤ (${range.monthLabel})`,
+      subtitle: `Tự động từ chấm công + danh sách nhân viên | ${range.start} → ${range.end}`,
+      headers: [
+        'STT',
+        'Mã NV',
+        'ID Mới',
+        'Họ tên',
+        'BP',
+        'Ngày vào',
+        'Ngày hết hạn',
+        'Ngày sinh',
+        ...Array.from({ length: DAY_COLS }, (_, i) => i + 1),
+        'Tổng công',
+        'Tổng giờ',
+        'OT',
+        'Nghỉ có phép',
+        'Nghỉ ko phép',
+      ],
+      dataRows: detailRows,
+      dayStartCol: 8,
+    }),
+  ];
+}
+
+async function buildOfficialTimesheetFromSystem(
+  start_date: string,
+  end_date: string
+): Promise<TemplateSheetGrid[]> {
+  const range = await resolveReportRange(start_date, end_date);
+  const [employeesAll, records] = await Promise.all([
+    loadEmployeesLite(),
+    loadTimekeepingLite(range.start, range.end),
+  ]);
+
+  const officialEmployees = employeesAll.filter((emp) => isOfficialEmployee(emp.employment_type));
+  const aggregates = buildEmployeeAggregates(officialEmployees, records);
+  const includeFallbackRecords = officialEmployees.length === 0;
+
+  const dayPeople = Array.from({ length: DAY_COLS }, () => new Set<string>());
+  const dayWorkday = Array(DAY_COLS).fill(0);
+  const dayHours = Array(DAY_COLS).fill(0);
+  const dayPaidHours = Array(DAY_COLS).fill(0);
+
+  for (const record of records) {
+    const code = resolveRecordCode(record);
+    const agg = aggregates.get(code);
+    if (!agg) continue;
+    if (!includeFallbackRecords && !isOfficialEmployee(agg.employment_type)) continue;
+
+    const day = parseInt(String(record.date || '').slice(8, 10), 10);
+    if (day < 1 || day > DAY_COLS) continue;
+    const hours = getHours(record);
+    const overtime = Number(record.overtime_hours) || 0;
+    dayPeople[day - 1].add(code);
+    dayWorkday[day - 1] += Number(record.workday) || 0;
+    dayHours[day - 1] += hours;
+    dayPaidHours[day - 1] += hours + overtime;
+  }
+
+  const summary = buildMonthOverviewSheet(
+    `TỔNG QUAN CÔNG CHÍNH THỨC (${range.monthLabel})`,
+    `Tự động từ dữ liệu chấm công | Khoảng ${range.start} → ${range.end}`,
+    [
+      {
+        group: 'Chính thức',
+        metric: 'Số NV đi làm',
+        values: dayPeople.map((set) => set.size),
+        summary: dayPeople.reduce((sum, set) => sum + set.size, 0),
+        note: 'Người/ngày',
+      },
+      {
+        group: 'Chính thức',
+        metric: 'Tổng công',
+        values: dayWorkday,
+        summary: toFixed1(dayWorkday.reduce((sum, value) => sum + value, 0)),
+        note: 'Công',
+      },
+      {
+        group: 'Chính thức',
+        metric: 'Tổng giờ công',
+        values: dayHours,
+        summary: toFixed1(dayHours.reduce((sum, value) => sum + value, 0)),
+        note: 'Giờ',
+      },
+      {
+        group: 'Chính thức',
+        metric: 'Total tính lương',
+        values: dayPaidHours,
+        summary: toFixed1(dayPaidHours.reduce((sum, value) => sum + value, 0)),
+        note: 'Giờ',
+      },
+    ]
+  );
+
+  const activeRows = [...aggregates.values()]
+    .filter((agg) => (includeFallbackRecords || isOfficialEmployee(agg.employment_type)) && (agg.totalHours > 0 || agg.totalWorkday > 0))
+    .sort(sortAggregates);
+
+  const detailRows =
+    activeRows.length > 0
+      ? activeRows.map((agg, index) => [
+          index + 1,
+          agg.employee_code,
+          agg.name,
+          agg.department,
+          ...Array.from({ length: DAY_COLS }, (_, i) =>
+            agg.dayWorkdays[i] > 0 ? toFixed1(agg.dayWorkdays[i]) : ''
+          ),
+          toFixed1(agg.totalWorkday),
+          toFixed1(agg.totalHours),
+          toFixed1(agg.totalHours + agg.overtimeHours),
+          toFixed1(agg.overtimeHours),
+        ])
+      : [['(Chưa có dữ liệu chính thức trong khoảng đã chọn)']];
+
+  return [
+    {
+      name: 'Tổng quan tháng',
+      rows: summary.rows,
+      merges: summary.merges,
+      rowStyles: summary.rowStyles,
+      cellStyles: summary.cellStyles,
+      colWidths: summary.colWidths,
+    },
+    buildSimpleTableSheet({
+      name: 'Attendance list',
+      title: `BẢNG CHẤM CÔNG CHÍNH THỨC (${range.monthLabel})`,
+      subtitle: `Tự động từ chấm công | ${range.start} → ${range.end}`,
+      headers: [
+        'STT',
+        'Mã NV',
+        'Họ tên',
+        'BP',
+        ...Array.from({ length: DAY_COLS }, (_, i) => i + 1),
+        'Tổng công',
+        'Tổng giờ công',
+        'Total tính lương',
+        'OT',
+      ],
+      dataRows: detailRows,
+      dayStartCol: 4,
+    }),
+  ];
+}
+
+async function buildAttendanceCountFromSystem(
+  start_date: string,
+  end_date: string
+): Promise<TemplateSheetGrid[]> {
+  const range = await resolveReportRange(start_date, end_date);
+  const [employeesAll, records] = await Promise.all([
+    loadEmployeesLite(),
+    loadTimekeepingLite(range.start, range.end),
+  ]);
+
+  const employeeMap = new Map(
+    employeesAll.map((emp) => [normalizeCode(emp.employee_code), emp] as const)
+  );
+
+  const officialByDay = Array.from({ length: DAY_COLS }, () => new Set<string>());
+  const seasonalByDay = Array.from({ length: DAY_COLS }, () => new Set<string>());
+  const totalByDay = Array.from({ length: DAY_COLS }, () => new Set<string>());
+  const newEmployeesByDay = Array(DAY_COLS).fill(0);
+
+  for (const employee of employeesAll) {
+    const createdAt = clampYmd(String(employee.created_at || '').slice(0, 10));
+    if (!createdAt || createdAt < range.start || createdAt > range.end) continue;
+    const day = parseInt(createdAt.slice(8, 10), 10);
+    if (day >= 1 && day <= DAY_COLS) newEmployeesByDay[day - 1] += 1;
+  }
+
+  for (const record of records) {
+    const code = resolveRecordCode(record);
+    const day = parseInt(String(record.date || '').slice(8, 10), 10);
+    if (!code || day < 1 || day > DAY_COLS) continue;
+    const employee = employeeMap.get(code);
+    const employmentType = resolveEmploymentCategory(employee?.employment_type, employee?.department || record.department);
+    totalByDay[day - 1].add(code);
+    if (employmentType === 'Chính thức') officialByDay[day - 1].add(code);
+    else if (employmentType === 'Thời vụ') seasonalByDay[day - 1].add(code);
+  }
+
+  const officialCounts = officialByDay.map((set) => set.size);
+  const seasonalCounts = seasonalByDay.map((set) => set.size);
+  const totalCounts = totalByDay.map((set) => set.size);
+  const rateValues = totalCounts.map((count) =>
+    employeesAll.length > 0 ? toFixed1((count / employeesAll.length) * 100) : 0
+  );
+
+  const summary = buildMonthOverviewSheet(
+    `BÁO CÁO SỐ LƯỢNG ĐI LÀM (${range.monthLabel})`,
+    `Khoảng ${range.start} → ${range.end} | Tổng NV hệ thống: ${employeesAll.length}`,
+    [
+      {
+        group: 'Chính thức',
+        metric: 'Số đi làm',
+        values: officialCounts,
+        summary: officialCounts.reduce((sum, value) => sum + value, 0),
+        note: 'Người',
+      },
+      {
+        group: 'Thời vụ',
+        metric: 'Số đi làm',
+        values: seasonalCounts,
+        summary: seasonalCounts.reduce((sum, value) => sum + value, 0),
+        note: 'Người',
+      },
+      {
+        group: 'Hệ thống',
+        metric: 'Nhân viên mới',
+        values: newEmployeesByDay,
+        summary: newEmployeesByDay.reduce((sum, value) => sum + value, 0),
+        note: 'Người',
+      },
+      {
+        group: 'Toàn bộ',
+        metric: 'Tổng đi làm',
+        values: totalCounts,
+        summary: totalCounts.reduce((sum, value) => sum + value, 0),
+        note: 'Người',
+      },
+    ]
+  );
+
+  const avg = (values: number[]) => (values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0);
+
+  return [
+    {
+      name: 'Tổng quan tháng',
+      rows: summary.rows,
+      merges: summary.merges,
+      rowStyles: summary.rowStyles,
+      cellStyles: summary.cellStyles,
+      colWidths: summary.colWidths,
+    },
+    buildSimpleTableSheet({
+      name: 'Sheet1',
+      title: `CHI TIẾT SỐ LƯỢNG ĐI LÀM (${range.monthLabel})`,
+      subtitle: `Tự động từ chấm công + nhân sự | ${range.start} → ${range.end}`,
+      headers: ['Nhóm', ...Array.from({ length: DAY_COLS }, (_, i) => i + 1), 'Tổng kỳ', 'TB/ngày'],
+      dataRows: [
+        ['Chính thức', ...officialCounts, officialCounts.reduce((sum, value) => sum + value, 0), toFixed1(avg(officialCounts))],
+        ['Thời vụ', ...seasonalCounts, seasonalCounts.reduce((sum, value) => sum + value, 0), toFixed1(avg(seasonalCounts))],
+        ['Nhân viên mới', ...newEmployeesByDay, newEmployeesByDay.reduce((sum, value) => sum + value, 0), toFixed1(avg(newEmployeesByDay))],
+        ['Tổng đi làm', ...totalCounts, totalCounts.reduce((sum, value) => sum + value, 0), toFixed1(avg(totalCounts))],
+        ['Tỉ lệ đi làm (%)', ...rateValues, '', toFixed1(avg(rateValues))],
+      ],
+      dayStartCol: 1,
+    }),
+  ];
+}
+
+function splitRangeIntoWeeks(start: string, end: string) {
+  const startDt = parseYmdLocal(start);
+  const endDt = parseYmdLocal(end);
+  const cursor = new Date(startDt);
+  const diff = cursor.getDay() === 0 ? -6 : 1 - cursor.getDay();
+  cursor.setDate(cursor.getDate() + diff);
+
+  const weeks: Array<{ start: string; end: string; label: string }> = [];
+  while (cursor <= endDt) {
+    const weekStart = new Date(cursor);
+    const weekEnd = new Date(cursor);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+
+    const actualStart = weekStart < startDt ? new Date(startDt) : weekStart;
+    const actualEnd = weekEnd > endDt ? new Date(endDt) : weekEnd;
+    if (actualStart <= actualEnd) {
+      weeks.push({
+        start: toLocalYmd(actualStart),
+        end: toLocalYmd(actualEnd),
+        label: `${toLocalYmd(actualStart).slice(5)} → ${toLocalYmd(actualEnd).slice(5)}`,
+      });
+    }
+
+    cursor.setDate(cursor.getDate() + 7);
+  }
+  return weeks;
+}
+
+async function buildWeeklyOneDayWorkersFromSystem(
+  start_date: string,
+  end_date: string
+): Promise<TemplateSheetGrid[]> {
+  const range = await resolveReportRange(start_date, end_date);
+  const [employeesAll, records] = await Promise.all([
+    loadEmployeesLite(),
+    loadTimekeepingLite(range.start, range.end),
+  ]);
+
+  const seasonalEmployees = employeesAll.filter((emp) => isSeasonalEmployee(emp.employment_type));
+  const seasonalMap = new Map(
+    seasonalEmployees.map((emp) => [normalizeCode(emp.employee_code), emp] as const)
+  );
+
+  const weekRows = splitRangeIntoWeeks(range.start, range.end);
+  const summaryRows: (string | number)[][] = [];
+  const detailRows: (string | number)[][] = [];
+
+  for (const week of weekRows) {
+    const weekRecords = records.filter((record) => {
+      const dateStr = String(record.date || '').slice(0, 10);
+      return dateStr >= week.start && dateStr <= week.end;
+    });
+
+    const workedDays = new Map<string, Set<string>>();
+    const sampleRecord = new Map<string, TimekeepingLite>();
+    const byDept = new Map<string, number>();
+
+    for (const record of weekRecords) {
+      const code = resolveRecordCode(record);
+      if (!code || (seasonalMap.size > 0 && !seasonalMap.has(code))) continue;
+      const dateStr = String(record.date || '').slice(0, 10);
+      if (!workedDays.has(code)) workedDays.set(code, new Set<string>());
+      workedDays.get(code)!.add(dateStr);
+      if (!sampleRecord.has(code)) sampleRecord.set(code, record);
+    }
+
+    const oneDayCodes = [...workedDays.entries()]
+      .filter(([, dates]) => dates.size === 1)
+      .map(([code]) => code)
+      .sort((a, b) => a.localeCompare(b, 'vi'));
+
+    for (const code of oneDayCodes) {
+      const record = sampleRecord.get(code);
+      const employee = seasonalMap.get(code);
+      const workDate = [...(workedDays.get(code) || new Set<string>())][0] || '';
+      const department = employee?.department || String(record?.department || '').trim() || 'Chưa xác định';
+      byDept.set(department, (byDept.get(department) || 0) + 1);
+      detailRows.push([
+        week.label,
+        workDate,
+        code,
+        employee?.name || String(record?.employee_name || '').trim() || code,
+        department,
+        toFixed1(Number(record?.workday) || 0),
+        toFixed1(getHours(record || {})),
+        String(record?.check_in || ''),
+        String(record?.check_out || ''),
+      ]);
+    }
+
+    const topDept = [...byDept.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
+    summaryRows.push([
+      week.label,
+      oneDayCodes.length,
+      seasonalEmployees.length,
+      seasonalEmployees.length > 0 ? toFixed1((oneDayCodes.length / seasonalEmployees.length) * 100) : 0,
+      topDept,
+    ]);
+  }
+
+  return [
+    buildSimpleTableSheet({
+      name: 'Tổng quan tuần',
+      title: `CÔNG NHÂN THỜI VỤ 1 NGÀY/TUẦN (${range.monthLabel})`,
+      subtitle: `Tự động từ chấm công | ${range.start} → ${range.end}`,
+      headers: ['Tuần', 'Số CN 1 ngày', 'Tổng thời vụ', 'Tỉ lệ %', 'BP nhiều nhất'],
+      dataRows: summaryRows.length > 0 ? summaryRows : [['(Chưa có dữ liệu trong khoảng đã chọn)']],
+    }),
+    buildSimpleTableSheet({
+      name: 'Chi tiết',
+      title: `CHI TIẾT CN 1 NGÀY/TUẦN (${range.monthLabel})`,
+      subtitle: `Danh sách thời vụ đi làm đúng 1 ngày trong tuần`,
+      headers: ['Tuần', 'Ngày công', 'Mã NV', 'Họ tên', 'BP', 'Công', 'Giờ công', 'Giờ vào', 'Giờ ra'],
+      dataRows: detailRows.length > 0 ? detailRows : [['(Chưa có dòng chi tiết)']],
+    }),
+  ];
+}
+
+async function buildDailyWageFromSystem(
+  start_date: string,
+  end_date: string
+): Promise<TemplateSheetGrid[]> {
+  const range = await resolveReportRange(start_date, end_date);
+  const [employeesAll, records] = await Promise.all([
+    loadEmployeesLite(),
+    loadTimekeepingLite(range.start, range.end),
+  ]);
+
+  const employeeMap = new Map(
+    employeesAll.map((emp) => [normalizeCode(emp.employee_code), emp] as const)
+  );
+  const dayBase = Array(DAY_COLS).fill(0);
+  const dayOt = Array(DAY_COLS).fill(0);
+  const dayTotal = Array(DAY_COLS).fill(0);
+
+  const detailRows = [...records]
+    .sort(
+      (a, b) =>
+        String(a.date || '').localeCompare(String(b.date || ''), 'vi') ||
+        resolveRecordCode(a).localeCompare(resolveRecordCode(b), 'vi')
+    )
+    .map((record) => {
+      const code = resolveRecordCode(record);
+      const employee = employeeMap.get(code);
+      const employmentType = resolveEmploymentCategory(employee?.employment_type, employee?.department || record.department) || 'Thời vụ';
+      const hours = getHours(record);
+      const overtimeHours = Number(record.overtime_hours) || 0;
+      const rate = getHourlyRate(employmentType);
+      const basePay = toFixed0(hours * rate);
+      const otPay = toFixed0(overtimeHours * rate * OVERTIME_MULTIPLIER);
+      const totalPay = basePay + otPay;
+      const day = parseInt(String(record.date || '').slice(8, 10), 10);
+      if (day >= 1 && day <= DAY_COLS) {
+        dayBase[day - 1] += basePay;
+        dayOt[day - 1] += otPay;
+        dayTotal[day - 1] += totalPay;
+      }
+      return [
+        String(record.date || '').slice(0, 10),
+        code,
+        employee?.name || String(record.employee_name || '').trim() || code,
+        employee?.department || String(record.department || '').trim(),
+        employmentType,
+        toFixed1(Number(record.workday) || 0),
+        toFixed1(hours),
+        toFixed1(overtimeHours),
+        rate,
+        basePay,
+        otPay,
+        totalPay,
+      ];
+    });
+
+  const summary = buildMonthOverviewSheet(
+    `TỔNG QUAN TIỀN CÔNG HÀNG NGÀY (${range.monthLabel})`,
+    `Ước tính từ giờ công + đơn giá mặc định | ${range.start} → ${range.end}`,
+    [
+      {
+        group: 'Chi trả',
+        metric: 'Tiền công thường',
+        values: dayBase,
+        summary: toFixed0(dayBase.reduce((sum, value) => sum + value, 0)),
+        note: 'VND',
+      },
+      {
+        group: 'Chi trả',
+        metric: 'Tiền OT',
+        values: dayOt,
+        summary: toFixed0(dayOt.reduce((sum, value) => sum + value, 0)),
+        note: 'VND',
+      },
+      {
+        group: 'Chi trả',
+        metric: 'Tổng chi trả',
+        values: dayTotal,
+        summary: toFixed0(dayTotal.reduce((sum, value) => sum + value, 0)),
+        note: 'VND',
+      },
+    ]
+  );
+
+  return [
+    {
+      name: 'Tổng quan tháng',
+      rows: summary.rows,
+      merges: summary.merges,
+      rowStyles: summary.rowStyles,
+      cellStyles: summary.cellStyles,
+      colWidths: summary.colWidths,
+    },
+    buildSimpleTableSheet({
+      name: 'Sheet1',
+      title: `BÁO CÁO TIỀN CÔNG HÀNG NGÀY (${range.monthLabel})`,
+      subtitle: `Tự động từ chấm công + loại nhân viên`,
+      headers: [
+        'Ngày',
+        'Mã NV',
+        'Họ tên',
+        'Bộ phận',
+        'Loại NV',
+        'Công',
+        'Giờ công',
+        'OT',
+        'Đơn giá',
+        'Tiền công',
+        'Tiền OT',
+        'Thành tiền',
+      ],
+      dataRows: detailRows.length > 0 ? detailRows : [['(Chưa có dữ liệu tiền công)']],
+    }),
+  ];
+}
+
+async function buildLaborRateFromSystem(
+  start_date: string,
+  end_date: string
+): Promise<TemplateSheetGrid[]> {
+  const range = await resolveReportRange(start_date, end_date);
+  const [employeesAll, records] = await Promise.all([
+    loadEmployeesLite(),
+    loadTimekeepingLite(range.start, range.end),
+  ]);
+
+  const employeeMap = new Map(
+    employeesAll.map((emp) => [normalizeCode(emp.employee_code), emp] as const)
+  );
+  const officialCount = employeesAll.filter((emp) => isOfficialEmployee(emp.employment_type)).length;
+  const seasonalCount = employeesAll.filter((emp) => isSeasonalEmployee(emp.employment_type)).length;
+
+  const byDate = new Map<
+    string,
+    { all: Set<string>; official: Set<string>; seasonal: Set<string> }
+  >();
+
+  for (const record of records) {
+    const code = resolveRecordCode(record);
+    const dateStr = String(record.date || '').slice(0, 10);
+    if (!code || !dateStr) continue;
+    if (!byDate.has(dateStr)) {
+      byDate.set(dateStr, { all: new Set<string>(), official: new Set<string>(), seasonal: new Set<string>() });
+    }
+    const bucket = byDate.get(dateStr)!;
+    bucket.all.add(code);
+    const employee = employeeMap.get(code);
+    const employmentType = resolveEmploymentCategory(employee?.employment_type, employee?.department || record.department);
+    if (employmentType === 'Chính thức') bucket.official.add(code);
+    if (employmentType === 'Thời vụ') bucket.seasonal.add(code);
+  }
+
+  const byDay = new Map<number, { all: number; official: number; seasonal: number }>();
+  for (const dateStr of range.dates) {
+    const bucket = byDate.get(dateStr);
+    const day = parseInt(dateStr.slice(8, 10), 10);
+    if (day < 1 || day > DAY_COLS) continue;
+    byDay.set(day, {
+      all: bucket?.all.size || 0,
+      official: bucket?.official.size || 0,
+      seasonal: bucket?.seasonal.size || 0,
+    });
+  }
+
+  const snapshotDate = [...byDate.keys()].sort().pop() || range.snapshotDate;
+  const snapshotAttended = byDate.get(snapshotDate)?.all || new Set<string>();
+  const snapshotRecords = new Map<string, TimekeepingLite>();
+  for (const record of records) {
+    const code = resolveRecordCode(record);
+    const dateStr = String(record.date || '').slice(0, 10);
+    if (code && dateStr === snapshotDate && !snapshotRecords.has(code)) {
+      snapshotRecords.set(code, record);
+    }
+  }
+  const deptMap = new Map<string, { total: number; attended: Set<string> }>();
+
+  for (const employee of employeesAll) {
+    const dept = String(employee.department || '').trim() || 'Chưa xác định';
+    if (!deptMap.has(dept)) deptMap.set(dept, { total: 0, attended: new Set<string>() });
+    deptMap.get(dept)!.total += 1;
+  }
+
+  for (const code of snapshotAttended) {
+    const employee = employeeMap.get(code);
+    const dept = String(employee?.department || snapshotRecords.get(code)?.department || '').trim() || 'Chưa xác định';
+    if (!deptMap.has(dept)) deptMap.set(dept, { total: 0, attended: new Set<string>() });
+    if (!employee) deptMap.get(dept)!.total += 1;
+    deptMap.get(dept)!.attended.add(code);
+  }
+
+  const deptRows = [...deptMap.entries()]
+    .map(([dept, info]) => ({
+      dept,
+      total: info.total,
+      attended: info.attended.size,
+      rate: info.total > 0 ? (info.attended.size / info.total) * 100 : 0,
+    }))
+    .sort((a, b) => a.dept.localeCompare(b.dept, 'vi'));
+
+  return [
+    buildLaborRateMainSheet(range.monthLabel, snapshotDate, {
+      all: employeesAll.length,
+      official: officialCount,
+      seasonal: seasonalCount,
+    }, byDay),
+    buildLaborRateDepartmentSheet(range.monthLabel, deptRows),
+  ];
+}
+
+async function buildWorkforceSummaryFromSystem(
+  start_date: string,
+  end_date: string
+): Promise<TemplateSheetGrid[]> {
+  const range = await resolveReportRange(start_date, end_date);
+  const [employeesAll, records] = await Promise.all([
+    loadEmployeesLite(),
+    loadTimekeepingLite(range.start, range.end),
+  ]);
+
+  const employeeMap = new Map(
+    employeesAll.map((emp) => [normalizeCode(emp.employee_code), emp] as const)
+  );
+  const byDate = new Map<
+    string,
+    { all: Set<string>; official: Set<string>; seasonal: Set<string> }
+  >();
+
+  for (const record of records) {
+    const code = resolveRecordCode(record);
+    const dateStr = String(record.date || '').slice(0, 10);
+    if (!code || !dateStr) continue;
+    if (!byDate.has(dateStr)) {
+      byDate.set(dateStr, { all: new Set<string>(), official: new Set<string>(), seasonal: new Set<string>() });
+    }
+    const bucket = byDate.get(dateStr)!;
+    bucket.all.add(code);
+    const employee = employeeMap.get(code);
+    const employmentType = resolveEmploymentCategory(employee?.employment_type, employee?.department || record.department);
+    if (employmentType === 'Chính thức') bucket.official.add(code);
+    if (employmentType === 'Thời vụ') bucket.seasonal.add(code);
+  }
+
+  const dayAll = Array(DAY_COLS).fill(0);
+  const dayOfficial = Array(DAY_COLS).fill(0);
+  const daySeasonal = Array(DAY_COLS).fill(0);
+  const dayRate = Array(DAY_COLS).fill(0);
+
+  for (const dateStr of range.dates) {
+    const day = parseInt(dateStr.slice(8, 10), 10);
+    if (day < 1 || day > DAY_COLS) continue;
+    const bucket = byDate.get(dateStr);
+    const allCount = bucket?.all.size || 0;
+    const officialCount = bucket?.official.size || 0;
+    const seasonalCount = bucket?.seasonal.size || 0;
+    dayAll[day - 1] = allCount;
+    dayOfficial[day - 1] = officialCount;
+    daySeasonal[day - 1] = seasonalCount;
+    dayRate[day - 1] = employeesAll.length > 0 ? toFixed1((allCount / employeesAll.length) * 100) : 0;
+  }
+
+  const snapshotDate = [...byDate.keys()].sort().pop() || range.snapshotDate;
+  const snapshotCodes = byDate.get(snapshotDate)?.all || new Set<string>();
+  const snapshotRecords = new Map<string, TimekeepingLite>();
+  for (const record of records) {
+    const code = resolveRecordCode(record);
+    const dateStr = String(record.date || '').slice(0, 10);
+    if (code && dateStr === snapshotDate && !snapshotRecords.has(code)) {
+      snapshotRecords.set(code, record);
+    }
+  }
+  const groupStats = new Map<WorkforceGroupKey, { total: number; attended: Set<string> }>();
+  for (const groupName of DEPT_COLS as WorkforceGroupKey[]) {
+    groupStats.set(groupName, { total: 0, attended: new Set<string>() });
+  }
+
+  for (const employee of employeesAll) {
+    const groupName = mapWorkforceGroup(employee.department);
+    groupStats.get(groupName)!.total += 1;
+  }
+
+  for (const code of snapshotCodes) {
+    const employee = employeeMap.get(code);
+    const groupName = mapWorkforceGroup(employee?.department || snapshotRecords.get(code)?.department || '');
+    if (!employee) groupStats.get(groupName)!.total += 1;
+    groupStats.get(groupName)!.attended.add(code);
+  }
+
+  const detailRows = (DEPT_COLS as WorkforceGroupKey[]).map((groupName) => {
+    const info = groupStats.get(groupName)!;
+    const attended = info.attended.size;
+    const total = info.total;
+    return [
+      groupName,
+      total,
+      attended,
+      total > 0 ? toFixed1((attended / total) * 100) : 0,
+      Math.max(total - attended, 0),
+      snapshotDate,
+    ];
+  });
+
+  detailRows.push([
+    'Total',
+    employeesAll.length,
+    snapshotCodes.size,
+    employeesAll.length > 0 ? toFixed1((snapshotCodes.size / employeesAll.length) * 100) : 0,
+    Math.max(employeesAll.length - snapshotCodes.size, 0),
+    snapshotDate,
+  ]);
+
+  const summary = buildMonthOverviewSheet(
+    `TỔNG HỢP NHÂN LỰC (${range.monthLabel})`,
+    `Tự động từ hệ thống | Ảnh chụp cuối kỳ: ${snapshotDate}`,
+    [
+      {
+        group: 'Toàn công ty',
+        metric: 'Tổng nhân sự',
+        values: Array(DAY_COLS).fill(employeesAll.length),
+        summary: employeesAll.length,
+        note: 'Người',
+      },
+      {
+        group: 'Toàn công ty',
+        metric: 'Đi làm',
+        values: dayAll,
+        summary: dayAll.reduce((sum, value) => sum + value, 0),
+        note: 'Người',
+      },
+      {
+        group: 'Toàn công ty',
+        metric: 'Tỉ lệ đi làm (%)',
+        values: dayRate,
+        summary: toFixed1(dayRate.reduce((sum, value) => sum + value, 0) / Math.max(range.dates.length, 1)),
+        note: '%',
+      },
+      {
+        group: 'Chính thức',
+        metric: 'Đi làm',
+        values: dayOfficial,
+        summary: dayOfficial.reduce((sum, value) => sum + value, 0),
+        note: 'Người',
+      },
+      {
+        group: 'Thời vụ',
+        metric: 'Đi làm',
+        values: daySeasonal,
+        summary: daySeasonal.reduce((sum, value) => sum + value, 0),
+        note: 'Người',
+      },
+    ]
+  );
+
+  return [
+    {
+      name: '근태종합(자동)',
+      rows: summary.rows,
+      merges: summary.merges,
+      rowStyles: summary.rowStyles,
+      cellStyles: summary.cellStyles,
+      colWidths: summary.colWidths,
+    },
+    buildSimpleTableSheet({
+      name: '근태 상황 보고서',
+      title: `근태 상황 보고서 (${range.monthLabel})`,
+      subtitle: `Chi tiết theo nhóm bộ phận | Ngày chốt ${snapshotDate}`,
+      headers: ['Nhóm', 'Tổng nhân sự', 'Đi làm', 'Tỉ lệ %', 'Vắng', 'Ngày chốt'],
+      dataRows: detailRows,
+    }),
+  ];
+}
+
+async function buildPayrollKpiFromSystem(
+  start_date: string,
+  end_date: string
+): Promise<TemplateSheetGrid[]> {
+  const range = await resolveReportRange(start_date, end_date);
+  const [employeesAll, records] = await Promise.all([
+    loadEmployeesLite(),
+    loadTimekeepingLite(range.start, range.end),
+  ]);
+
+  const employeeMap = new Map(
+    employeesAll.map((emp) => [normalizeCode(emp.employee_code), emp] as const)
+  );
+  const byDay = new Map<number, { count: number; totalHours: number; overtimeHours: number; codes: Set<string> }>();
+  for (let day = 1; day <= DAY_COLS; day++) {
+    byDay.set(day, { count: 0, totalHours: 0, overtimeHours: 0, codes: new Set<string>() });
+  }
+
+  const deptAgg = new Map<string, { codes: Set<string>; totalHours: number; overtimeHours: number; estimatedCost: number }>();
+
+  for (const record of records) {
+    const code = resolveRecordCode(record);
+    const day = parseInt(String(record.date || '').slice(8, 10), 10);
+    const employee = employeeMap.get(code);
+    const dept = String(employee?.department || record.department || '').trim() || 'Chưa xác định';
+    const hours = getHours(record);
+    const overtimeHours = Number(record.overtime_hours) || 0;
+    const rate = getHourlyRate(employee?.employment_type || 'Thời vụ');
+
+    if (day >= 1 && day <= DAY_COLS) {
+      const bucket = byDay.get(day)!;
+      bucket.codes.add(code);
+      bucket.count = bucket.codes.size;
+      bucket.totalHours += hours;
+      bucket.overtimeHours += overtimeHours;
+    }
+
+    if (!deptAgg.has(dept)) {
+      deptAgg.set(dept, { codes: new Set<string>(), totalHours: 0, overtimeHours: 0, estimatedCost: 0 });
+    }
+    const deptInfo = deptAgg.get(dept)!;
+    deptInfo.codes.add(code);
+    deptInfo.totalHours += hours;
+    deptInfo.overtimeHours += overtimeHours;
+    deptInfo.estimatedCost += hours * rate + overtimeHours * rate * OVERTIME_MULTIPLIER;
+  }
+
+  const sheet1Rows = buildSheet1Ingunbi(range.monthLabel, byDay);
+  const sheet1Styles = getSheet1KpiStyles(COLS_KPI);
+  const deptRows = [...deptAgg.entries()]
+    .sort((a, b) => b[1].estimatedCost - a[1].estimatedCost)
+    .map(([dept, info], index) => [
+      index + 1,
+      dept,
+      info.codes.size,
+      toFixed1(info.totalHours),
+      toFixed1(info.overtimeHours),
+      toFixed0(info.estimatedCost),
+    ]);
+
+  return [
+    {
+      name: '인건비 현황',
+      rows: sheet1Rows,
+      merges: sheet1Styles.merges,
+      rowStyles: sheet1Styles.rowStyles,
+      cellStyles: sheet1Styles.cellStyles,
+    },
+    buildSimpleTableSheet({
+      name: '종합 급여 현황',
+      title: `종합 급여 현황 (${range.monthLabel.replace(/\//g, '.')})`,
+      subtitle: `Tổng hợp KPI theo bộ phận | ${range.start} → ${range.end}`,
+      headers: ['STT', 'Bộ phận', 'Số NV có công', 'Giờ công', 'OT', 'Chi phí ước tính'],
+      dataRows: deptRows.length > 0 ? deptRows : [['(Chưa có dữ liệu KPI)']],
+    }),
+  ];
+}
+
 /** GET /api/hr-templates/:reportType/grid?start_date=&end_date= */
 export const getHrTemplateGrid = async (req: Request, res: Response) => {
   try {
@@ -1581,95 +3887,70 @@ export const getHrTemplateGrid = async (req: Request, res: Response) => {
     let result: GridResponse = { rows: [], merges: [] };
 
     if (reportTypeStr === 'temp-timesheet') {
-      const template = loadTempTimesheetTemplateSheet();
-      return res.json({
-        sheets: [
-          { name: template.name, rows: template.rows, merges: template.merges },
-        ],
-      });
+      const sheets = await buildTempTimesheetFromSystem(start_date, end_date);
+      return res.json({ sheets });
     } else if (reportTypeStr === 'official-timesheet') {
-      const template = loadOfficialTimesheetTemplateSheet();
-      return res.json({
-        sheets: [
-          { name: template.name, rows: template.rows, merges: template.merges },
-        ],
-      });
+      const sheets = await buildOfficialTimesheetFromSystem(start_date, end_date);
+      return res.json({ sheets });
     } else if (reportTypeStr === 'attendance-count') {
-      const template = loadAttendanceCountTemplateSheet();
-      return res.json({
-        sheets: [
-          { name: template.name, rows: template.rows, merges: template.merges },
-        ],
-      });
+      const sheets = await buildAttendanceCountFromSystem(start_date, end_date);
+      return res.json({ sheets });
     } else if (reportTypeStr === 'attendance-rate') {
-      const dateStr = end_date || start_date || new Date().toISOString().slice(0, 10);
-      const template = loadAttendanceRateTemplateSheet(dateStr);
-      return res.json({
-        sheets: [
-          { name: template.name, rows: template.rows, merges: template.merges },
-        ],
-      });
+      const sheet = await buildAttendanceRateFromTimekeeping(start_date, end_date);
+      return res.json({ sheets: [sheet] });
     } else if (reportTypeStr === 'weekly-one-day-workers') {
-      const template = loadWeeklyOneDayTemplateSheet();
-      return res.json({
-        sheets: [
-          { name: template.name, rows: template.rows, merges: template.merges },
-        ],
-      });
+      const sheets = await buildWeeklyOneDayWorkersFromSystem(start_date, end_date);
+      return res.json({ sheets });
     } else if (reportTypeStr === 'labor-rate') {
-      const templates = loadLaborRateTemplateSheets();
-      return res.json({
-        sheets: templates.map((sheet) => ({
-          name: sheet.name,
-          rows: sheet.rows,
-          merges: sheet.merges,
-        })),
-      });
+      const sheets = await buildLaborRateFromSystem(start_date, end_date);
+      return res.json({ sheets });
     } else if (reportTypeStr === 'daily-wage') {
-      const template = loadDailyWageTemplateSheet();
-      return res.json({
-        sheets: [
-          { name: template.name, rows: template.rows, merges: template.merges },
-        ],
-      });
+      const sheets = await buildDailyWageFromSystem(start_date, end_date);
+      return res.json({ sheets });
     } else if (reportTypeStr === 'bhxh-list') {
-      const template = loadBhxhListTemplateSheet();
+      const template = await loadBhxhListTemplateSheet();
       return res.json({
         sheets: [
-          { name: template.name, rows: template.rows, merges: template.merges },
+          {
+            name: template.name,
+            rows: template.rows,
+            merges: template.merges,
+            rowStyles: template.rowStyles,
+            cellStyles: template.cellStyles,
+            colWidths: template.colWidths,
+            rowHeights: template.rowHeights,
+            hiddenCols: template.hiddenCols,
+            hiddenRows: template.hiddenRows,
+          },
         ],
       });
     } else if (reportTypeStr === 'insurance-master') {
-      const sheets = loadInsuranceTemplateSheets();
+      const sheets = await loadInsuranceTemplateSheets();
       return res.json({
         sheets: sheets.map((s) => ({
           name: s.name,
           rows: s.rows,
           merges: s.merges,
+          rowStyles: s.rowStyles,
+          cellStyles: s.cellStyles,
+          colWidths: s.colWidths,
+          rowHeights: s.rowHeights,
+          hiddenCols: s.hiddenCols,
+          hiddenRows: s.hiddenRows,
         })),
       });
     } else if (reportTypeStr === 'payroll') {
       const monthLabel = start_date && end_date
         ? `${start_date.slice(5, 7)}/${start_date.slice(0, 4)}`
         : '..';
-      const where: any = { is_archived: 0 };
-      if (start_date && end_date) where.date = { gte: start_date, lte: end_date };
       const [employees, records] = await Promise.all([
-        prisma.employee.findMany({
-          select: { employee_code: true, name: true, department: true, employment_type: true },
-          orderBy: [{ department: 'asc' }, { employee_code: 'asc' }],
-        }),
-        prisma.timekeepingRecord.findMany({
-          where,
-          select: {
-            employee_code: true,
-            date: true,
-            workday: true,
-            total_hours: true,
-            total_all_hours: true,
-            overtime_hours: true,
-          },
-        }),
+        loadEmployeesLite(),
+        start_date && end_date
+          ? loadTimekeepingLite(start_date, end_date)
+          : query(
+              'SELECT employee_code, employee_name, date, workday, total_hours, total_all_hours, overtime_hours, created_at, is_archived FROM timekeeping_records WHERE is_archived = 0',
+              {}
+            ),
       ]);
       const aggByCode = new Map<string, { workday: number; hours: number; overtime: number }>();
       const aggByCodeDay = new Map<string, number[]>();
@@ -1763,7 +4044,7 @@ export const getHrTemplateGrid = async (req: Request, res: Response) => {
       );
       return res.json({
         sheets: [
-          { name: 'Tổng quan tháng', rows: overview.rows, merges: overview.merges, rowStyles: overview.rowStyles, cellStyles: overview.cellStyles },
+          { name: 'Tổng quan tháng', rows: overview.rows, merges: overview.merges, rowStyles: overview.rowStyles, cellStyles: overview.cellStyles, colWidths: overview.colWidths },
           ...sheets.map((s) => ({
             name: s.name,
             rows: s.rows,
@@ -1773,44 +4054,62 @@ export const getHrTemplateGrid = async (req: Request, res: Response) => {
         ],
       });
     } else if (reportTypeStr === 'drug-inventory') {
-      const template = loadDrugInventoryTemplateSheet();
+      const template = await loadDrugInventoryTemplateSheet();
       return res.json({
         sheets: [
-          { name: template.name, rows: template.rows, merges: template.merges },
+          {
+            name: template.name,
+            rows: template.rows,
+            merges: template.merges,
+            rowStyles: template.rowStyles,
+            cellStyles: template.cellStyles,
+            colWidths: template.colWidths,
+            rowHeights: template.rowHeights,
+            hiddenCols: template.hiddenCols,
+            hiddenRows: template.hiddenRows,
+          },
         ],
       });
     } else if (reportTypeStr === 'medical-room-usage') {
-      const template = loadMedicalRoomUsageTemplateSheet();
+      const template = await loadMedicalRoomUsageTemplateSheet();
       return res.json({
         sheets: [
-          { name: template.name, rows: template.rows, merges: template.merges },
+          {
+            name: template.name,
+            rows: template.rows,
+            merges: template.merges,
+            rowStyles: template.rowStyles,
+            cellStyles: template.cellStyles,
+            colWidths: template.colWidths,
+            rowHeights: template.rowHeights,
+            hiddenCols: template.hiddenCols,
+            hiddenRows: template.hiddenRows,
+          },
         ],
       });
     } else if (reportTypeStr === 'arrears-collection') {
-      const template = loadArrearsCollectionTemplateSheet();
+      const template = await loadArrearsCollectionTemplateSheet();
       return res.json({
         sheets: [
-          { name: template.name, rows: template.rows, merges: template.merges },
+          {
+            name: template.name,
+            rows: template.rows,
+            merges: template.merges,
+            rowStyles: template.rowStyles,
+            cellStyles: template.cellStyles,
+            colWidths: template.colWidths,
+            rowHeights: template.rowHeights,
+            hiddenCols: template.hiddenCols,
+            hiddenRows: template.hiddenRows,
+          },
         ],
       });
     } else if (reportTypeStr === 'payroll-kpi') {
-      const templates = loadPayrollKpiTemplateSheets();
-      return res.json({
-        sheets: templates.map((sheet) => ({
-          name: sheet.name,
-          rows: sheet.rows,
-          merges: sheet.merges,
-        })),
-      });
+      const sheets = await buildPayrollKpiFromSystem(start_date, end_date);
+      return res.json({ sheets });
     } else if (reportTypeStr === 'workforce-summary') {
-      const dateStr = end_date || start_date || new Date().toISOString().slice(0, 10);
-      const sheets = loadWorkforceTemplateSheets(dateStr);
-      return res.json({
-        sheets: [
-          { name: sheets.summary.name, rows: sheets.summary.rows, merges: sheets.summary.merges },
-          { name: '근태 상황 보고서', rows: sheets.situation.rows, merges: sheets.situation.merges },
-        ],
-      });
+      const sheets = await buildWorkforceSummaryFromSystem(start_date, end_date);
+      return res.json({ sheets });
     } else {
       return res.status(400).json({ error: 'Report type chưa hỗ trợ grid từ dữ liệu hệ thống: ' + reportTypeStr });
     }

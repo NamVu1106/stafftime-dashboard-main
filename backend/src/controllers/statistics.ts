@@ -1,5 +1,13 @@
 import { Request, Response } from 'express';
-import { prisma } from '../server';
+import { query as q, queryOne as q1 } from '../db/sqlServer';
+
+const empCount = async (cond = '', params: Record<string, unknown> = {}) => {
+  const sql = cond
+    ? `SELECT COUNT(*) AS n FROM employees WHERE ${cond}`
+    : 'SELECT COUNT(*) AS n FROM employees';
+  const r = await q1<{ n: number }>(sql, params);
+  return Number(r?.n ?? 0);
+};
 
 // Normalize employee codes to avoid mismatches due to casing/whitespace
 const normalizeCode = (code: string | null | undefined) => (code || '').trim().toUpperCase();
@@ -32,6 +40,45 @@ const normalizeDept = (dept: string | null | undefined) => {
   return noAccent.toLowerCase();
 };
 
+const normalizeTextValue = (value: string | null | undefined) =>
+  (value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const isOfficialEmployeeText = (employmentType: string | null | undefined) => {
+  const normalized = normalizeTextValue(employmentType);
+  return normalized.includes('chinh thuc') || normalized.includes('정규');
+};
+
+const isSeasonalDepartment = (department: string | null | undefined) => {
+  const normalized = normalizeTextValue(department);
+  return (
+    normalized.includes('thoi vu') ||
+    normalized.includes('thoivu') ||
+    normalized.includes('seasonal') ||
+    normalized.includes('temp')
+  );
+};
+
+const isSeasonalEmployeeText = (employmentType: string | null | undefined) => {
+  const normalized = normalizeTextValue(employmentType);
+  return (
+    normalized.includes('thoi vu') ||
+    normalized.includes('seasonal') ||
+    normalized.includes('temp') ||
+    normalized.includes('계약') ||
+    normalized.includes('비정규')
+  );
+};
+
+const resolveEmploymentCategory = (employmentType: string | null | undefined, department?: string | null | undefined) => {
+  if (isSeasonalEmployeeText(employmentType) || isSeasonalDepartment(department)) return 'Thời vụ';
+  if (isOfficialEmployeeText(employmentType)) return 'Chính thức';
+  return (employmentType || '').trim();
+};
+
 // Get hours for a record: use total_hours if > 0, else compute from check_in/check_out
 type RecordWithHours = { total_hours?: number | null; check_in?: string | null; check_out?: string | null };
 const getRecordHours = (r: RecordWithHours): number => {
@@ -52,6 +99,96 @@ const getRecordHours = (r: RecordWithHours): number => {
   return Math.round((outM - inM) * 10) / 10; // 1 decimal
 };
 
+type AttendanceSignalRecord = RecordWithHours & {
+  workday?: number | null;
+  total_all_hours?: number | null;
+  overtime_hours?: number | null;
+  late_minutes?: number | null;
+  early_minutes?: number | null;
+};
+
+const hasAttendanceSignal = (record: AttendanceSignalRecord): boolean => {
+  const hasText = (value: unknown) => String(value ?? '').trim() !== '';
+  return (
+    hasText(record.check_in) ||
+    hasText(record.check_out) ||
+    Number(record.workday) > 0 ||
+    Number(record.total_hours) > 0 ||
+    Number(record.total_all_hours) > 0 ||
+    Number(record.overtime_hours) > 0 ||
+    Number(record.late_minutes) > 0 ||
+    Number(record.early_minutes) > 0
+  );
+};
+
+const filterAttendanceRecords = <T extends AttendanceSignalRecord>(records: T[]): T[] =>
+  records.filter(hasAttendanceSignal);
+
+type VersionedTimekeepingRecord = AttendanceSignalRecord & {
+  id?: number | null;
+  employee_code?: string | null;
+  employee_name?: string | null;
+  date?: string | null;
+  created_at?: string | null;
+  is_archived?: number | null;
+  department?: string | null;
+};
+
+const compareTimekeepingVersion = (a: VersionedTimekeepingRecord, b: VersionedTimekeepingRecord) => {
+  const activeA = Number(a.is_archived || 0) === 0 ? 1 : 0;
+  const activeB = Number(b.is_archived || 0) === 0 ? 1 : 0;
+  if (activeA !== activeB) return activeA - activeB;
+  const createdA = String(a.created_at || '');
+  const createdB = String(b.created_at || '');
+  if (createdA !== createdB) return createdA.localeCompare(createdB, 'vi');
+  return Number(a.id || 0) - Number(b.id || 0);
+};
+
+const dedupeLatestTimekeepingRecords = <T extends VersionedTimekeepingRecord>(records: T[]): T[] => {
+  const latest = new Map<string, T>();
+  records.forEach((record) => {
+    const code = resolveRecordCode(record as any);
+    const date = String(record.date || '').slice(0, 10);
+    if (!code || !date) return;
+    const key = `${code}\t${date}`;
+    const prev = latest.get(key);
+    if (!prev || compareTimekeepingVersion(record, prev) > 0) {
+      latest.set(key, record);
+    }
+  });
+  return [...latest.values()];
+};
+
+type EmployeeTypeRow = { employee_code: string; employment_type?: string | null; department?: string | null };
+
+const buildEmploymentTypeByCode = async (
+  fallbackRecords: Array<{ employee_code?: string; employee_name?: string; department?: string | null }> = []
+) => {
+  const employees = await q<EmployeeTypeRow>(
+    'SELECT employee_code, employment_type, department FROM employees',
+    {}
+  );
+  const typeByCode = new Map<string, string>();
+  employees.forEach((emp) => {
+    const code = normalizeCode(emp.employee_code);
+    if (!code) return;
+    typeByCode.set(code, resolveEmploymentCategory(emp.employment_type ?? '', emp.department ?? ''));
+  });
+
+  fallbackRecords.forEach((record) => {
+    const code = resolveRecordCode(record as any);
+    if (!code) return;
+    const fallbackType = resolveEmploymentCategory('', record.department ?? '');
+    if (fallbackType === 'Thời vụ') {
+      typeByCode.set(code, fallbackType);
+    } else if (!typeByCode.has(code)) {
+      typeByCode.set(code, fallbackType || 'Chính thức');
+    }
+  });
+
+  return typeByCode;
+};
+
 // GET /api/statistics/dashboard?date=2024-12-10
 export const getDashboardStats = async (req: Request, res: Response) => {
   try {
@@ -59,49 +196,73 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     const startDate = req.query.start_date as string | undefined;
     const endDate = req.query.end_date as string | undefined;
     
-    // Get all employees
-    const totalEmployees = await prisma.employee.count();
-    
-    // Determine date range (khi không truyền date → dùng ngày có dữ liệu mới nhất)
     let dateToUse = targetDate;
-    let rangeFilter: any = undefined;
     let dateUsed: string | undefined;
     let startDateUsed: string | undefined;
     let endDateUsed: string | undefined;
     if (startDate && endDate) {
-      rangeFilter = { gte: startDate, lte: endDate };
       startDateUsed = startDate;
       endDateUsed = endDate;
     } else {
       if (!dateToUse) {
-        const mostRecentRecord = await prisma.timekeepingRecord.findFirst({
-          where: { is_archived: 0 },
-          orderBy: { date: 'desc' },
-          select: { date: true },
-        });
+        const mostRecentRecord = await q1<{ date: string }>(
+          'SELECT TOP 1 date FROM timekeeping_records WHERE is_archived = 0 ORDER BY date DESC',
+          {}
+        );
         dateToUse = mostRecentRecord?.date || new Date().toISOString().split('T')[0];
       }
-      rangeFilter = dateToUse;
       dateUsed = dateToUse;
     }
-    
-    console.log(`[Dashboard Stats] targetDate: ${targetDate || 'null'}, startDate: ${startDate || 'null'}, endDate: ${endDate || 'null'}, filter: ${JSON.stringify(rangeFilter)}`);
-    
-    // Khi lọc theo khoảng (Tháng này / Năm này): lấy CẢ dữ liệu mới + archive để tỷ lệ theo tháng/năm đúng.
-    // Khi lọc 1 ngày (Hôm nay): chỉ lấy dữ liệu mới (is_archived = 0).
+
+    const monthRangeForDate = (dateStr: string) => {
+      const [year, month] = String(dateStr).slice(0, 7).split('-').map(Number);
+      const start = `${year}-${String(month).padStart(2, '0')}-01`;
+      const end = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
+      return { start, end };
+    };
+
     const useArchiveForRange = !!(startDate && endDate);
-    const dayRecords = await prisma.timekeepingRecord.findMany({
-      where: { 
-        ...(useArchiveForRange ? {} : { is_archived: 0 }),
-        date: rangeFilter
-      },
-      orderBy: { date: 'desc' },
-    });
+    let dayRecords: any[];
+    if (useArchiveForRange) {
+      dayRecords = await q(
+        'SELECT * FROM timekeeping_records WHERE date >= @s AND date <= @e ORDER BY date DESC',
+        { s: startDate!, e: endDate! }
+      );
+    } else {
+      dayRecords = await q(
+        'SELECT * FROM timekeeping_records WHERE date = @d ORDER BY date DESC',
+        { d: dateToUse! }
+      );
+    }
+    dayRecords = dedupeLatestTimekeepingRecords(dayRecords);
+    const attendedRecords = filterAttendanceRecords(dayRecords);
+
+    let scopeRecords = dayRecords;
+    if (!useArchiveForRange && dateToUse) {
+      const { start, end } = monthRangeForDate(dateToUse);
+      const monthRecords = await q(
+        'SELECT * FROM timekeeping_records WHERE date >= @s AND date <= @e ORDER BY date DESC',
+        { s: start, e: end }
+      );
+      scopeRecords = dedupeLatestTimekeepingRecords(monthRecords);
+    }
+
+    const scopedEmployeeCodes = new Set(
+      scopeRecords
+        .map((record) => resolveRecordCode(record as any))
+        .filter((code) => !!code)
+    );
+
+    const employmentTypeByCode = await buildEmploymentTypeByCode(scopeRecords.length > 0 ? scopeRecords : dayRecords);
+    const totalEmployees =
+      scopedEmployeeCodes.size > 0
+        ? scopedEmployeeCodes.size
+        : Math.max(await empCount(), employmentTypeByCode.size);
     
     console.log(`[Dashboard Stats] Records found for date ${dateToUse}: ${dayRecords.length}`);
     
     // Count unique employees who attended (not total records)
-    const uniqueAttendees = new Set(dayRecords.map(resolveRecordCode)).size;
+    const uniqueAttendees = new Set(attendedRecords.map(resolveRecordCode)).size;
     const attendanceToday = uniqueAttendees;
     
     console.log(`[Dashboard Stats] uniqueAttendees: ${uniqueAttendees}, totalEmployees: ${totalEmployees}`);
@@ -119,7 +280,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     // Calculate late employees: check late_minutes > 0 OR check_in time after 8:00 AM
     // Count unique employees who are late (not total records)
     const lateEmployeeCodes = new Set<string>();
-    dayRecords.forEach(r => {
+    attendedRecords.forEach(r => {
       let isLate = false;
       
       // If late_minutes is already set and > 0, count as late
@@ -151,38 +312,42 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     const lateToday = lateEmployeeCodes.size;
     
     // Calculate total hours: sum total_hours; fallback to check_in/check_out when total_hours is 0 or null
-    const totalHoursToday = dayRecords.reduce((sum, r) => sum + getRecordHours(r as RecordWithHours), 0).toFixed(1);
+    const totalHoursToday = attendedRecords.reduce((sum, r) => sum + getRecordHours(r as RecordWithHours), 0).toFixed(1);
     
     // Calculate by employment type
-    const chinhThucEmployees = await prisma.employee.count({
-      where: { employment_type: 'Chính thức' },
-    });
-    const thoiVuEmployees = await prisma.employee.count({
-      where: { employment_type: 'Thời vụ' },
-    });
-    
-    const chinhThucCodes = await prisma.employee.findMany({
-      where: { employment_type: 'Chính thức' },
-      select: { employee_code: true },
-    });
-    const chinhThucCodesSet = new Set(chinhThucCodes.map(e => normalizeCode(e.employee_code)));
-    
-    const thoiVuCodes = await prisma.employee.findMany({
-      where: { employment_type: 'Thời vụ' },
-      select: { employee_code: true },
-    });
-    const thoiVuCodesSet = new Set(thoiVuCodes.map(e => normalizeCode(e.employee_code)));
+    let chinhThucEmployees = 0;
+    let thoiVuEmployees = 0;
+    if (scopedEmployeeCodes.size > 0) {
+      scopedEmployeeCodes.forEach((code) => {
+        const type = employmentTypeByCode.get(code) || 'Chính thức';
+        if (type === 'Thời vụ') thoiVuEmployees += 1;
+        else chinhThucEmployees += 1;
+      });
+    } else {
+      employmentTypeByCode.forEach((type) => {
+        if (type === 'Thời vụ') thoiVuEmployees += 1;
+        else chinhThucEmployees += 1;
+      });
+    }
     
     // Count unique employees who attended for each type
     const chinhThucAttendees = new Set(
-      dayRecords
-        .map(resolveRecordCode)
-        .filter(code => chinhThucCodesSet.has(code))
+      attendedRecords
+        .map((record) => ({
+          code: resolveRecordCode(record as any),
+          type: employmentTypeByCode.get(resolveRecordCode(record as any)) || resolveEmploymentCategory('', record.department),
+        }))
+        .filter(({ code, type }) => !!code && type === 'Chính thức')
+        .map(({ code }) => code)
     ).size;
     const thoiVuAttendees = new Set(
-      dayRecords
-        .map(resolveRecordCode)
-        .filter(code => thoiVuCodesSet.has(code))
+      attendedRecords
+        .map((record) => ({
+          code: resolveRecordCode(record as any),
+          type: employmentTypeByCode.get(resolveRecordCode(record as any)) || resolveEmploymentCategory('', record.department),
+        }))
+        .filter(({ code, type }) => !!code && type === 'Thời vụ')
+        .map(({ code }) => code)
     ).size;
     
     console.log(`[Dashboard Stats] Chính thức: ${chinhThucAttendees}/${chinhThucEmployees}, Thời vụ: ${thoiVuAttendees}/${thoiVuEmployees}`);
@@ -216,9 +381,9 @@ export const getDashboardStats = async (req: Request, res: Response) => {
 // GET /api/statistics/gender
 export const getGenderStats = async (req: Request, res: Response) => {
   try {
-    const employees = await prisma.employee.findMany();
-    const male = employees.filter(e => e.gender === 'Nam').length;
-    const female = employees.filter(e => e.gender === 'Nữ').length;
+    const employees = await q('SELECT * FROM employees', {});
+    const male = employees.filter((e: any) => e.gender === 'Nam').length;
+    const female = employees.filter((e: any) => e.gender === 'Nữ').length;
     
     res.json([
       { name: 'Nam', value: male, color: '#3B82F6' },
@@ -232,8 +397,7 @@ export const getGenderStats = async (req: Request, res: Response) => {
 // GET /api/statistics/age
 export const getAgeStats = async (req: Request, res: Response) => {
   try {
-    const employees = await prisma.employee.findMany();
-    
+    const employees = await q('SELECT * FROM employees', {});
     const groups = [
       { range: '18-30', min: 18, max: 30, count: 0, color: '#3B82F6' },
       { range: '30-40', min: 30, max: 40, count: 0, color: '#10B981' },
@@ -241,8 +405,8 @@ export const getAgeStats = async (req: Request, res: Response) => {
       { range: '50+', min: 50, max: 100, count: 0, color: '#EF4444' },
     ];
     
-    employees.forEach(emp => {
-      const group = groups.find(g => emp.age >= g.min && emp.age <= g.max);
+    employees.forEach((emp: any) => {
+      const group = groups.find((g) => emp.age >= g.min && emp.age <= g.max);
       if (group) group.count++;
     });
     
@@ -255,9 +419,17 @@ export const getAgeStats = async (req: Request, res: Response) => {
 // GET /api/statistics/employment-type
 export const getEmploymentTypeStats = async (req: Request, res: Response) => {
   try {
-    const employees = await prisma.employee.findMany();
-    const chinhThuc = employees.filter(e => e.employment_type === 'Chính thức').length;
-    const thoiVu = employees.filter(e => e.employment_type === 'Thời vụ').length;
+    const activeRecords = await q(
+      'SELECT employee_code, employee_name, department FROM timekeeping_records WHERE is_archived = 0',
+      {}
+    );
+    const typeByCode = await buildEmploymentTypeByCode(activeRecords as any[]);
+    let chinhThuc = 0;
+    let thoiVu = 0;
+    typeByCode.forEach((type) => {
+      if (type === 'Thời vụ') thoiVu += 1;
+      else chinhThuc += 1;
+    });
     
     res.json([
       { name: 'Chính thức', value: chinhThuc, color: '#10B981' },
@@ -282,26 +454,48 @@ export const getAttendanceRateByDepartment = async (req: Request, res: Response)
       rangeFilter = { gte: startDate, lte: endDate };
     } else {
       if (!dateToUse) {
-        const mostRecentRecord = await prisma.timekeepingRecord.findFirst({
-          where: { is_archived: 0 }, // CHỈ lấy dữ liệu mới
-          orderBy: { date: 'desc' },
-          select: { date: true },
-        });
+        const mostRecentRecord = await q1<{ date: string }>(
+          'SELECT TOP 1 date FROM timekeeping_records WHERE is_archived = 0 ORDER BY date DESC',
+          {}
+        );
         dateToUse = mostRecentRecord?.date || new Date().toISOString().split('T')[0];
       }
       rangeFilter = dateToUse;
     }
+
+    const monthRangeForDate = (dateStr: string) => {
+      const [year, month] = String(dateStr).slice(0, 7).split('-').map(Number);
+      return {
+        start: `${year}-${String(month).padStart(2, '0')}-01`,
+        end: `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`,
+      };
+    };
     
     // Get departments from employees (authoritative) + from today's/month's records (fallback)
-    const allEmployees = await prisma.employee.findMany({
-      select: { department: true },
-    });
-    const dayRecords = await prisma.timekeepingRecord.findMany({
-      where: { 
-        is_archived: 0, // CHỈ lấy dữ liệu mới
-        date: rangeFilter
-      },
-    });
+    const allEmployees = await q<{ department: string }>('SELECT department FROM employees', {});
+    const dayRecords =
+      typeof rangeFilter === 'string'
+        ? await q(
+            'SELECT * FROM timekeeping_records WHERE date = @d',
+            { d: rangeFilter }
+          )
+        : await q(
+            'SELECT * FROM timekeeping_records WHERE date >= @s AND date <= @e',
+            { s: (rangeFilter as any).gte, e: (rangeFilter as any).lte }
+          );
+    const attendedRecords = filterAttendanceRecords(dedupeLatestTimekeepingRecords(dayRecords));
+
+    const scopeRecordsRaw =
+      typeof rangeFilter === 'string'
+        ? await q(
+            'SELECT * FROM timekeeping_records WHERE date >= @s AND date <= @e',
+            (() => {
+              const { start, end } = monthRangeForDate(rangeFilter);
+              return { s: start, e: end };
+            })()
+          )
+        : dayRecords;
+    const scopeRecords = dedupeLatestTimekeepingRecords(scopeRecordsRaw);
 
     // Map normalized dept -> display name (prefer employee table, fallback record)
     const deptDisplayMap = new Map<string, string>();
@@ -312,7 +506,7 @@ export const getAttendanceRateByDepartment = async (req: Request, res: Response)
         deptDisplayMap.set(norm, (e.department || '').trim());
       }
     });
-    dayRecords.forEach(r => {
+    attendedRecords.forEach(r => {
       const norm = normalizeDept(r.department);
       if (!norm) return;
       if (!deptDisplayMap.has(norm)) {
@@ -320,19 +514,13 @@ export const getAttendanceRateByDepartment = async (req: Request, res: Response)
       }
     });
 
-    const departments = [...new Set([
-      ...allEmployees.map(e => normalizeDept(e.department)),
-      ...dayRecords.map(r => normalizeDept(r.department))
-    ].filter(Boolean))].filter(d => {
-      // Loại bỏ các phòng ban không mong muốn: test/ko/thoi vu/kg
-      const blacklist = new Set(['test', 'ko', 'thoi vu', 'thoi_vu', 'thoivu', 'kg']);
-      return !blacklist.has(d);
-    });
+    const blacklist = new Set(['test', 'ko', 'thoi vu', 'thoi_vu', 'thoivu', 'kg']);
     
     // Get all employees with their codes and departments for accurate matching
-    const allEmployeesList = await prisma.employee.findMany({
-      select: { employee_code: true, department: true },
-    });
+    const allEmployeesList = await q<{ employee_code: string; department: string }>(
+      'SELECT employee_code, department FROM employees',
+      {}
+    );
     
     // Create a map: normalized employee_code -> normalized department
     const employeeDeptMap = new Map<string, string>();
@@ -340,42 +528,43 @@ export const getAttendanceRateByDepartment = async (req: Request, res: Response)
       employeeDeptMap.set(normalizeCode(emp.employee_code), normalizeDept(emp.department));
     });
     
-    // Create a map: normalized department -> Set of normalized employee codes
+    // Create scoped department headcount based on codes that appear in current timekeeping scope.
     const deptEmployeeMap = new Map<string, Set<string>>();
-    allEmployeesList.forEach(emp => {
-      const normDept = normalizeDept(emp.department);
-      if (!deptEmployeeMap.has(normDept)) {
-        deptEmployeeMap.set(normDept, new Set());
+    scopeRecords.forEach((record: any) => {
+      const code = resolveRecordCode(record as any);
+      if (!code) return;
+      const actualDept = employeeDeptMap.get(code) || normalizeDept(record.department);
+      if (!actualDept || blacklist.has(actualDept)) return;
+      if (!deptEmployeeMap.has(actualDept)) {
+        deptEmployeeMap.set(actualDept, new Set());
       }
-      deptEmployeeMap.get(normDept)!.add(normalizeCode(emp.employee_code));
+      deptEmployeeMap.get(actualDept)!.add(code);
     });
+
+    const departments = [...new Set([
+      ...deptEmployeeMap.keys(),
+      ...attendedRecords.map(r => normalizeDept(r.department))
+    ].filter(Boolean))].filter(d => !blacklist.has(d));
     
     const result = await Promise.all(
       departments.map(async (dept) => {
         const normDept = dept;
-        // Get total employees in this department from the map
-        const deptEmployeeCodes = deptEmployeeMap.get(normDept) || new Set<string>();
+        const deptEmployeeCodes = new Set(deptEmployeeMap.get(normDept) || []);
         let deptEmployees = deptEmployeeCodes.size;
 
-        
-        // Collect fallback codes from records that match dept by record.department when employee mapping is missing
-        const fallbackCodes = new Set<string>();
-
         // Filter records: prefer employee table mapping; if missing, use record.department match
-        const deptRecords = dayRecords.filter(r => {
+        const deptRecords = attendedRecords.filter(r => {
           const code = resolveRecordCode(r as any);
           const actualDept = employeeDeptMap.get(code);
           if (actualDept === normDept) return true;
           const recordDept = normalizeDept(r.department);
           if (!actualDept && recordDept === normDept) {
-            fallbackCodes.add(code);
+            deptEmployeeCodes.add(code);
             return true;
           }
           return false;
         });
 
-        // Merge fallback codes into employee count (avoid double count)
-        fallbackCodes.forEach(c => deptEmployeeCodes.add(c));
         deptEmployees = deptEmployeeCodes.size;
         
         // Count unique employees who attended (not total records)
@@ -391,15 +580,6 @@ export const getAttendanceRateByDepartment = async (req: Request, res: Response)
           ? (uniqueAttendees / deptEmployees) * 100
           : 0;
         const attendanceRate = Math.min(rawRate, 100);
-        
-        // Log for debugging
-        console.log(`[Department Stats] ${dept}:`, {
-          totalEmployees: deptEmployees,
-          totalRecords: deptRecords.length,
-          uniqueAttendees,
-          rawRate: rawRate.toFixed(1),
-          cappedRate: attendanceRate.toFixed(1)
-        });
         
         return {
           department: deptDisplayMap.get(normDept) || dept,
@@ -419,15 +599,13 @@ export const getAttendanceRateByDepartment = async (req: Request, res: Response)
 // GET /api/statistics/gender-by-employment-type
 export const getGenderByEmploymentType = async (req: Request, res: Response) => {
   try {
-    const employees = await prisma.employee.findMany();
-    
-    const chinhThuc = employees.filter(e => e.employment_type === 'Chính thức');
-    const thoiVu = employees.filter(e => e.employment_type === 'Thời vụ');
-    
-    const chinhThucNam = chinhThuc.filter(e => e.gender === 'Nam').length;
-    const chinhThucNu = chinhThuc.filter(e => e.gender === 'Nữ').length;
-    const thoiVuNam = thoiVu.filter(e => e.gender === 'Nam').length;
-    const thoiVuNu = thoiVu.filter(e => e.gender === 'Nữ').length;
+    const employees = await q('SELECT * FROM employees', {});
+    const chinhThuc = employees.filter((e: any) => e.employment_type === 'Chính thức');
+    const thoiVu = employees.filter((e: any) => e.employment_type === 'Thời vụ');
+    const chinhThucNam = chinhThuc.filter((e: any) => e.gender === 'Nam').length;
+    const chinhThucNu = chinhThuc.filter((e: any) => e.gender === 'Nữ').length;
+    const thoiVuNam = thoiVu.filter((e: any) => e.gender === 'Nam').length;
+    const thoiVuNu = thoiVu.filter((e: any) => e.gender === 'Nữ').length;
     
     const chinhThucTotal = chinhThuc.length;
     const thoiVuTotal = thoiVu.length;
@@ -486,14 +664,12 @@ export const getAttendanceByDate = async (req: Request, res: Response) => {
     }
     
     // Lấy CẢ dữ liệu mới (0) và đã archive (1) cho 7 ngày — để mỗi ngày có bản ghi đều hiện trên biểu đồ
-    const records = await prisma.timekeepingRecord.findMany({
-      where: {
-        date: { in: dates },
-      },
-    });
+    const inList = dates.map((d) => `'${String(d).replace(/'/g, "''")}'`).join(',');
+    const records = await q(`SELECT * FROM timekeeping_records WHERE date IN (${inList})`, {});
+    const attendedRecords = filterAttendanceRecords(dedupeLatestTimekeepingRecords(records));
     
     const result = dates.map(date => {
-      const dayRecords = records.filter(r => r.date === date);
+      const dayRecords = attendedRecords.filter(r => r.date === date);
       // Count unique employees who attended (not total records)
       const uniqueAttendees = new Set(dayRecords.map(r => resolveRecordCode(r as any))).size;
       return {
@@ -527,15 +703,14 @@ export const getRealtimeStats = async (req: Request, res: Response) => {
     const endMinutes = parseTime(endTime);
     
     // Get today's records
-    const todayRecords = await prisma.timekeepingRecord.findMany({
-      where: {
-        is_archived: 0,
-        date: today,
-      },
-    });
+    const todayRecords = await q(
+      'SELECT * FROM timekeeping_records WHERE date = @d',
+      { d: today }
+    );
+    const attendedTodayRecords = filterAttendanceRecords(dedupeLatestTimekeepingRecords(todayRecords));
     
     // Filter records within time range
-    const inRangeRecords = todayRecords.filter(r => {
+    const inRangeRecords = attendedTodayRecords.filter(r => {
       if (!r.check_in) return false;
       const [hours, minutes] = r.check_in.split(':').map(Number);
       const checkInMinutes = (hours || 0) * 60 + (minutes || 0);
@@ -568,9 +743,11 @@ export const getRealtimeStats = async (req: Request, res: Response) => {
     ).size;
     
     // Count absent employees (total employees - those who checked in)
-    const totalEmployees = await prisma.employee.count();
+    const totalEmployees = await empCount();
     const checkedInEmployees = new Set(
-      todayRecords.map(r => resolveRecordCode(r as any))
+      attendedTodayRecords
+        .filter(r => r.check_in && String(r.check_in).trim() !== '')
+        .map(r => resolveRecordCode(r as any))
     ).size;
     const absentEmployees = Math.max(0, totalEmployees - checkedInEmployees);
     
@@ -609,33 +786,25 @@ export const getRangeStats = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'start_date and end_date are required' });
     }
     
-    // Build where clause
-    const where: any = {
-      is_archived: 0,
-      date: {
-        gte: startDate,
-        lte: endDate,
-      },
-    };
-    
     if (department && department !== 'all') {
-      // Normalize department for matching
       const normDept = normalizeDept(department);
-      const allEmployees = await prisma.employee.findMany({
-        select: { employee_code: true, department: true },
-      });
+      const allEmployees = await q<{ employee_code: string; department: string }>(
+        'SELECT employee_code, department FROM employees',
+        {}
+      );
       const employeeDeptMap = new Map<string, string>();
-      allEmployees.forEach(emp => {
+      allEmployees.forEach((emp) => {
         employeeDeptMap.set(normalizeCode(emp.employee_code), normalizeDept(emp.department));
       });
-      
-      // Get records and filter by department
-      const allRecords = await prisma.timekeepingRecord.findMany({ where });
-      const filteredRecords = allRecords.filter(r => {
+      const allRecords = await q(
+        'SELECT * FROM timekeeping_records WHERE date >= @sd AND date <= @ed',
+        { sd: startDate, ed: endDate }
+      );
+      const filteredRecords = filterAttendanceRecords(dedupeLatestTimekeepingRecords(allRecords).filter(r => {
         const code = resolveRecordCode(r as any);
         const empDept = employeeDeptMap.get(code);
         return empDept === normDept || normalizeDept(r.department) === normDept;
-      });
+      }));
       
       // Calculate stats
       const uniqueEmployees = new Set(filteredRecords.map(r => resolveRecordCode(r as any))).size;
@@ -651,12 +820,15 @@ export const getRangeStats = async (req: Request, res: Response) => {
       });
     }
     
-    // No department filter
-    const records = await prisma.timekeepingRecord.findMany({ where });
-    const uniqueEmployees = new Set(records.map(r => resolveRecordCode(r as any))).size;
-    const totalDays = records.length;
-    const totalHours = records.reduce((sum, r) => sum + getRecordHours(r as RecordWithHours), 0);
-    const totalOvertime = records.reduce((sum, r) => sum + (r.overtime_hours || 0), 0);
+    const records = await q(
+      'SELECT * FROM timekeeping_records WHERE date >= @sd AND date <= @ed',
+      { sd: startDate, ed: endDate }
+    );
+    const attendedRecords = filterAttendanceRecords(dedupeLatestTimekeepingRecords(records));
+    const uniqueEmployees = new Set(attendedRecords.map(r => resolveRecordCode(r as any))).size;
+    const totalDays = attendedRecords.length;
+    const totalHours = attendedRecords.reduce((sum, r) => sum + getRecordHours(r as RecordWithHours), 0);
+    const totalOvertime = attendedRecords.reduce((sum, r) => sum + (r.overtime_hours || 0), 0);
     
     res.json({
       totalEmployees: uniqueEmployees,
@@ -680,27 +852,25 @@ export const getCompareStats = async (req: Request, res: Response) => {
     if (type === 'department' && ids) {
       // Compare departments
       const deptIds = ids.split(',').map(d => d.trim());
-      const allEmployees = await prisma.employee.findMany({
-        select: { employee_code: true, department: true },
-      });
+      const allEmployees = await q<{ employee_code: string; department: string }>(
+        'SELECT employee_code, department FROM employees',
+        {}
+      );
       const employeeDeptMap = new Map<string, string>();
-      allEmployees.forEach(emp => {
+      allEmployees.forEach((emp) => {
         employeeDeptMap.set(normalizeCode(emp.employee_code), normalizeDept(emp.department));
       });
-      
-      // Get stats for each department
       const today = new Date().toISOString().split('T')[0];
-      const records = await prisma.timekeepingRecord.findMany({
-        where: {
-          is_archived: 0,
-          date: today,
-        },
-      });
+      const records = await q(
+        'SELECT * FROM timekeeping_records WHERE date = @d',
+        { d: today }
+      );
+      const attendedRecords = filterAttendanceRecords(dedupeLatestTimekeepingRecords(records));
       
       const results = await Promise.all(
         deptIds.map(async (deptId) => {
           const normDept = normalizeDept(deptId);
-          const deptRecords = records.filter(r => {
+          const deptRecords = attendedRecords.filter(r => {
             const code = resolveRecordCode(r as any);
             const empDept = employeeDeptMap.get(code);
             return empDept === normDept || normalizeDept(r.department) === normDept;
@@ -741,21 +911,17 @@ export const getCompareStats = async (req: Request, res: Response) => {
       
       const results = await Promise.all(
         periodList.map(async (period) => {
-          const records = await prisma.timekeepingRecord.findMany({
-            where: {
-              is_archived: 0,
-              date: {
-                gte: period.start,
-                lte: period.end,
-              },
-            },
-          });
+          const records = await q(
+            'SELECT * FROM timekeeping_records WHERE date >= @s AND date <= @e',
+            { s: period.start, e: period.end }
+          );
+          const attendedRecords = filterAttendanceRecords(dedupeLatestTimekeepingRecords(records));
           
-          const uniqueEmployees = new Set(records.map(r => resolveRecordCode(r as any))).size;
-          const totalHours = records.reduce((sum, r) => sum + getRecordHours(r as RecordWithHours), 0);
-          const totalDays = records.length;
+          const uniqueEmployees = new Set(attendedRecords.map(r => resolveRecordCode(r as any))).size;
+          const totalHours = attendedRecords.reduce((sum, r) => sum + getRecordHours(r as RecordWithHours), 0);
+          const totalDays = attendedRecords.length;
           
-          const totalEmployees = await prisma.employee.count();
+          const totalEmployees = await empCount();
           const rawRate = totalEmployees > 0
             ? (uniqueEmployees / totalEmployees) * 100
             : 0;
@@ -795,10 +961,10 @@ export const getWeeklyTemporaryWorkers = async (req: Request, res: Response) => 
       weekEnd = endDate;
     } else {
       // Mặc định: lấy tuần có bản ghi chấm công mới nhất (cả archive) để trang có số liệu khi mở
-      const latestRecord = await prisma.timekeepingRecord.findFirst({
-        orderBy: { date: 'desc' },
-        select: { date: true },
-      });
+      const latestRecord = await q1<{ date: string }>(
+        'SELECT TOP 1 date FROM timekeeping_records ORDER BY date DESC',
+        {}
+      );
       const refDate = latestRecord?.date
         ? new Date(latestRecord.date + 'T12:00:00')
         : new Date();
@@ -815,17 +981,10 @@ export const getWeeklyTemporaryWorkers = async (req: Request, res: Response) => 
     console.log(`[Weekly Temporary Workers] Week: ${weekStart} to ${weekEnd}`);
     
     // Lấy tất cả công nhân thời vụ
-    const temporaryWorkers = await prisma.employee.findMany({
-      where: {
-        employment_type: 'Thời vụ',
-      },
-      select: {
-        id: true,
-        employee_code: true,
-        name: true,
-        department: true,
-      },
-    });
+    const temporaryWorkers = await q(
+      "SELECT id, employee_code, name, department FROM employees WHERE employment_type = @et",
+      { et: 'Thời vụ' }
+    );
     
     console.log(`[Weekly Temporary Workers] Total temporary workers: ${temporaryWorkers.length}`);
     
@@ -836,20 +995,17 @@ export const getWeeklyTemporaryWorkers = async (req: Request, res: Response) => 
     });
     
     // Lấy tất cả records chấm công trong tuần (cả dữ liệu mới + archive) để báo cáo đủ khi user chọn tuần đã có data ở lịch sử
-    const weekRecords = await prisma.timekeepingRecord.findMany({
-      where: {
-        date: {
-          gte: weekStart,
-          lte: weekEnd,
-        },
-      },
-    });
+    const weekRecords = await q(
+      'SELECT * FROM timekeeping_records WHERE date >= @s AND date <= @e',
+      { s: weekStart, e: weekEnd }
+    );
+    const attendedWeekRecords = filterAttendanceRecords(dedupeLatestTimekeepingRecords(weekRecords));
     
-    console.log(`[Weekly Temporary Workers] Total records in week: ${weekRecords.length}`);
+    console.log(`[Weekly Temporary Workers] Total records in week: ${weekRecords.length} (attended: ${attendedWeekRecords.length})`);
     
     // Đếm số ngày đi làm của MỌI nhân viên (từ chấm công) để có danh sách "đi làm 1 ngày"
     const workerDayCountAll = new Map<string, Set<string>>();
-    weekRecords.forEach(record => {
+    attendedWeekRecords.forEach(record => {
       const code = resolveRecordCode(record as any);
       const normalizedCode = normalizeCode(code);
       if (!normalizedCode) return;
@@ -860,9 +1016,10 @@ export const getWeeklyTemporaryWorkers = async (req: Request, res: Response) => 
     });
     
     // Map tất cả nhân viên (để lấy tên, phòng ban, loại hình) — dùng cho danh sách
-    const allEmployees = await prisma.employee.findMany({
-      select: { employee_code: true, name: true, department: true, employment_type: true },
-    });
+    const allEmployees = await q(
+      'SELECT employee_code, name, department, employment_type FROM employees',
+      {}
+    );
     const allEmployeeMap = new Map<string, (typeof allEmployees)[0]>();
     allEmployees.forEach(emp => allEmployeeMap.set(normalizeCode(emp.employee_code), emp));
     
@@ -880,7 +1037,7 @@ export const getWeeklyTemporaryWorkers = async (req: Request, res: Response) => 
     workerDayCountAll.forEach((dates, normalizedCode) => {
       if (dates.size !== 1) return;
       const workDate = Array.from(dates)[0];
-      const record = weekRecords.find(r => {
+      const record = attendedWeekRecords.find(r => {
         const code = resolveRecordCode(r as any);
         return normalizeCode(code) === normalizedCode && r.date === workDate;
       });
@@ -925,7 +1082,7 @@ export const getWeeklyTemporaryWorkers = async (req: Request, res: Response) => 
         })(),
       },
       debug: {
-        total_records_in_week: weekRecords.length,
+        total_records_in_week: attendedWeekRecords.length,
         unique_workers_in_week: workerDayCountAll.size,
         workers_with_one_day_any: workersWithOneDayAll.length,
       },

@@ -1,78 +1,57 @@
 import { Request, Response } from 'express';
-import { prisma } from '../server';
-import { getDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
+import { query, queryOne, exec, transaction } from '../db/sqlServer';
 
-// GET /api/timekeeping - List timekeeping records with filters
-// Query param: archived=true để lấy dữ liệu lịch sử, mặc định chỉ lấy dữ liệu mới
+type TkRow = Record<string, unknown>;
+
+function mapTkRow(r: TkRow) {
+  return { ...r, employee: null };
+}
+
 export const getTimekeeping = async (req: Request, res: Response) => {
   try {
-    const { date, start_date, end_date, department, employee_code, search, archived, page, limit } = req.query;
-    
-    const where: any = {};
-    
-    // Mặc định chỉ lấy dữ liệu mới (is_archived = 0) nếu không có param archived
-    // Nếu archived=true thì lấy dữ liệu cũ (is_archived = 1)
+    const { date, start_date, end_date, department, employee_code, search, archived, page, limit } =
+      req.query;
+    const parts: string[] = [];
+    const params: Record<string, unknown> = {};
     if (archived === 'true') {
-      where.is_archived = 1; // Lấy dữ liệu lịch sử
+      parts.push('is_archived = 1');
     } else {
-      // Chỉ lấy dữ liệu mới: is_archived = 0
-      // Không dùng null vì Prisma không hỗ trợ null trong where clause cho SQLite
-      where.is_archived = 0;
+      parts.push('is_archived = 0');
     }
-    
     if (date) {
-      where.date = date;
+      parts.push('date = @d');
+      params.d = date;
     } else if (start_date && end_date) {
-      where.date = {
-        gte: start_date as string,
-        lte: end_date as string,
-      };
+      parts.push('date >= @sd AND date <= @ed');
+      params.sd = start_date;
+      params.ed = end_date;
     }
-    
     if (department && department !== 'all') {
-      where.department = department;
+      parts.push('department = @dept');
+      params.dept = department;
     }
-    
-    // Fetch all records first (we'll filter by search term after)
-    const allRecords = await prisma.timekeepingRecord.findMany({
-      where,
-      include: {
-        employee: true,
-      },
-      orderBy: [
-        {
-          created_at: 'desc', // Dữ liệu mới upload hiển thị trước
-        },
-        {
-          date: 'desc', // Ngày mới nhất trước
-        },
-        {
-          employee_code: 'asc',
-        },
-      ],
-    });
-    
-    // Filter by employee_code, employee_name, or search term (case-insensitive)
-    // SQLite doesn't support case-insensitive search well, so we filter after fetching
-    let filteredRecords = allRecords;
+    const where = parts.length ? 'WHERE ' + parts.join(' AND ') : '';
+    let allRecords = await query<TkRow>(
+      `SELECT * FROM timekeeping_records ${where} ORDER BY created_at DESC, date DESC, employee_code ASC`,
+      params
+    );
+    allRecords = allRecords.map(mapTkRow);
     const searchTerm = (search || employee_code) as string;
     if (searchTerm) {
       const term = searchTerm.trim().toLowerCase();
       if (term) {
-        filteredRecords = allRecords.filter(record => 
-          record.employee_code.toLowerCase().includes(term) ||
-          record.employee_name.toLowerCase().includes(term)
+        allRecords = allRecords.filter(
+          (r) =>
+            String(r.employee_code).toLowerCase().includes(term) ||
+            String(r.employee_name).toLowerCase().includes(term)
         );
       }
     }
-    
-    // Pagination
-    const pageNum = page ? parseInt(page as string) : 1;
-    const limitNum = limit ? parseInt(limit as string) : 20;
+    const pageNum = page ? parseInt(page as string, 10) : 1;
+    const limitNum = limit ? parseInt(limit as string, 10) : 20;
     const skip = (pageNum - 1) * limitNum;
-    const total = filteredRecords.length;
-    const data = filteredRecords.slice(skip, skip + limitNum);
-    
+    const total = allRecords.length;
+    const data = allRecords.slice(skip, skip + limitNum);
     res.json({
       data,
       total,
@@ -85,269 +64,167 @@ export const getTimekeeping = async (req: Request, res: Response) => {
   }
 };
 
-// GET /api/timekeeping/:id - Get timekeeping record by ID
 export const getTimekeepingById = async (req: Request, res: Response) => {
   try {
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    
-    const record = await prisma.timekeepingRecord.findUnique({
-      where: { id: parseInt(id) },
-      include: {
-        employee: true,
-      },
-    });
-    
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+    const record = await queryOne<TkRow>('SELECT * FROM timekeeping_records WHERE id = @id', { id });
     if (!record) {
       return res.status(404).json({ error: 'Timekeeping record not found' });
     }
-    
-    res.json(record);
+    res.json(mapTkRow(record));
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// POST /api/timekeeping - Create new timekeeping record
 export const createTimekeeping = async (req: Request, res: Response) => {
   try {
-    const {
-      employee_code,
-      employee_id,
-      employee_name,
-      date,
-      day_of_week,
-      check_in,
-      check_out,
-      late_minutes,
-      early_minutes,
-      workday,
-      total_hours,
-      overtime_hours,
-      total_all_hours,
-      shift,
-      department,
-    } = req.body;
-    
-    // If employee_id not provided, try to find by employee_code
-    let finalEmployeeId = employee_id || null;
-    if (!finalEmployeeId && employee_code) {
-      const employee = await prisma.employee.findUnique({
-        where: { employee_code },
-        select: { id: true },
-      });
-      if (employee) {
-        finalEmployeeId = employee.id;
-      }
+    const b = req.body;
+    let finalEmployeeId: number | null = b.employee_id || null;
+    if (!finalEmployeeId && b.employee_code) {
+      const e = await queryOne<{ id: number }>(
+        'SELECT id FROM employees WHERE employee_code = @c',
+        { c: b.employee_code }
+      );
+      if (e) finalEmployeeId = e.id;
     }
-    
-    const record = await prisma.timekeepingRecord.create({
-      data: {
-        employee_code,
+    const now = new Date().toISOString();
+    const rows = await query<TkRow>(
+      `INSERT INTO timekeeping_records (
+        employee_code, employee_id, employee_name, date, day_of_week, check_in, check_out,
+        late_minutes, early_minutes, workday, total_hours, overtime_hours, total_all_hours,
+        shift, department, created_at, is_archived
+      ) OUTPUT INSERTED.*
+      VALUES (
+        @employee_code, @employee_id, @employee_name, @date, @day_of_week, @check_in, @check_out,
+        @late_minutes, @early_minutes, @workday, @total_hours, @overtime_hours, @total_all_hours,
+        @shift, @department, @created_at, 0
+      )`,
+      {
+        employee_code: b.employee_code,
         employee_id: finalEmployeeId,
-        employee_name,
-        date,
-        day_of_week,
-        check_in,
-        check_out,
-        late_minutes: late_minutes || 0,
-        early_minutes: early_minutes || 0,
-        workday,
-        total_hours,
-        overtime_hours: overtime_hours || 0,
-        total_all_hours,
-        shift,
-        department,
-        created_at: new Date().toISOString(), // Đánh dấu thời gian tạo để sắp xếp dữ liệu mới trước
-        is_archived: 0, // Dữ liệu mới tạo = 0 (hiển thị ở Báo cáo)
-      },
-      include: {
-        employee: true,
-      },
-    });
-    
-    res.status(201).json(record);
+        employee_name: b.employee_name,
+        date: b.date,
+        day_of_week: b.day_of_week,
+        check_in: b.check_in,
+        check_out: b.check_out,
+        late_minutes: b.late_minutes ?? 0,
+        early_minutes: b.early_minutes ?? 0,
+        workday: b.workday,
+        total_hours: b.total_hours,
+        overtime_hours: b.overtime_hours ?? 0,
+        total_all_hours: b.total_all_hours,
+        shift: b.shift,
+        department: b.department,
+        created_at: now,
+      }
+    );
+    res.status(201).json(mapTkRow(rows[0]));
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// PUT /api/timekeeping/:id - Update timekeeping record
 export const updateTimekeeping = async (req: Request, res: Response) => {
   try {
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const updateData = req.body;
-    
-    const record = await prisma.timekeepingRecord.update({
-      where: { id: parseInt(id) },
-      data: updateData,
-      include: {
-        employee: true,
-      },
-    });
-    
-    res.json(record);
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+    const u = req.body;
+    const cur = await queryOne<TkRow>('SELECT * FROM timekeeping_records WHERE id = @id', { id });
+    if (!cur) return res.status(404).json({ error: 'Timekeeping record not found' });
+    const merged = { ...cur, ...u, id };
+    await exec(
+      `UPDATE timekeeping_records SET
+        employee_code=@employee_code, employee_id=@employee_id, employee_name=@employee_name,
+        date=@date, day_of_week=@day_of_week, check_in=@check_in, check_out=@check_out,
+        late_minutes=@late_minutes, early_minutes=@early_minutes, workday=@workday,
+        total_hours=@total_hours, overtime_hours=@overtime_hours, total_all_hours=@total_all_hours,
+        shift=@shift, department=@department, is_archived=@is_archived
+      WHERE id=@id`,
+      merged as any
+    );
+    const record = await queryOne<TkRow>('SELECT * FROM timekeeping_records WHERE id = @id', { id });
+    res.json(mapTkRow(record!));
   } catch (error: any) {
-    if (error.code === 'P2025') {
-      return res.status(404).json({ error: 'Timekeeping record not found' });
-    }
     res.status(500).json({ error: error.message });
   }
 };
 
-// DELETE /api/timekeeping/:id - Delete timekeeping record
 export const deleteTimekeeping = async (req: Request, res: Response) => {
   try {
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    
-    await prisma.timekeepingRecord.delete({
-      where: { id: parseInt(id) },
-    });
-    
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+    const n = await exec('DELETE FROM timekeeping_records WHERE id = @id', { id });
+    if (!n) return res.status(404).json({ error: 'Timekeeping record not found' });
     res.json({ message: 'Timekeeping record deleted successfully' });
   } catch (error: any) {
-    if (error.code === 'P2025') {
-      return res.status(404).json({ error: 'Timekeeping record not found' });
-    }
     res.status(500).json({ error: error.message });
   }
 };
 
-// DELETE /api/timekeeping - Delete all timekeeping records
-export const deleteAllTimekeeping = async (req: Request, res: Response) => {
+export const deleteAllTimekeeping = async (_req: Request, res: Response) => {
   try {
-    const result = await prisma.timekeepingRecord.deleteMany({});
-    
-    res.json({ 
-      message: 'All timekeeping records deleted successfully',
-      count: result.count 
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-};
- 
-// DELETE /api/timekeeping/archived - Delete all archived (historical) records
-export const deleteAllArchivedTimekeeping = async (req: Request, res: Response) => {
-  try {
-    const result = await prisma.timekeepingRecord.deleteMany({
-      where: {
-        is_archived: 1, // Chỉ xóa dữ liệu đã được archive (lịch sử)
-      },
-    });
-    
-    res.json({ 
-      message: 'All archived timekeeping records deleted successfully',
-      count: result.count 
-    });
+    await exec('DELETE FROM timekeeping_records', {});
+    res.json({ message: 'All timekeeping records deleted successfully', count: 'all' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 };
 
-// POST /api/timekeeping/fix-archive - Fix archive status: archive all old data, keep only the latest upload
-export const fixArchiveStatus = async (req: Request, res: Response) => {
+export const deleteAllArchivedTimekeeping = async (_req: Request, res: Response) => {
   try {
-    // Tìm created_at mới nhất (lần upload gần nhất) - chỉ lấy những record có created_at không rỗng
-    const latestRecord = await prisma.timekeepingRecord.findFirst({
-      where: {
-        created_at: { not: '' }, // Chỉ lấy record có created_at không rỗng
-      },
-      orderBy: { created_at: 'desc' },
-      select: { created_at: true },
-    });
-    
-    if (!latestRecord || !latestRecord.created_at) {
-      // Nếu không có created_at hợp lệ, lấy tất cả dữ liệu và đánh dấu tất cả là archived
-      // Sau đó giữ lại batch mới nhất (dựa vào id)
-      const allRecords = await prisma.timekeepingRecord.findMany({
-        orderBy: { id: 'desc' },
-        take: 1000, // Giả sử batch mới nhất có tối đa 1000 records
-      });
-      
+    const n = await exec('DELETE FROM timekeeping_records WHERE is_archived = 1', {});
+    res.json({ message: 'All archived timekeeping records deleted successfully', count: n });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const fixArchiveStatus = async (_req: Request, res: Response) => {
+  try {
+    const latestRecord = await queryOne<{ created_at: string }>(
+      `SELECT TOP 1 created_at FROM timekeeping_records
+       WHERE created_at IS NOT NULL AND created_at <> '' ORDER BY created_at DESC`,
+      {}
+    );
+    if (!latestRecord?.created_at) {
+      const allRecords = await query<TkRow>(
+        'SELECT TOP 1000 * FROM timekeeping_records ORDER BY id DESC',
+        {}
+      );
       if (allRecords.length === 0) {
-        return res.json({ 
-          message: 'No records to fix',
-          archived: 0,
-          kept: 0
-        });
+        return res.json({ message: 'No records to fix', archived: 0, kept: 0 });
       }
-      
-      // Lấy id của record mới nhất và cũ nhất trong batch
-      const latestId = allRecords[0].id;
-      const oldestIdInBatch = allRecords[allRecords.length - 1].id;
-      
-      // Archive tất cả dữ liệu có id < oldestIdInBatch (dữ liệu cũ hơn batch mới nhất)
-      const archiveResult = await prisma.timekeepingRecord.updateMany({
-        where: {
-          id: { lt: oldestIdInBatch },
-        },
-        data: {
-          is_archived: 1,
-        },
-      });
-   
-      // Đảm bảo batch mới nhất có is_archived = 0
-      await prisma.timekeepingRecord.updateMany({
-        where: {
-          id: { gte: oldestIdInBatch, lte: latestId },
-        },
-        data: {
-          is_archived: 0,
-        },
-      });
-      
+      const latestId = allRecords[0].id as number;
+      const oldestIdInBatch = allRecords[allRecords.length - 1].id as number;
+      const ar = await exec(
+        'UPDATE timekeeping_records SET is_archived = 1 WHERE id < @oid',
+        { oid: oldestIdInBatch }
+      );
+      await exec(
+        'UPDATE timekeeping_records SET is_archived = 0 WHERE id >= @a AND id <= @b',
+        { a: oldestIdInBatch, b: latestId }
+      );
       return res.json({
         message: 'Archive status fixed successfully',
-        archived: archiveResult.count,
+        archived: ar,
         kept: allRecords.length,
       });
     }
-    
     const latestCreatedAt = latestRecord.created_at;
-    
-    // Archive tất cả dữ liệu có created_at < latestCreatedAt hoặc created_at rỗng
-    // Sử dụng OR với điều kiện hợp lệ
-    const archiveConditions: any[] = [
-      { created_at: { lt: latestCreatedAt } },
-    ];
-    
-    // Thêm điều kiện cho created_at rỗng (nếu có)
-    archiveConditions.push({ created_at: '' });
-    
-    // Thêm điều kiện cho is_archived = 0 nhưng created_at khác latestCreatedAt
-    archiveConditions.push({ 
-      is_archived: 0,
-      created_at: { not: latestCreatedAt }
-    });
-    
-    const archiveResult = await prisma.timekeepingRecord.updateMany({
-      where: {
-        OR: archiveConditions,
-      },
-      data: {
-        is_archived: 1,
-      },
-    });
-  
-    // Đảm bảo batch mới nhất có is_archived = 0
-    const keepResult = await prisma.timekeepingRecord.updateMany({
-      where: {
-        created_at: latestCreatedAt,
-      },
-      data: {
-        is_archived: 0,
-      },
-    });
-    
+    await exec(
+      `UPDATE timekeeping_records SET is_archived = 1
+       WHERE created_at < @lc OR created_at = '' OR (is_archived = 0 AND created_at <> @lc2)`,
+      { lc: latestCreatedAt, lc2: latestCreatedAt }
+    );
+    const kept = await exec(
+      'UPDATE timekeeping_records SET is_archived = 0 WHERE created_at = @lc',
+      { lc: latestCreatedAt }
+    );
     res.json({
       message: 'Archive status fixed successfully',
-      archived: archiveResult.count,
-      kept: keepResult.count,
+      archived: 'batch',
+      kept,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 };
-
-
- 

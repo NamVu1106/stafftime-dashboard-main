@@ -1,4 +1,4 @@
-import { useI18n } from '@/contexts/I18nContext';
+import { useI18n } from '@/hooks/useI18n';
 import { PageHeader } from '@/components/shared/PageHeader';
 import {
   Table,
