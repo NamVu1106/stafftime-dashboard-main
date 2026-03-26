@@ -163,21 +163,21 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
       <div
         className={cn(
           'flex items-center border-b border-sidebar-hover shrink-0',
-          collapsed ? 'h-16 px-2 justify-center' : 'min-h-16 py-2 px-4'
+          collapsed ? 'h-16 px-2 justify-center' : 'h-16 px-4'
         )}
       >
-        <div className={cn('flex items-center gap-3 min-w-0', collapsed && 'justify-center')}>
+        <div className={cn('flex items-center gap-3', collapsed && 'justify-center')}>
           <div
             className={cn(
               'rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden bg-[hsl(200,80%,50%)]',
-              collapsed ? 'w-8 h-8 p-1' : 'h-10 w-full max-w-[11.5rem] px-2 py-1'
+              collapsed ? 'w-8 h-8 p-1' : 'w-10 h-10 p-1.5'
             )}
           >
             <img
               src={APP_LOGO_SRC}
               alt="You Sung Vina"
               draggable={false}
-              className={cn('object-contain', collapsed ? 'h-full w-full' : 'h-full w-full max-h-10')}
+              className="w-full h-full object-contain object-center"
             />
           </div>
           {!collapsed && (

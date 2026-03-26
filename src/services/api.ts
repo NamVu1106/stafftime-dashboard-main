@@ -1,7 +1,5 @@
-// Use environment variable if set, otherwise use relative path for production
-// or localhost for development
-const API_URL = import.meta.env.VITE_API_URL ||
-  (import.meta.env.MODE === 'production' ? '/api' : 'http://localhost:3000/api');
+// Default to same-origin API so Vite proxy works for local and LAN access.
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   // Prefer sessionStorage (AuthContext), fallback to localStorage

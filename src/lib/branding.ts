@@ -1,4 +1,4 @@
-import appLogo from '../../snapedit_1774344931374-removebg-preview.png';
+import appLogo from '../../z7440668636038_68aed2d628247a8baacf2c22533159dc-removebg-preview.ico';
 
 export const APP_BRAND_NAME = 'YS-Smart';
 export const APP_BRAND_SUBTITLE = 'You Sung Vina';
@@ -15,7 +15,7 @@ export const applyBrandFavicon = () => {
       link.rel = rel;
       document.head.appendChild(link);
     }
-    link.type = 'image/png';
+    link.type = 'image/x-icon';
     link.href = APP_LOGO_SRC;
   }
 };

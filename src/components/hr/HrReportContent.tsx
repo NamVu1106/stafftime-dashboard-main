@@ -393,7 +393,14 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
   const sheetNames = useMemo(() => safeParseSheetNames((latestUpload as any)?.sheet_names), [latestUpload]);
 
   useEffect(() => {
-    if (!latestUpload) return;
+    setSelectedSheet('');
+  }, [reportKey]);
+
+  useEffect(() => {
+    if (!latestUpload) {
+      setSelectedSheet('');
+      return;
+    }
 
     const defRow = reportDef?.defaultRowLimit ?? 200;
     const defCol = reportDef?.defaultColLimit ?? 80;
@@ -402,9 +409,13 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
 
     const defaultSheet = (latestUpload as any)?.default_sheet as string | undefined;
     const initial = defaultSheet || sheetNames[0] || '';
-    setSelectedSheet(prev => (prev ? prev : initial));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [(latestUpload as any)?.id]);
+    setSelectedSheet((prev) => {
+      if (prev && sheetNames.includes(prev)) {
+        return prev;
+      }
+      return initial;
+    });
+  }, [(latestUpload as any)?.id, reportKey, sheetNames, reportDef?.defaultRowLimit, reportDef?.defaultColLimit]);
 
   const uploadMutation = useMutation({
     mutationFn: async (f: File) => {

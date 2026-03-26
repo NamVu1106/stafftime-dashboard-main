@@ -15,15 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Loader2, Lock, User, KeyRound, Copy, Check, Globe } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast as sonnerToast } from 'sonner';
 import { authAPI } from '@/services/api';
 import { cn } from '@/lib/utils';
 import { APP_LOGO_SRC } from '@/lib/branding';
@@ -90,7 +83,7 @@ const LoginPage = () => {
       }
 
       setIsSuccess(true);
-      toast.success(language === 'vi' ? 'Đăng nhập thành công!' : '로그인 성공!');
+      sonnerToast.success(language === 'vi' ? 'Đăng nhập thành công!' : '로그인 성공!');
 
       setTimeout(() => {
         navigate('/');
@@ -98,7 +91,7 @@ const LoginPage = () => {
     } catch (err: any) {
       setError(err.message || (language === 'vi' ? 'Đăng nhập thất bại.' : '로그인 실패'));
       setCardShake(true);
-      toast.error(err.message || 'Login failed');
+      sonnerToast.error(err.message || 'Login failed');
       setTimeout(() => setCardShake(false), 500);
     } finally {
       setIsLoading(false);
@@ -115,7 +108,7 @@ const LoginPage = () => {
   const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!forgotPasswordUsername.trim()) {
-      toast.error(language === 'vi' ? 'Vui lòng nhập tên đăng nhập' : '사용자 이름을 입력하세요');
+      sonnerToast.error(language === 'vi' ? 'Vui lòng nhập tên đăng nhập' : '사용자 이름을 입력하세요');
       return;
     }
 
@@ -130,9 +123,9 @@ const LoginPage = () => {
         newPassword: result.newPassword,
         warning: result.warning,
       });
-      toast.success(result.message);
+      sonnerToast.success(result.message);
     } catch (err: any) {
-      toast.error(err.message || (language === 'vi' ? 'Có lỗi xảy ra' : '오류가 발생했습니다'));
+      sonnerToast.error(err.message || (language === 'vi' ? 'Có lỗi xảy ra' : '오류가 발생했습니다'));
     } finally {
       setIsForgotPasswordLoading(false);
     }
@@ -142,7 +135,7 @@ const LoginPage = () => {
     if (resetResult?.newPassword) {
       navigator.clipboard.writeText(resetResult.newPassword);
       setCopied(true);
-      toast.success(language === 'vi' ? 'Đã sao chép!' : '복사되었습니다');
+      sonnerToast.success(language === 'vi' ? 'Đã sao chép!' : '복사되었습니다');
       setTimeout(() => setCopied(false), 2000);
     }
   };
@@ -155,11 +148,11 @@ const LoginPage = () => {
   };
 
   const handleCreateAccount = () => {
-    toast.info(language === 'vi' ? 'Liên hệ quản trị viên để tạo tài khoản.' : '관리자에게 문의하여 계정을 생성하세요.');
+    sonnerToast(language === 'vi' ? 'Liên hệ quản trị viên để tạo tài khoản.' : '관리자에게 문의하여 계정을 생성하세요.');
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 login-page-bg">
+    <div className="min-h-screen flex items-center justify-center p-4 login-page-bg notranslate" translate="no">
       {/* Centered card - Upteamist style + hiệu ứng */}
       <div
         className={cn(
@@ -182,13 +175,13 @@ const LoginPage = () => {
             </svg>
           </div>
 
-          <div className="relative z-10 flex flex-wrap items-center gap-3">
-            <div className="h-11 min-h-[2.75rem] w-[min(100%,17rem)] max-w-xs rounded-lg bg-white/20 flex items-center justify-center login-logo-glow cursor-default overflow-hidden px-2.5 py-1.5 shrink-0">
+          <div className="relative z-10 flex items-center gap-3">
+            <div className="w-11 h-11 rounded-lg bg-white/20 flex items-center justify-center login-logo-glow cursor-default overflow-hidden p-1.5 shrink-0">
               <img
                 src={APP_LOGO_SRC}
                 alt="You Sung Vina"
                 draggable={false}
-                className="max-h-full w-full object-contain object-center"
+                className="w-full h-full object-contain object-center"
               />
             </div>
             <span className="text-xl font-bold text-white drop-shadow-sm">YS-Smart</span>
@@ -239,17 +232,34 @@ const LoginPage = () => {
         {/* Right panel - Login form (~40%) */}
         <main className="lg:w-[42%] flex flex-col p-8 lg:p-12 bg-white relative border-l border-gray-100/50">
           {/* Language selector - top right */}
-          <div className="absolute top-6 right-6">
-            <Select value={language} onValueChange={(v) => setLanguage(v as 'vi' | 'ko')}>
-              <SelectTrigger className="w-[120px] h-9 border border-gray-200 rounded-lg transition-all duration-300 hover:border-[hsl(215,75%,38%)]/50 hover:shadow-md hover:shadow-primary/5">
-                <Globe className="w-4 h-4 mr-1.5 text-muted-foreground" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="vi">Viet Nam</SelectItem>
-                <SelectItem value="ko">Korea</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="absolute top-6 right-6" translate="no">
+            <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
+              <Globe className="ml-2 h-4 w-4 text-muted-foreground" />
+              <button
+                type="button"
+                onClick={() => setLanguage('vi')}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
+                  language === 'vi'
+                    ? 'bg-[hsl(215,75%,38%)] text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-100'
+                )}
+              >
+                VI
+              </button>
+              <button
+                type="button"
+                onClick={() => setLanguage('ko')}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors',
+                  language === 'ko'
+                    ? 'bg-[hsl(215,75%,38%)] text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-100'
+                )}
+              >
+                KO
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 flex flex-col justify-center max-w-sm">
@@ -372,8 +382,9 @@ const LoginPage = () => {
       </div>
 
       {/* Forgot Password Dialog */}
-      <Dialog open={isForgotPasswordOpen} onOpenChange={setIsForgotPasswordOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+      {isForgotPasswordOpen && (
+        <Dialog open={isForgotPasswordOpen} onOpenChange={setIsForgotPasswordOpen}>
+          <DialogContent className="sm:max-w-[500px]" translate="no">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <KeyRound className="w-5 h-5 text-primary" />
@@ -478,8 +489,9 @@ const LoginPage = () => {
               </DialogFooter>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };

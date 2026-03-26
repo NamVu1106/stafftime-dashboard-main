@@ -3,23 +3,81 @@ import { query, queryOne, exec, transaction } from '../db/sqlServer';
 import { createNotification } from './notifications';
 
 type EmpRow = Record<string, unknown>;
+const FAMILY_MEMBER_BATCH_SIZE = 1000;
+
+const decodeQueryText = (value: unknown) => {
+  const raw = String(value ?? '').replace(/\+/g, ' ').trim();
+  if (!raw) return '';
+  const maybeRepairMojibake = (input: string) => {
+    if (!/(Ã.|Â.|Ä.|áº.|á».|Æ.|Ä‘)/.test(input)) {
+      return input;
+    }
+    try {
+      return Buffer.from(input, 'latin1').toString('utf8');
+    } catch {
+      return input;
+    }
+  };
+  try {
+    return maybeRepairMojibake(decodeURIComponent(raw));
+  } catch {
+    return maybeRepairMojibake(raw);
+  }
+};
+
+const normalizeTextValue = (value: unknown) =>
+  decodeQueryText(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const isOfficialEmploymentType = (employmentType: unknown) => {
+  const normalized = normalizeTextValue(employmentType);
+  return normalized.includes('chinh thuc') || normalized.includes('official') || normalized.includes('정규');
+};
+
+const isSeasonalEmploymentType = (employmentType: unknown) => {
+  const normalized = normalizeTextValue(employmentType);
+  return (
+    normalized.includes('thoi vu') ||
+    normalized.includes('thoivu') ||
+    normalized.includes('seasonal') ||
+    normalized.includes('temp') ||
+    normalized.includes('계약') ||
+    normalized.includes('비정규')
+  );
+};
+
+const matchesEmploymentType = (actualEmploymentType: unknown, requestedEmploymentType: unknown) => {
+  const requested = normalizeTextValue(requestedEmploymentType);
+  if (!requested) return true;
+  if (isSeasonalEmploymentType(requestedEmploymentType)) return isSeasonalEmploymentType(actualEmploymentType);
+  if (isOfficialEmploymentType(requestedEmploymentType)) return isOfficialEmploymentType(actualEmploymentType);
+  return normalizeTextValue(actualEmploymentType) === requested;
+};
 
 async function loadFamilyMap(employeeIds: number[]): Promise<Map<number, EmpRow[]>> {
   const m = new Map<number, EmpRow[]>();
   if (!employeeIds.length) return m;
-  const placeholders = employeeIds.map((_, i) => `@id${i}`).join(',');
-  const params: Record<string, unknown> = {};
-  employeeIds.forEach((id, i) => {
-    params[`id${i}`] = id;
-  });
-  const rows = await query<EmpRow>(
-    `SELECT * FROM family_members WHERE employee_id IN (${placeholders})`,
-    params
-  );
-  for (const r of rows) {
-    const eid = r.employee_id as number;
-    if (!m.has(eid)) m.set(eid, []);
-    m.get(eid)!.push(r);
+  for (let start = 0; start < employeeIds.length; start += FAMILY_MEMBER_BATCH_SIZE) {
+    const batch = employeeIds.slice(start, start + FAMILY_MEMBER_BATCH_SIZE);
+    const placeholders = batch.map((_, i) => `@id${i}`).join(',');
+    const params: Record<string, unknown> = {};
+
+    batch.forEach((id, i) => {
+      params[`id${i}`] = id;
+    });
+
+    const rows = await query<EmpRow>(
+      `SELECT * FROM family_members WHERE employee_id IN (${placeholders})`,
+      params
+    );
+
+    for (const r of rows) {
+      const eid = r.employee_id as number;
+      if (!m.has(eid)) m.set(eid, []);
+      m.get(eid)!.push(r);
+    }
   }
   return m;
 }
@@ -38,15 +96,11 @@ export const getEmployees = async (req: Request, res: Response) => {
       sql += ' AND department = @dept';
       params.dept = department;
     }
-    if (employment_type) {
-      sql += ' AND employment_type = @et';
-      params.et = employment_type;
-    }
     sql += ' ORDER BY updated_at DESC, created_at DESC';
     let employees = await query<EmpRow>(sql, params);
-    const ids = employees.map((e) => e.id as number);
-    const famMap = await loadFamilyMap(ids);
-    employees = employees.map((e) => attachFamily(e, famMap) as any);
+    if (employment_type) {
+      employees = employees.filter((emp) => matchesEmploymentType(emp.employment_type, employment_type));
+    }
     if (search) {
       const term = (search as string).trim().toLowerCase();
       if (term) {
@@ -57,6 +111,9 @@ export const getEmployees = async (req: Request, res: Response) => {
         );
       }
     }
+    const ids = employees.map((e) => e.id as number);
+    const famMap = await loadFamilyMap(ids);
+    employees = employees.map((e) => attachFamily(e, famMap) as any);
     res.json(employees);
   } catch (error: any) {
     res.status(500).json({ error: error.message });

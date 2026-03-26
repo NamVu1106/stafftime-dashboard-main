@@ -335,8 +335,8 @@ export function HrChartFromGrid({ reportType, templateGrid, className = '' }: Hr
                     outerRadius={74}
                     isAnimationActive={false}
                   >
-                    {items.map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    {items.map((item, i) => (
+                      <Cell key={`${item.fullName}-${i}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip
@@ -394,8 +394,8 @@ export function HrChartFromGrid({ reportType, templateGrid, className = '' }: Hr
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={items} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={88} isAnimationActive={false}>
-                    {items.map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    {items.map((item, i) => (
+                      <Cell key={`${item.fullName}-${i}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(value: any) => [`${Number(value || 0).toLocaleString()}`, 'Giá trị']} />
@@ -406,8 +406,8 @@ export function HrChartFromGrid({ reportType, templateGrid, className = '' }: Hr
           <div className="rounded border bg-muted/20 p-2">
             <div className="text-xs font-semibold mb-1.5">Báo cáo tổng hợp nhanh</div>
             <div className="space-y-1 text-xs">
-              {summaryRows.map((row) => (
-                <div className="flex justify-between gap-2">
+              {summaryRows.map((row, index) => (
+                <div key={`${row.label}-${row.value}-${index}`} className="flex justify-between gap-2">
                   <span className="text-muted-foreground">{row.label}</span>
                   <span className="font-semibold truncate max-w-[160px]">{row.value}</span>
                 </div>
@@ -433,8 +433,8 @@ export function HrChartFromGrid({ reportType, templateGrid, className = '' }: Hr
                   <YAxis fontSize={11} />
                   <Tooltip formatter={(value: any) => [`${formatCompactNumber(Number(value || 0))}%`, 'Tỷ lệ']} />
                   <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                    {chartData.items.map((_, index) => (
-                      <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    {chartData.items.map((item, index) => (
+                      <Cell key={`${item.name}-${item.value}-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -444,8 +444,8 @@ export function HrChartFromGrid({ reportType, templateGrid, className = '' }: Hr
           <div className="rounded border bg-muted/20 p-2">
             <div className="text-xs font-semibold mb-1.5">Báo cáo tổng hợp nhanh</div>
             <div className="space-y-1 text-xs">
-              {chartData.summaryRows.map((row) => (
-                <div key={row.label} className="flex justify-between gap-2">
+              {chartData.summaryRows.map((row, index) => (
+                <div key={`${row.label}-${row.value}-${index}`} className="flex justify-between gap-2">
                   <span className="text-muted-foreground">{row.label}</span>
                   <span className="font-semibold truncate max-w-[160px]">{row.value}</span>
                 </div>
@@ -478,8 +478,8 @@ export function HrChartFromGrid({ reportType, templateGrid, className = '' }: Hr
           <div className="rounded border bg-muted/20 p-2">
             <div className="text-xs font-semibold mb-1.5">Báo cáo tổng hợp nhanh</div>
             <div className="space-y-1 text-xs">
-              {chartData.summaryRows.map((row) => (
-                <div key={row.label} className="flex justify-between gap-2">
+              {chartData.summaryRows.map((row, index) => (
+                <div key={`${row.label}-${row.value}-${index}`} className="flex justify-between gap-2">
                   <span className="text-muted-foreground">{row.label}</span>
                   <span className="font-semibold truncate max-w-[160px]">{row.value}</span>
                 </div>

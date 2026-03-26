@@ -3,9 +3,130 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
+import { execFileSync } from 'child_process';
 import { connectDb, closeDb } from './db/sqlServer';
 import { ensureDatabaseSchema } from './db/ensureSchema';
 import { ensureDefaultAdminUser } from './controllers/auth';
+
+type LanAddress = {
+  address: string;
+  label?: string;
+};
+
+type NetworkAddress = {
+  family: string | number;
+  internal: boolean;
+  address: string;
+};
+
+function uniqueLanAddresses(addresses: LanAddress[]) {
+  const seen = new Set<string>();
+  return addresses.filter((item) => {
+    if (!item.address || seen.has(item.address)) {
+      return false;
+    }
+    seen.add(item.address);
+    return true;
+  });
+}
+
+function getWindowsPreferredLanAddresses(): LanAddress[] {
+  if (process.platform !== 'win32') {
+    return [];
+  }
+
+  try {
+    const script = [
+      '$items = Get-NetIPAddress -AddressFamily IPv4 |',
+      "  Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.AddressState -eq 'Preferred' } |",
+      '  Select-Object IPAddress, InterfaceAlias',
+      "if ($null -eq $items) { '[]' } else { $items | ConvertTo-Json -Compress }",
+    ].join(' ');
+
+    const raw = execFileSync('powershell.exe', ['-NoProfile', '-Command', script], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as
+      | { IPAddress: string; InterfaceAlias?: string }
+      | Array<{ IPAddress: string; InterfaceAlias?: string }>;
+
+    const entries = Array.isArray(parsed) ? parsed : [parsed];
+
+    return uniqueLanAddresses(
+      entries.map((entry) => ({
+        address: entry.IPAddress,
+        label: entry.InterfaceAlias,
+      }))
+    );
+  } catch {
+    return [];
+  }
+}
+
+function getFallbackLanAddresses(): LanAddress[] {
+  const entries: LanAddress[] = [];
+  const networkInterfaces = os.networkInterfaces() as Record<string, NetworkAddress[] | undefined>;
+
+  for (const [label, addresses] of Object.entries(networkInterfaces)) {
+    for (const item of addresses ?? []) {
+      const family = item.family === 4 || item.family === 'IPv4' ? 'IPv4' : 'IPv6';
+
+      if (
+        family !== 'IPv4' ||
+        item.internal ||
+        item.address.startsWith('127.') ||
+        item.address.startsWith('169.254.')
+      ) {
+        continue;
+      }
+
+      entries.push({
+        address: item.address,
+        label,
+      });
+    }
+  }
+
+  return uniqueLanAddresses(entries);
+}
+
+function getLanAddresses() {
+  const windowsAddresses = getWindowsPreferredLanAddresses();
+  return windowsAddresses.length > 0 ? windowsAddresses : getFallbackLanAddresses();
+}
+
+function buildFrontendLanUrl(address: string) {
+  try {
+    const url = new URL(FRONTEND_URL);
+    url.hostname = address;
+    return url.toString();
+  } catch {
+    return `http://${address}:5173/`;
+  }
+}
+
+function logLanHints(port: number) {
+  const lanAddresses = getLanAddresses();
+
+  if (lanAddresses.length === 0) {
+    return;
+  }
+
+  console.log('📡 LAN URLs đang dùng được:');
+  for (const item of lanAddresses) {
+    const label = item.label ? ` (${item.label})` : '';
+    console.log(`   Frontend${label}: ${buildFrontendLanUrl(item.address)}`);
+    console.log(`   Backend${label}: http://${item.address}:${port}/api/health`);
+  }
+  console.log('   Dùng URL Frontend ở trên khi mở từ máy khác trong cùng mạng.');
+}
 
 dotenv.config();
 
@@ -59,7 +180,14 @@ app.use('/api/hr-templates', hrTemplatesRoutes);
 app.use('/api/vendor-assignments', vendorAssignmentsRoutes);
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Server is running', db: 'sqlserver' });
+  res.json({
+    status: 'ok',
+    message: 'Server is running',
+    db: 'sqlserver',
+    backend: 'mssql',
+    pid: process.pid,
+    lan: getLanAddresses(),
+  });
 });
 
 const frontendDistPath = path.join(process.cwd(), '..', 'dist');
@@ -109,6 +237,7 @@ async function start() {
     console.log(`🚀 Server http://0.0.0.0:${PORT}`);
     console.log(`🌐 Frontend URL: ${FRONTEND_URL}`);
     console.log(`📌 Backend PID = ${process.pid}`);
+    logLanHints(Number(PORT));
     console.log(`   Kiểm tra: mở http://localhost:${PORT}/api/upload/timekeeping phải thấy JSON có "backend":"mssql" và "pid". Nếu thấy "Cannot GET" thì đang chạy nhầm server khác.`);
   });
   server.on('error', (err: NodeJS.ErrnoException) => {

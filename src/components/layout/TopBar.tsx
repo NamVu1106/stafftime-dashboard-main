@@ -19,7 +19,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationsAPI } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
-import { toast } from 'sonner';
+import { toast as sonnerToast } from 'sonner';
 import { useDashboardTab } from '@/contexts/DashboardTabContext';
 import { accountingMenu, administrationMenu, hrMenu, congvuMenu, muahangMenu, ehsMenu, hrMenuRoute, administrationMenuRoute, HR_REPORT_INLINE_IDS } from '@/data/departmentMenu';
 import * as XLSX from 'xlsx';
@@ -181,7 +181,7 @@ function DeptDropdown({
                 variant="ghost"
                 size="sm"
                 className="w-full justify-start gap-2 h-9 text-sm transition-all duration-200 hover:bg-primary/10 hover:translate-x-1"
-                onClick={() => toast.info('Menu Structure')}
+                onClick={() => sonnerToast('Menu Structure')}
               >
                 <ListTree className="w-4 h-4" />
                 {t('dashboard.menuStructure')}
@@ -232,7 +232,7 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
-  const { toast } = useToast();
+  const { toast: uiToast } = useToast();
   const { t, language } = useI18n();
   const { activeDeptTab, setActiveDeptTab, setSelectedFunction } = useDashboardTab();
   const isDashboard = location.pathname === '/';
@@ -300,13 +300,13 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
       queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
-      toast({
+      uiToast({
         title: t('common.success'),
         description: t('common.notificationDeleted'),
       });
     },
     onError: (error: any) => {
-      toast({
+      uiToast({
         title: t('common.error'),
         description: error.message || t('common.notificationDeleteError'),
         variant: 'destructive',
@@ -320,13 +320,13 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
       queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
-      toast({
+      uiToast({
         title: t('common.success'),
         description: t('common.allNotificationsDeleted'),
       });
     },
     onError: (error: any) => {
-      toast({
+      uiToast({
         title: t('common.error'),
         description: error.message || t('common.allNotificationsDeleteError'),
         variant: 'destructive',
@@ -445,7 +445,7 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
           activeDeptTab={activeDeptTab}
           onSelect={() => {
             setActiveDeptTab('congvu');
-            toast.info(t('deptMenu.comingSoon'));
+            sonnerToast(t('deptMenu.comingSoon'));
           }}
         />
         <DeptDropdown
@@ -456,7 +456,7 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
           activeDeptTab={activeDeptTab}
           onSelect={() => {
             setActiveDeptTab('muahang');
-            toast.info(t('deptMenu.comingSoon'));
+            sonnerToast(t('deptMenu.comingSoon'));
           }}
         />
         <DeptDropdown
@@ -467,7 +467,7 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
           activeDeptTab={activeDeptTab}
           onSelect={() => {
             setActiveDeptTab('ehs');
-            toast.info(t('deptMenu.comingSoonEhs'));
+            sonnerToast(t('deptMenu.comingSoonEhs'));
           }}
         />
       </div>
@@ -487,7 +487,7 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
           variant="ghost"
           size="icon"
           className="h-9 w-9"
-          onClick={() => toast({ title: 'Help', description: t('common.help') + ' - YS Smart' })}
+          onClick={() => uiToast({ title: 'Help', description: t('common.help') + ' - YS Smart' })}
           title={t('common.help')}
         >
           <HelpCircle className="w-5 h-5" />
