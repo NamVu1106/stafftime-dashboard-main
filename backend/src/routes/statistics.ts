@@ -1,6 +1,7 @@
 import express from 'express';
 import { 
   getDashboardStats, 
+  getLateEmployees,
   getGenderStats, 
   getAgeStats, 
   getEmploymentTypeStats, 
@@ -15,6 +16,7 @@ import {
 
 const router = express.Router();
 
+router.get('/late-employees', getLateEmployees);
 router.get('/dashboard', getDashboardStats);
 router.get('/gender', getGenderStats);
 router.get('/age', getAgeStats);

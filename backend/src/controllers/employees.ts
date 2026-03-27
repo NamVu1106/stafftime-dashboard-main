@@ -89,7 +89,7 @@ function attachFamily(emp: EmpRow, famMap: Map<number, EmpRow[]>) {
 
 export const getEmployees = async (req: Request, res: Response) => {
   try {
-    const { search, department, employment_type } = req.query;
+    const { search, department, employment_type, employee_code, name } = req.query;
     let sql = 'SELECT * FROM employees WHERE 1=1';
     const params: Record<string, unknown> = {};
     if (department && department !== 'all') {
@@ -101,13 +101,25 @@ export const getEmployees = async (req: Request, res: Response) => {
     if (employment_type) {
       employees = employees.filter((emp) => matchesEmploymentType(emp.employment_type, employment_type));
     }
+    const employeeCodeTerm = normalizeTextValue(employee_code);
+    if (employeeCodeTerm) {
+      employees = employees.filter((emp: any) =>
+        normalizeTextValue(emp.employee_code).includes(employeeCodeTerm)
+      );
+    }
+    const employeeNameTerm = normalizeTextValue(name);
+    if (employeeNameTerm) {
+      employees = employees.filter((emp: any) =>
+        normalizeTextValue(emp.name).includes(employeeNameTerm)
+      );
+    }
     if (search) {
-      const term = (search as string).trim().toLowerCase();
+      const term = normalizeTextValue(search);
       if (term) {
         employees = employees.filter(
           (emp: any) =>
-            String(emp.employee_code).toLowerCase().includes(term) ||
-            String(emp.name).toLowerCase().includes(term)
+            normalizeTextValue(emp.employee_code).includes(term) ||
+            normalizeTextValue(emp.name).includes(term)
         );
       }
     }

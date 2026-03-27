@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Pencil, Trash2, Download, X, Loader2, Eye, AlertTriangle, Filter } from 'lucide-react';
+import { Plus, Pencil, Trash2, Download, X, Loader2, Eye, AlertTriangle, Printer } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { DataTable } from '@/components/shared/DataTable';
@@ -15,7 +15,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { employeesAPI } from '@/services/api';
+import { employeesAPI, uploadAPI } from '@/services/api';
 import { Employee, FamilyMember } from '@/data/mockData';
 import { useI18n } from '@/hooks/useI18n';
 
@@ -25,9 +25,22 @@ const EmployeesPage = () => {
   const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
+  const EXCEL_PAGE_SIZE = 200;
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
+  const [searchFilter, setSearchFilter] = useState<string>('');
+  const [debouncedSearchFilter, setDebouncedSearchFilter] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'list' | 'official' | 'seasonal'>('list');
+  const [officialPage, setOfficialPage] = useState(1);
+  const [seasonalPage, setSeasonalPage] = useState(1);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+  const [isAvatarCropOpen, setIsAvatarCropOpen] = useState(false);
+  const [avatarCropSrc, setAvatarCropSrc] = useState<string>('');
+  const [avatarCropZoom, setAvatarCropZoom] = useState(1);
+  const [avatarCropOffsetX, setAvatarCropOffsetX] = useState(0);
+  const [avatarCropOffsetY, setAvatarCropOffsetY] = useState(0);
+
   // Auto-open form if route is /employees/new
   useEffect(() => {
     if (location.pathname === '/employees/new') {
@@ -61,22 +74,35 @@ const EmployeesPage = () => {
   const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchFilter(searchFilter);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchFilter]);
+
   // Fetch employees from API
   const { data: employees = [], isLoading, error } = useQuery({
-    queryKey: ['employees', { department: departmentFilter }],
+    queryKey: ['employees', { department: departmentFilter, search: debouncedSearchFilter }],
     queryFn: () => employeesAPI.getAll({ 
-      department: departmentFilter !== 'all' ? departmentFilter : undefined 
+      department: departmentFilter !== 'all' ? departmentFilter : undefined,
+      search: debouncedSearchFilter.trim() || undefined,
     }),
+    staleTime: 30_000,
   });
 
   // Raw Excel data for display (y hệt form Excel)
   const { data: officialData, isLoading: loadingOfficial } = useQuery({
     queryKey: ['employees', 'official'],
     queryFn: () => employeesAPI.getOfficial(),
+    enabled: activeTab === 'official',
+    staleTime: 5 * 60_000,
   });
   const { data: seasonalData, isLoading: loadingSeasonal } = useQuery({
     queryKey: ['employees', 'seasonal'],
     queryFn: () => employeesAPI.getSeasonal(),
+    enabled: activeTab === 'seasonal',
+    staleTime: 5 * 60_000,
   });
   const officialHeaders = officialData?.headers ?? [];
   const officialRows = officialData?.rows ?? [];
@@ -331,15 +357,109 @@ const EmployeesPage = () => {
     }));
   };
   
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      // Tạo URL tạm thời cho preview (trong thực tế sẽ upload lên server)
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: t('common.error'),
+        description: 'Vui lòng chọn file ảnh (JPG, PNG, WebP, GIF).',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const maxBytes = 10 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      toast({
+        title: t('common.error'),
+        description: 'Ảnh quá lớn (tối đa 10MB).',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, avatar: reader.result as string }));
+      reader.onload = () => {
+        setAvatarCropSrc(String(reader.result || ''));
+        setAvatarCropZoom(1);
+        setAvatarCropOffsetX(0);
+        setAvatarCropOffsetY(0);
+        setIsAvatarCropOpen(true);
       };
       reader.readAsDataURL(file);
+    } catch (err: any) {
+      toast({
+        title: t('common.error'),
+        description: err?.message || 'Không đọc được ảnh. Vui lòng thử lại.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleConfirmAvatarCrop = async () => {
+    if (!avatarCropSrc) return;
+    setAvatarUploading(true);
+    try {
+      const img = new Image();
+      img.src = avatarCropSrc;
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Không tải được ảnh để crop.'));
+      });
+
+      const sourceSizeBase = Math.min(img.naturalWidth, img.naturalHeight);
+      const sourceSize = Math.max(1, Math.round(sourceSizeBase / avatarCropZoom));
+      const maxOffsetX = Math.max(0, (img.naturalWidth - sourceSize) / 2);
+      const maxOffsetY = Math.max(0, (img.naturalHeight - sourceSize) / 2);
+      const sx = Math.round(
+        Math.min(
+          Math.max(img.naturalWidth / 2 - sourceSize / 2 + (avatarCropOffsetX / 100) * maxOffsetX, 0),
+          img.naturalWidth - sourceSize
+        )
+      );
+      const sy = Math.round(
+        Math.min(
+          Math.max(img.naturalHeight / 2 - sourceSize / 2 + (avatarCropOffsetY / 100) * maxOffsetY, 0),
+          img.naturalHeight - sourceSize
+        )
+      );
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Không tạo được vùng xử lý ảnh.');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, sx, sy, sourceSize, sourceSize, 0, 0, 512, 512);
+
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (b) => (b ? resolve(b) : reject(new Error('Không thể xuất ảnh đã crop.'))),
+          'image/jpeg',
+          0.9
+        );
+      });
+      const croppedFile = new File([blob], `avatar-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const data = await uploadAPI.uploadAvatar(croppedFile);
+      const url = data.avatar_url?.startsWith('http') ? data.avatar_url : data.avatar_url || '';
+      setFormData((prev) => ({ ...prev, avatar: url }));
+      setIsAvatarCropOpen(false);
+      setAvatarCropSrc('');
+      toast({
+        title: t('common.success'),
+        description: 'Đã crop và tải ảnh hồ sơ lên máy chủ.',
+      });
+    } catch (err: any) {
+      toast({
+        title: t('common.error'),
+        description: err?.message || 'Không crop/tải được ảnh. Vui lòng thử lại.',
+        variant: 'destructive',
+      });
+    } finally {
+      setAvatarUploading(false);
     }
   };
 
@@ -633,61 +753,10 @@ const EmployeesPage = () => {
         </span>
       )
     },
-    { 
-      key: 'cccd' as const, 
-      header: t('employees.cccd'),
-      render: (emp: Employee) => emp.cccd || '-'
-    },
-    { 
-      key: 'phone' as const, 
+    {
+      key: 'phone' as const,
       header: t('employees.phoneShort'),
-      render: (emp: Employee) => emp.phone || '-'
-    },
-    { 
-      key: 'hometown' as const, 
-      header: t('employees.hometown'),
-      render: (emp: Employee) => (
-        <div className="max-w-md whitespace-normal break-words">
-          {emp.hometown || '-'}
-        </div>
-      )
-    },
-    { 
-      key: 'permanent_residence' as const, 
-      header: t('employees.permanentResidenceShort'),
-      render: (emp: Employee) => (
-        <div className="max-w-md whitespace-normal break-words" title={emp.permanent_residence || ''}>
-          {emp.permanent_residence || '-'}
-        </div>
-      )
-    },
-    { 
-      key: 'temporary_residence' as const, 
-      header: t('employees.temporaryResidenceShort'),
-      render: (emp: Employee) => (
-        <div className="max-w-md whitespace-normal break-words" title={emp.temporary_residence || ''}>
-          {emp.temporary_residence || '-'}
-        </div>
-      )
-    },
-    { 
-      key: 'marital_status' as const, 
-      header: t('employees.maritalStatus'),
-      render: (emp: Employee) => translateValue(emp.marital_status || '-')
-    },
-    { 
-      key: 'family_relations' as const, 
-      header: t('employees.familyRelations'),
-      render: (emp: Employee) => {
-        const familyRelations = emp.family_relations || (emp as any).family_members || [];
-        if (familyRelations.length === 0) return '-';
-        const relationsText = familyRelations.map((f: FamilyMember) => `${f.relation}: ${f.name}${f.occupation ? ` (${f.occupation})` : ''}`).join('; ');
-        return (
-          <div className="max-w-md whitespace-normal break-words" title={relationsText}>
-            {relationsText}
-          </div>
-        );
-      }
+      render: (emp: Employee) => emp.phone || '-',
     },
     {
       key: 'actions',
@@ -729,8 +798,31 @@ const EmployeesPage = () => {
     },
   ];
 
-  const ExcelTable = ({ headers, rows, loading }: { headers: string[]; rows: Record<string, any>[]; loading: boolean }) => {
+  const ExcelTable = ({
+    headers,
+    rows,
+    loading,
+    page,
+    onPageChange,
+  }: {
+    headers: string[];
+    rows: Record<string, any>[];
+    loading: boolean;
+    page: number;
+    onPageChange: (page: number) => void;
+  }) => {
     const displayHeaders = headers.filter(Boolean);
+    const totalPages = Math.max(1, Math.ceil(rows.length / EXCEL_PAGE_SIZE));
+    const currentPage = Math.min(page, totalPages);
+    const start = (currentPage - 1) * EXCEL_PAGE_SIZE;
+    const visibleRows = rows.slice(start, start + EXCEL_PAGE_SIZE);
+
+    useEffect(() => {
+      if (page > totalPages) {
+        onPageChange(totalPages);
+      }
+    }, [page, totalPages, onPageChange]);
+
     if (loading) {
       return (
         <div className="flex items-center justify-center py-12">
@@ -758,8 +850,8 @@ const EmployeesPage = () => {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, rIdx) => (
-              <tr key={rIdx} className="hover:bg-muted/30">
+            {visibleRows.map((row, rIdx) => (
+              <tr key={start + rIdx} className="hover:bg-muted/30">
                 {displayHeaders.map((h, i) => (
                   <td key={i} className="border border-border px-3 py-2">
                     {row[h] != null && row[h] !== '' ? (
@@ -773,6 +865,34 @@ const EmployeesPage = () => {
             ))}
           </tbody>
         </table>
+        {rows.length > EXCEL_PAGE_SIZE && (
+          <div className="sticky bottom-0 z-20 border-t border-border bg-background px-3 py-2 flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              Hiển thị {start + 1}-{Math.min(start + EXCEL_PAGE_SIZE, rows.length)} / {rows.length} dòng
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+                disabled={currentPage <= 1}
+              >
+                Trước
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                {currentPage}/{totalPages}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage >= totalPages}
+              >
+                Sau
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -833,7 +953,7 @@ const EmployeesPage = () => {
         }
       />
 
-      <Tabs defaultValue="list" className="w-full">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'list' | 'official' | 'seasonal')} className="w-full">
         <TabsList className="mb-4">
           <TabsTrigger value="list">Danh sách chung</TabsTrigger>
           <TabsTrigger value="official">Nhân viên chính thức (y hệt Excel)</TabsTrigger>
@@ -842,16 +962,12 @@ const EmployeesPage = () => {
 
         <TabsContent value="list" className="space-y-4">
           {/* Filters */}
-          <div className="chart-container mb-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Filter className="w-5 h-5 text-muted-foreground" />
-              <h3 className="font-semibold">{t('employees.filter')}</h3>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4">
-              <div className="space-y-2">
-                <Label>{t('employees.department')}</Label>
+          <div className="mb-4 rounded-md border border-border bg-card/50 p-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-end">
+              <div className="w-full md:w-64">
+                <Label className="text-xs text-muted-foreground">{t('employees.department')}</Label>
                 <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-9">
                     <SelectValue placeholder={t('employees.selectDepartment')} />
                   </SelectTrigger>
                   <SelectContent>
@@ -861,6 +977,15 @@ const EmployeesPage = () => {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="w-full md:flex-1">
+                <Label className="text-xs text-muted-foreground">Tìm kiếm nhân viên</Label>
+                <Input
+                  className="h-9"
+                  value={searchFilter}
+                  onChange={(e) => setSearchFilter(e.target.value)}
+                  placeholder="Nhập mã hoặc tên nhân viên"
+                />
               </div>
             </div>
           </div>
@@ -892,14 +1017,26 @@ const EmployeesPage = () => {
           <p className="text-sm text-muted-foreground">
             Dữ liệu từ file mẫu THÔNG TIN CNV TỔNG VINA. Hiển thị đúng cột và thứ tự như Excel. Thanh cuộn ngang luôn nằm dưới vùng bảng, kéo ngang để xem đủ cột.
           </p>
-          <ExcelTable headers={officialHeaders} rows={officialRows} loading={loadingOfficial} />
+          <ExcelTable
+            headers={officialHeaders}
+            rows={officialRows}
+            loading={loadingOfficial}
+            page={officialPage}
+            onPageChange={setOfficialPage}
+          />
         </TabsContent>
 
         <TabsContent value="seasonal" className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Dữ liệu từ file mẫu Thời vụ tổng 2024. Hiển thị đúng cột và thứ tự như Excel. Thanh cuộn ngang luôn nằm dưới vùng bảng, kéo ngang để xem đủ cột.
           </p>
-          <ExcelTable headers={seasonalHeaders} rows={seasonalRows} loading={loadingSeasonal} />
+          <ExcelTable
+            headers={seasonalHeaders}
+            rows={seasonalRows}
+            loading={loadingSeasonal}
+            page={seasonalPage}
+            onPageChange={setSeasonalPage}
+          />
         </TabsContent>
       </Tabs>
 
@@ -1013,17 +1150,75 @@ const EmployeesPage = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="avatar">{t('employees.avatar')}</Label>
-                <div className="flex items-center gap-4">
-                  {formData.avatar && (
-                    <img src={formData.avatar} alt="Avatar" className="w-20 h-20 rounded-full object-cover border" />
-                  )}
-                  <Input
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full border bg-muted">
+                    {formData.avatar ? (
+                      <img src={formData.avatar} alt="Avatar" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
+                        —
+                      </div>
+                    )}
+                    {avatarUploading && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-background/70">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    ref={avatarFileInputRef}
                     id="avatar"
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="sr-only"
                     onChange={handleAvatarUpload}
-                    className="flex-1"
+                    disabled={avatarUploading}
                   />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={avatarUploading}
+                      onClick={() => avatarFileInputRef.current?.click()}
+                    >
+                      Chọn ảnh hồ sơ
+                    </Button>
+                    {formData.avatar ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={avatarUploading}
+                        onClick={() => {
+                          setAvatarCropSrc(formData.avatar);
+                          setAvatarCropZoom(1);
+                          setAvatarCropOffsetX(0);
+                          setAvatarCropOffsetY(0);
+                          setIsAvatarCropOpen(true);
+                        }}
+                      >
+                        Chỉnh sửa/Crop ảnh
+                      </Button>
+                    ) : null}
+                    {formData.avatar ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={avatarUploading}
+                        onClick={() => {
+                          setFormData((prev) => ({ ...prev, avatar: '' }));
+                          if (avatarFileInputRef.current) avatarFileInputRef.current.value = '';
+                        }}
+                      >
+                        Xóa ảnh
+                      </Button>
+                    ) : null}
+                  </div>
+                  <p className="w-full text-xs text-muted-foreground">
+                    JPG, PNG, WebP hoặc GIF — tối đa 10MB. Chọn ảnh để crop trước khi tải lên máy chủ.
+                  </p>
                 </div>
               </div>
             </TabsContent>
@@ -1171,102 +1366,241 @@ const EmployeesPage = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Avatar Crop Dialog */}
+      <Dialog open={isAvatarCropOpen} onOpenChange={setIsAvatarCropOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Cắt ảnh hồ sơ</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="mx-auto h-72 w-72 overflow-hidden rounded-xl border bg-muted">
+              {avatarCropSrc ? (
+                <img
+                  src={avatarCropSrc}
+                  alt="Crop preview"
+                  className="h-full w-full object-cover"
+                  style={{
+                    transform: `translate(${avatarCropOffsetX}%, ${avatarCropOffsetY}%) scale(${avatarCropZoom})`,
+                    transformOrigin: 'center',
+                  }}
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+                  Chưa có ảnh
+                </div>
+              )}
+            </div>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label>Phóng to/thu nhỏ</Label>
+                <input
+                  type="range"
+                  min={1}
+                  max={3}
+                  step={0.05}
+                  value={avatarCropZoom}
+                  onChange={(e) => setAvatarCropZoom(Number(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Dịch trái/phải</Label>
+                <input
+                  type="range"
+                  min={-100}
+                  max={100}
+                  step={1}
+                  value={avatarCropOffsetX}
+                  onChange={(e) => setAvatarCropOffsetX(Number(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Dịch lên/xuống</Label>
+                <input
+                  type="range"
+                  min={-100}
+                  max={100}
+                  step={1}
+                  value={avatarCropOffsetY}
+                  onChange={(e) => setAvatarCropOffsetY(Number(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Khung crop là ảnh vuông 1:1, phù hợp cho avatar hiển thị tròn trong danh sách.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAvatarCropOpen(false);
+                setAvatarCropSrc('');
+              }}
+              disabled={avatarUploading}
+            >
+              Hủy
+            </Button>
+            <Button onClick={handleConfirmAvatarCrop} disabled={avatarUploading || !avatarCropSrc}>
+              {avatarUploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Đang xử lý...
+                </>
+              ) : (
+                'Lưu ảnh đã crop'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* View Details Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{t('employees.title')}</DialogTitle>
+        <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto print:max-h-none print:overflow-visible print:border-0 print:shadow-none">
+          <DialogHeader className="print:hidden">
+            <DialogTitle>Hồ sơ nhân sự</DialogTitle>
           </DialogHeader>
           {viewingEmployee && (
-            <div className="space-y-6">
-              {/* Basic Information */}
-              <div>
-                <h3 className="text-lg font-semibold mb-4">{t('employees.workInfo')}</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-muted-foreground">{t('employees.employeeCodeLabel')}</Label>
-                    <p className="font-medium">{viewingEmployee.employee_code}</p>
+            <div id="employee-cv-print-root" className="space-y-5">
+              {/* CV Header */}
+              <div className="rounded-xl border bg-gradient-to-r from-primary/5 to-background p-4 sm:p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-4">
+                    {viewingEmployee.avatar ? (
+                      <img
+                        src={viewingEmployee.avatar}
+                        alt={viewingEmployee.name}
+                        className="w-20 h-20 rounded-xl object-cover border"
+                      />
+                    ) : (
+                      <div className="w-20 h-20 rounded-xl bg-muted flex items-center justify-center text-2xl font-semibold text-muted-foreground">
+                        {viewingEmployee.name?.charAt(0) || '?'}
+                      </div>
+                    )}
+                    <div className="space-y-1">
+                      <p className="text-2xl font-semibold leading-tight">{viewingEmployee.name}</p>
+                      <p className="text-sm text-muted-foreground">{viewingEmployee.employee_code}</p>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                          viewingEmployee.employment_type === 'Chính thức'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-orange-100 text-orange-700'
+                        }`}>
+                          {translateValue(viewingEmployee.employment_type)}
+                        </span>
+                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                          viewingEmployee.gender === 'Nam' ? 'bg-primary/10 text-primary' : 'bg-pink-100 text-pink-700'
+                        }`}>
+                          {translateValue(viewingEmployee.gender)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <Label className="text-muted-foreground">{t('employees.nameLabel')}</Label>
-                    <p className="font-medium">{viewingEmployee.name}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">{t('employees.gender')}</Label>
-                    <p className="font-medium">{translateValue(viewingEmployee.gender)}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">{t('employees.dateOfBirth')}</Label>
-                    <p className="font-medium">
-                      {viewingEmployee.date_of_birth 
-                        ? (() => {
-                            try {
-                              const date = new Date(viewingEmployee.date_of_birth);
-                              if (!isNaN(date.getTime())) {
-                                const day = String(date.getDate()).padStart(2, '0');
-                                const month = String(date.getMonth() + 1).padStart(2, '0');
-                                const year = date.getFullYear();
-                                return `${day}/${month}/${year}`;
-                              }
-                            } catch {}
-                            return viewingEmployee.date_of_birth;
-                          })()
-                        : '-'}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">{t('employees.age')}</Label>
-                    <p className="font-medium">{viewingEmployee.age}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">{t('employees.department')}</Label>
-                    <p className="font-medium">{viewingEmployee.department}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">{t('employees.employmentType')}</Label>
-                    <p className="font-medium">{translateValue(viewingEmployee.employment_type)}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">{t('employees.phoneShort')}</Label>
-                    <p className="font-medium">{viewingEmployee.phone || '-'}</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">{t('employees.department')}</p>
+                      <p className="font-medium">{viewingEmployee.department || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t('employees.phoneShort')}</p>
+                      <p className="font-medium">{viewingEmployee.phone || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t('employees.dateOfBirth')}</p>
+                      <p className="font-medium">
+                        {viewingEmployee.date_of_birth
+                          ? (() => {
+                              try {
+                                const date = new Date(viewingEmployee.date_of_birth);
+                                if (!isNaN(date.getTime())) {
+                                  const day = String(date.getDate()).padStart(2, '0');
+                                  const month = String(date.getMonth() + 1).padStart(2, '0');
+                                  const year = date.getFullYear();
+                                  return `${day}/${month}/${year}`;
+                                }
+                              } catch {}
+                              return viewingEmployee.date_of_birth;
+                            })()
+                          : '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t('employees.age')}</p>
+                      <p className="font-medium">{viewingEmployee.age || '-'}</p>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Personal Information */}
-              <div>
-                <h3 className="text-lg font-semibold mb-4">{t('employees.personalInfo')}</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-muted-foreground">{t('employees.cccd')}</Label>
-                    <p className="font-medium">{viewingEmployee.cccd || '-'}</p>
+              {/* CV Sections */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-lg border p-4 space-y-3">
+                  <h3 className="text-base font-semibold">{t('employees.workInfo')}</h3>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">{t('employees.employeeCodeLabel')}</p>
+                      <p className="font-medium">{viewingEmployee.employee_code}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t('employees.nameLabel')}</p>
+                      <p className="font-medium">{viewingEmployee.name}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t('employees.gender')}</p>
+                      <p className="font-medium">{translateValue(viewingEmployee.gender)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t('employees.employmentType')}</p>
+                      <p className="font-medium">{translateValue(viewingEmployee.employment_type)}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-muted-foreground">{t('employees.department')}</p>
+                      <p className="font-medium">{viewingEmployee.department || '-'}</p>
+                    </div>
                   </div>
-                  <div>
-                    <Label className="text-muted-foreground">{t('employees.hometown')}</Label>
-                    <p className="font-medium">{viewingEmployee.hometown || '-'}</p>
-                  </div>
-                  <div className="col-span-2">
-                    <Label className="text-muted-foreground">{t('employees.permanentResidenceShort')}</Label>
-                    <p className="font-medium">{viewingEmployee.permanent_residence || '-'}</p>
-                  </div>
-                  <div className="col-span-2">
-                    <Label className="text-muted-foreground">{t('employees.temporaryResidenceShort')}</Label>
-                    <p className="font-medium">{viewingEmployee.temporary_residence || '-'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">{t('employees.maritalStatus')}</Label>
-                    <p className="font-medium">{translateValue(viewingEmployee.marital_status || '-')}</p>
+                </div>
+
+                <div className="rounded-lg border p-4 space-y-3">
+                  <h3 className="text-base font-semibold">{t('employees.personalInfo')}</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">{t('employees.cccd')}</p>
+                      <p className="font-medium">{viewingEmployee.cccd || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">{t('employees.phoneShort')}</p>
+                      <p className="font-medium">{viewingEmployee.phone || '-'}</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-muted-foreground">{t('employees.hometown')}</p>
+                      <p className="font-medium">{viewingEmployee.hometown || '-'}</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-muted-foreground">{t('employees.permanentResidenceShort')}</p>
+                      <p className="font-medium">{viewingEmployee.permanent_residence || '-'}</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-muted-foreground">{t('employees.temporaryResidenceShort')}</p>
+                      <p className="font-medium">{viewingEmployee.temporary_residence || '-'}</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-muted-foreground">{t('employees.maritalStatus')}</p>
+                      <p className="font-medium">{translateValue(viewingEmployee.marital_status || '-')}</p>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Family Relations */}
-              <div>
-                <h3 className="text-lg font-semibold mb-4">{t('employees.familyRelations')}</h3>
+              <div className="rounded-lg border p-4">
+                <h3 className="text-base font-semibold mb-3">{t('employees.familyRelations')}</h3>
                 {viewingEmployee.family_relations && viewingEmployee.family_relations.length > 0 ? (
                   <div className="space-y-2">
                     {viewingEmployee.family_relations.map((member: FamilyMember, index: number) => (
-                      <div key={index} className="p-3 bg-muted rounded-lg">
+                      <div key={index} className="p-3 bg-muted/60 rounded-lg border border-border">
                         <p className="font-medium">{member.relation}: {member.name}</p>
                         {member.occupation && (
                           <p className="text-sm text-muted-foreground">Nghề nghiệp: {member.occupation}</p>
@@ -1278,34 +1612,43 @@ const EmployeesPage = () => {
                   <p className="text-muted-foreground">Không có thông tin</p>
                 )}
               </div>
-
-              {/* Avatar */}
-              {viewingEmployee.avatar && (
-                <div>
-                  <Label className="text-muted-foreground">{t('employees.avatar')}</Label>
-                  <div className="mt-2">
-                    <img 
-                      src={viewingEmployee.avatar} 
-                      alt={viewingEmployee.name}
-                      className="w-32 h-32 rounded-full object-cover border"
-                    />
-                  </div>
-                </div>
-              )}
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="print:hidden gap-2 sm:gap-2">
             <Button variant="outline" onClick={() => setIsViewDialogOpen(false)}>
               Đóng
             </Button>
             {viewingEmployee && (
-              <Button onClick={() => {
-                setIsViewDialogOpen(false);
-                openEditForm(viewingEmployee);
-              }}>
-                <Pencil className="w-4 h-4 mr-2" />
-                Sửa thông tin
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const prevTitle = document.title;
+                    document.title = `Hồ sơ — ${viewingEmployee.name || viewingEmployee.employee_code}`;
+                    let restored = false;
+                    const restore = () => {
+                      if (restored) return;
+                      restored = true;
+                      document.title = prevTitle;
+                    };
+                    window.addEventListener('afterprint', restore, { once: true });
+                    window.print();
+                    window.setTimeout(restore, 3000);
+                  }}
+                >
+                  <Printer className="w-4 h-4 mr-2" />
+                  In hồ sơ
+                </Button>
+                <Button
+                  onClick={() => {
+                    setIsViewDialogOpen(false);
+                    openEditForm(viewingEmployee);
+                  }}
+                >
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Sửa thông tin
+                </Button>
+              </>
             )}
           </DialogFooter>
         </DialogContent>

@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { Users, TrendingUp, Clock, Timer, UserCheck, Users2, Calendar, Building2, Loader2, Shield, ClipboardList, Calculator, FileText, Briefcase, ShoppingCart, Bell, Star, History, ArrowLeft } from 'lucide-react';
+import { Users, TrendingUp, Clock, Timer, UserCheck, Users2, Calendar, Building2, Loader2, Shield, ClipboardList, Calculator, FileText, Briefcase, ShoppingCart, Bell, Star, History, ArrowLeft, Search } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
 import { DashboardAccounting } from '@/components/dashboard/DashboardAccounting';
@@ -13,7 +13,9 @@ import { useTimeFilter } from '@/contexts/TimeFilterContext';
 import { HrReportContent } from '@/components/hr/HrReportContent';
 import { HR_REPORT_INLINE_IDS } from '@/data/departmentMenu';
 import { Button } from '@/components/ui/button';
-
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 /** Placeholder khi chưa chọn chức năng - chọn từ popup ở thanh trên */
 function DeptPlaceholder({ dept, comingSoon, t }: { dept: string; comingSoon?: boolean; t: (k: string, p?: Record<string, string>) => string }) {
   return (
@@ -29,7 +31,7 @@ function DeptPlaceholder({ dept, comingSoon, t }: { dept: string; comingSoon?: b
 import { toast } from 'sonner';
 import { hrExcelAPI, hrTemplatesAPI, statisticsAPI, timekeepingAPI, notificationsAPI } from '@/services/api';
 import { useI18n } from '@/hooks/useI18n';
-import { formatNumberPlain } from '@/lib/utils';
+import { cn, formatNumberPlain } from '@/lib/utils';
 import { extractHrBuiltInStats } from '@/lib/hrBuiltInStats';
 import { 
   LineChart, 
@@ -64,6 +66,17 @@ function translateNoticeTitle(
   return title;
 }
 
+function getLateMinutes(row: { effective_late_minutes?: number; late_minutes?: number }) {
+  return row.effective_late_minutes ?? row.late_minutes ?? 0;
+}
+
+function lateSeverityClass(mins: number): string {
+  if (mins >= 31) return 'bg-destructive/12 text-destructive border-destructive/25';
+  if (mins >= 16) return 'bg-amber-500/15 text-amber-800 dark:text-amber-100 border-amber-500/30';
+  if (mins >= 1) return 'bg-yellow-500/12 text-yellow-900 dark:text-yellow-100 border-yellow-500/20';
+  return 'bg-muted text-muted-foreground border-border';
+}
+
 const Index = () => {
   const { t, language } = useI18n();
   const navigate = useNavigate();
@@ -79,6 +92,19 @@ const Index = () => {
     parseYmdLocal,
     getMonthRange,
   } = useTimeFilter();
+
+  const [lateListOpen, setLateListOpen] = useState(false);
+  /** Khi mở từ thông báo "đi trễ hôm nay", dùng ngày trong metadata */
+  const [lateNoticeDateOverride, setLateNoticeDateOverride] = useState<string | null>(null);
+  const [lateListSearch, setLateListSearch] = useState('');
+  const [lateListSort, setLateListSort] = useState<'late_desc' | 'late_asc' | 'code'>('late_desc');
+
+  useEffect(() => {
+    if (!lateListOpen) {
+      setLateListSearch('');
+      setLateListSort('late_desc');
+    }
+  }, [lateListOpen]);
 
   const todayIso = toLocalYmd(new Date());
 
@@ -127,6 +153,58 @@ const Index = () => {
     queryKey: ['dashboard', params.date, params.start_date, params.end_date],
     queryFn: () => statisticsAPI.getDashboard(params),
   });
+
+  const lateListQueryParamsConfig = useMemo(() => {
+    if (lateNoticeDateOverride) {
+      return { date: lateNoticeDateOverride, start_date: undefined, end_date: undefined };
+    }
+    return {
+      date: params.date,
+      start_date: params.start_date,
+      end_date: params.end_date,
+    };
+  }, [lateNoticeDateOverride, params.date, params.start_date, params.end_date]);
+
+  const { data: lateEmployeesData, isLoading: loadingLateList } = useQuery({
+    queryKey: [
+      'statistics',
+      'late-employees',
+      lateListQueryParamsConfig.date,
+      lateListQueryParamsConfig.start_date,
+      lateListQueryParamsConfig.end_date,
+    ],
+    queryFn: () => statisticsAPI.getLateEmployees(lateListQueryParamsConfig),
+    enabled: lateListOpen,
+  });
+
+  const lateListIsDateRange = useMemo(() => {
+    const d = lateEmployeesData;
+    if (!d?.startDateUsed || !d?.endDateUsed) return false;
+    return d.startDateUsed !== d.endDateUsed;
+  }, [lateEmployeesData]);
+
+  const lateListProcessed = useMemo(() => {
+    const items = lateEmployeesData?.items ?? [];
+    const q = lateListSearch.trim().toLowerCase();
+    let rows = items.filter((row) => {
+      if (!q) return true;
+      return (
+        String(row.employee_code).toLowerCase().includes(q) ||
+        String(row.employee_name).toLowerCase().includes(q) ||
+        String(row.department ?? '').toLowerCase().includes(q)
+      );
+    });
+    rows = [...rows].sort((a, b) => {
+      const ma = getLateMinutes(a);
+      const mb = getLateMinutes(b);
+      if (lateListSort === 'late_desc') return mb - ma;
+      if (lateListSort === 'late_asc') return ma - mb;
+      return String(a.employee_code).localeCompare(String(b.employee_code), undefined, { numeric: true });
+    });
+    const reasonsInView = new Set(rows.map((r) => r.late_reason));
+    const mixedReasons = reasonsInView.size > 1;
+    return { rows, mixedReasons, totalRaw: items.length };
+  }, [lateEmployeesData, lateListSearch, lateListSort]);
 
   // HR Excel stats (hiển thị KPI trên dashboard nếu đã upload)
   const { data: hrAttendanceExcelStats } = useQuery({
@@ -582,6 +660,21 @@ const Index = () => {
                         {new Date(n.created_at).toLocaleDateString(language === 'ko' ? 'ko-KR' : 'vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                       </p>
                     </div>
+                    {n.type === 'late_employees' && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0 text-xs h-8"
+                        onClick={() => {
+                          const d = n.metadata?.date as string | undefined;
+                          setLateNoticeDateOverride(d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
+                          setLateListOpen(true);
+                        }}
+                      >
+                        {t('dashboard.viewLateList')}
+                      </Button>
+                    )}
                   </div>
                 ))
               ) : (
@@ -802,6 +895,11 @@ const Index = () => {
           value={formatNumberPlain((stats as any).lateToday ?? 0)}
           icon={Clock}
           variant="warning"
+          description={t('dashboard.lateEmployeesClickHint')}
+          onClick={() => {
+            setLateNoticeDateOverride(null);
+            setLateListOpen(true);
+          }}
         />
         <StatCard
           title={t('dashboard.totalWorkingHours')}
@@ -1197,6 +1295,170 @@ const Index = () => {
           ) : null)
         }
       </div>
+
+      <Dialog
+        open={lateListOpen}
+        onOpenChange={(open) => {
+          setLateListOpen(open);
+          if (!open) setLateNoticeDateOverride(null);
+        }}
+      >
+        <DialogContent className="max-w-5xl max-h-[92vh] flex flex-col gap-0 p-0 sm:max-w-5xl overflow-hidden">
+          <DialogHeader className="px-6 pt-6 pb-3 space-y-1 shrink-0">
+            <DialogTitle className="text-xl">{t('dashboard.lateEmployeesList')}</DialogTitle>
+            <p className="text-sm text-muted-foreground font-normal leading-relaxed">
+              {lateEmployeesData?.startDateUsed &&
+              lateEmployeesData?.endDateUsed &&
+              lateEmployeesData.startDateUsed !== lateEmployeesData.endDateUsed
+                ? `${formatDateDisplay(lateEmployeesData.startDateUsed)} → ${formatDateDisplay(lateEmployeesData.endDateUsed)}`
+                : lateEmployeesData?.dateUsed
+                  ? formatDateDisplay(lateEmployeesData.dateUsed)
+                  : lateEmployeesData?.startDateUsed
+                    ? formatDateDisplay(lateEmployeesData.startDateUsed)
+                    : '—'}
+              {lateEmployeesData != null && (
+                <span className="ml-2">
+                  · {t('dashboard.lateEmployeesTotal', { n: String(lateEmployeesData.total ?? 0) })}
+                </span>
+              )}
+            </p>
+          </DialogHeader>
+
+          {!loadingLateList &&
+            (lateEmployeesData?.items?.length ?? 0) > 0 &&
+            lateListProcessed.rows.length > 0 &&
+            !lateListProcessed.mixedReasons &&
+            lateListProcessed.rows[0] && (
+              <p className="px-6 text-xs text-muted-foreground border-b border-border/60 pb-3 shrink-0">
+                {lateListProcessed.rows[0].late_reason === 'check_in_after_8'
+                  ? t('dashboard.lateListAllSameReasonAfter8')
+                  : t('dashboard.lateListAllSameReasonMinutes')}
+              </p>
+            )}
+
+          <div className="px-6 pb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 shrink-0">
+            <div className="relative flex-1 min-w-0 max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="h-9 pl-9"
+                placeholder={t('dashboard.lateListSearchPlaceholder')}
+                value={lateListSearch}
+                onChange={(e) => setLateListSearch(e.target.value)}
+                disabled={loadingLateList || (lateEmployeesData?.items?.length ?? 0) === 0}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <label className="text-xs text-muted-foreground whitespace-nowrap">{t('dashboard.lateListSortLabel')}</label>
+              <select
+                className={cn(
+                  'h-9 min-w-[10.5rem] rounded-md border border-input bg-background px-2 text-sm',
+                  'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                )}
+                value={lateListSort}
+                onChange={(e) => setLateListSort(e.target.value as 'late_desc' | 'late_asc' | 'code')}
+                disabled={loadingLateList || (lateEmployeesData?.items?.length ?? 0) === 0}
+              >
+                <option value="late_desc">{t('dashboard.sortLateDesc')}</option>
+                <option value="late_asc">{t('dashboard.sortLateAsc')}</option>
+                <option value="code">{t('dashboard.sortByCode')}</option>
+              </select>
+            </div>
+          </div>
+          {lateListSearch.trim() && lateEmployeesData && lateListProcessed.totalRaw > 0 && (
+            <p className="px-6 pb-2 text-xs text-muted-foreground shrink-0">
+              {t('dashboard.lateListShowingFiltered', {
+                shown: String(lateListProcessed.rows.length),
+                total: String(lateListProcessed.totalRaw),
+              })}
+            </p>
+          )}
+
+          <div
+            className={cn(
+              'px-6 flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin',
+              'max-h-[min(56vh,480px)] sm:max-h-[min(60vh,520px)]',
+              'pr-2 [scrollbar-gutter:stable]'
+            )}
+          >
+            {loadingLateList ? (
+              <div className="flex items-center justify-center py-16 text-muted-foreground gap-2 min-h-[12rem]">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>{t('common.loading')}</span>
+              </div>
+            ) : (lateEmployeesData?.items?.length ?? 0) === 0 ? (
+              <p className="text-sm text-muted-foreground py-12 text-center min-h-[12rem]">{t('dashboard.noLateEmployees')}</p>
+            ) : lateListProcessed.rows.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-12 text-center min-h-[12rem]">{t('dashboard.lateListNoMatch')}</p>
+            ) : (
+              <div className="overflow-x-auto pb-4 rounded-lg border border-border bg-card/30 shadow-sm">
+                <table className="data-table w-full text-sm">
+                  <thead>
+                    <tr>
+                      <th className="w-10 text-center tabular-nums">{t('dashboard.lateListColRank')}</th>
+                      <th className="min-w-[7rem]">{t('dashboard.employeeCode')}</th>
+                      <th className="min-w-[8rem]">{t('dashboard.employeeName')}</th>
+                      <th className="w-24">{t('dashboard.department')}</th>
+                      {lateListIsDateRange && <th className="whitespace-nowrap">{t('dashboard.date')}</th>}
+                      <th className="whitespace-nowrap">{t('dashboard.timeIn')}</th>
+                      <th className="text-right whitespace-nowrap">{t('dashboard.lateMinutesCol')}</th>
+                      {lateListProcessed.mixedReasons && <th>{t('dashboard.lateReasonCol')}</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lateListProcessed.rows.map((row, idx) => {
+                      const mins = getLateMinutes(row);
+                      return (
+                        <tr key={`${row.employee_code}-${row.date}-${idx}`}>
+                          <td className="text-center text-xs text-muted-foreground tabular-nums align-middle">
+                            {idx + 1}
+                          </td>
+                          <td className="font-mono text-xs sm:text-sm align-middle">{row.employee_code}</td>
+                          <td className="font-medium align-middle max-w-[14rem] truncate" title={row.employee_name}>
+                            {row.employee_name}
+                          </td>
+                          <td className="align-middle">
+                            <Badge variant="outline" className="font-normal text-xs px-1.5 py-0">
+                              {row.department || '—'}
+                            </Badge>
+                          </td>
+                          {lateListIsDateRange && (
+                            <td className="text-muted-foreground tabular-nums whitespace-nowrap align-middle">
+                              {row.date}
+                            </td>
+                          )}
+                          <td className="tabular-nums font-medium align-middle">{row.check_in}</td>
+                          <td className="text-right align-middle">
+                            <span
+                              className={cn(
+                                'inline-flex min-w-[2.75rem] justify-end rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums',
+                                lateSeverityClass(mins)
+                              )}
+                            >
+                              {mins}′
+                            </span>
+                          </td>
+                          {lateListProcessed.mixedReasons && (
+                            <td className="text-xs align-middle">
+                              {row.late_reason === 'check_in_after_8'
+                                ? t('dashboard.lateReasonAfter8')
+                                : t('dashboard.lateReasonLateMinutes')}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="px-6 py-4 border-t border-border shrink-0">
+            <Button type="button" variant="outline" onClick={() => setLateListOpen(false)}>
+              {t('common.close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

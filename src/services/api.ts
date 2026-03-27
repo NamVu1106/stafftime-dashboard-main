@@ -65,6 +65,29 @@ export const statisticsAPI = {
     if (params?.end_date) queryParams.append('end_date', params.end_date);
     return request(`/statistics/dashboard?${queryParams.toString()}`);
   },
+  getLateEmployees: async (params?: { date?: string; start_date?: string; end_date?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.date) queryParams.append('date', params.date);
+    if (params?.start_date) queryParams.append('start_date', params.start_date);
+    if (params?.end_date) queryParams.append('end_date', params.end_date);
+    return request<{
+      total: number;
+      items: Array<{
+        employee_code: string;
+        employee_name: string;
+        department: string;
+        date: string;
+        check_in: string;
+        check_out: string;
+        late_minutes: number;
+        effective_late_minutes: number;
+        late_reason: 'late_minutes' | 'check_in_after_8';
+      }>;
+      dateUsed?: string;
+      startDateUsed?: string;
+      endDateUsed?: string;
+    }>(`/statistics/late-employees?${queryParams.toString()}`);
+  },
   getGender: async () => {
     return request('/statistics/gender');
   },
@@ -143,11 +166,14 @@ export const timekeepingAPI = {
 };
 
 export const employeesAPI = {
-  getAll: async (params?: { department?: string; employment_type?: string }) => {
+  getAll: async (params?: { department?: string; employment_type?: string; employee_code?: string; name?: string; search?: string }) => {
     const queryParams = new URLSearchParams();
     if (params?.department && params.department !== 'all') queryParams.append('department', params.department);
     if (params?.employment_type) queryParams.append('employment_type', params.employment_type);
-    return request('/employees' + (queryParams.toString() ? '?' + queryParams.toString() : ''));
+    if (params?.employee_code) queryParams.append('employee_code', params.employee_code);
+    if (params?.name) queryParams.append('name', params.name);
+    if (params?.search) queryParams.append('search', params.search);
+    return request<any[]>('/employees' + (queryParams.toString() ? '?' + queryParams.toString() : ''));
   },
   getOfficial: async () => {
     return request<{ headers: string[]; rows: Record<string, any>[] }>('/employees/official');
@@ -155,23 +181,28 @@ export const employeesAPI = {
   getSeasonal: async () => {
     return request<{ headers: string[]; rows: Record<string, any>[] }>('/employees/seasonal');
   },
-  getById: async (id: string) => {
-    return request(`/employees/${id}`);
+  getById: async (id: string | number) => {
+    return request<any>(`/employees/${id}`);
   },
   create: async (data: any) => {
-    return request('/employees', {
+    return request<any>('/employees', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
-  update: async (id: string, data: any) => {
-    return request(`/employees/${id}`, {
+  update: async (id: string | number, data: any) => {
+    return request<any>(`/employees/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
-  delete: async (id: string) => {
-    return request(`/employees/${id}`, {
+  delete: async (id: string | number) => {
+    return request<any>(`/employees/${id}`, {
+      method: 'DELETE',
+    });
+  },
+  deleteAll: async () => {
+    return request<any>('/employees', {
       method: 'DELETE',
     });
   },
@@ -285,6 +316,28 @@ export const uploadAPI = {
     
     return response.json();
   },
+  /** POST /api/upload/avatar — field name: avatar */
+  uploadAvatar: async (file: File) => {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/upload/avatar`, {
+      method: 'POST',
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+      body: formData,
+    });
+    if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('token');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
+        window.location.href = '/login';
+      }
+      const err = await response.json().catch(() => ({}));
+      throw new Error((err as { error?: string }).error || `API error: ${response.statusText}`);
+    }
+    return response.json() as Promise<{ message?: string; avatar_url: string }>;
+  },
   uploadTimekeeping: async (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -385,10 +438,47 @@ export const hrExcelAPI = {
     return request(`/hr-excel/latest?${queryParams.toString()}`);
   },
 
+  /** Backend cũ có thể trả 404 khi DB có bản ghi upload nhưng file Excel đã mất trên server — map sang FILE_NOT_FOUND (không ném lỗi). */
   getStats: async (reportType: string) => {
     const queryParams = new URLSearchParams();
     queryParams.append('report_type', reportType);
-    return request(`/hr-excel/stats?${queryParams.toString()}`);
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    try {
+      const response = await fetch(`${API_URL}/hr-excel/stats?${queryParams}`, {
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+      });
+      clearTimeout(timeoutId);
+      if (response.status === 404) {
+        return {
+          report_type: reportType,
+          error: 'FILE_NOT_FOUND',
+          stats: null,
+        };
+      }
+      if (!response.ok) {
+        if (response.status === 401) {
+          localStorage.removeItem('token');
+          sessionStorage.removeItem('token');
+          sessionStorage.removeItem('user');
+          window.location.href = '/login';
+        }
+        throw new Error(`API error: ${response.statusText}`);
+      }
+      return response.json();
+    } catch (error: unknown) {
+      clearTimeout(timeoutId);
+      const err = error as { name?: string };
+      if (err?.name === 'AbortError') {
+        throw new Error('Request timeout - Server không phản hồi. Vui lòng kiểm tra backend có đang chạy không.');
+      }
+      throw error;
+    }
   },
 
   getStatus: async () => {

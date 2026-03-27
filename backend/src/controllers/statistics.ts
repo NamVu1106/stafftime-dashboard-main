@@ -124,6 +124,36 @@ const hasAttendanceSignal = (record: AttendanceSignalRecord): boolean => {
 const filterAttendanceRecords = <T extends AttendanceSignalRecord>(records: T[]): T[] =>
   records.filter(hasAttendanceSignal);
 
+/** Khớp logic đếm lateToday trên dashboard: late_minutes > 0 hoặc giờ vào sau 8:00 */
+const computeLateInfo = (
+  r: AttendanceSignalRecord
+): { isLate: boolean; effectiveMinutes: number; reason: 'late_minutes' | 'check_in_after_8' | null } => {
+  const dbLate = Number(r.late_minutes) || 0;
+  if (dbLate > 0) {
+    return { isLate: true, effectiveMinutes: dbLate, reason: 'late_minutes' };
+  }
+  const ci = String(r.check_in || '').trim();
+  if (ci) {
+    try {
+      const [hours, minutes] = ci.split(':').map(Number);
+      if (!isNaN(hours) && !isNaN(minutes)) {
+        const checkInMinutes = hours * 60 + minutes;
+        const standardStartMinutes = 8 * 60;
+        if (checkInMinutes > standardStartMinutes) {
+          return {
+            isLate: true,
+            effectiveMinutes: checkInMinutes - standardStartMinutes,
+            reason: 'check_in_after_8',
+          };
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return { isLate: false, effectiveMinutes: 0, reason: null };
+};
+
 type VersionedTimekeepingRecord = AttendanceSignalRecord & {
   id?: number | null;
   employee_code?: string | null;
@@ -278,34 +308,9 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       : '0';
     
     // Calculate late employees: check late_minutes > 0 OR check_in time after 8:00 AM
-    // Count unique employees who are late (not total records)
     const lateEmployeeCodes = new Set<string>();
-    attendedRecords.forEach(r => {
-      let isLate = false;
-      
-      // If late_minutes is already set and > 0, count as late
-      if (r.late_minutes > 0) {
-        isLate = true;
-      }
-      // Otherwise, calculate from check_in time
-      // Standard work start time is 8:00 AM
-      else if (r.check_in && r.check_in.trim()) {
-        try {
-          const [hours, minutes] = r.check_in.split(':').map(Number);
-          if (!isNaN(hours) && !isNaN(minutes)) {
-            // If check_in is after 8:00 AM, calculate late minutes
-            const checkInMinutes = hours * 60 + minutes;
-            const standardStartMinutes = 8 * 60; // 8:00 AM = 480 minutes
-            if (checkInMinutes > standardStartMinutes) {
-              isLate = true;
-            }
-          }
-        } catch (e) {
-          // If parsing fails, skip
-        }
-      }
-      
-      if (isLate) {
+    attendedRecords.forEach((r) => {
+      if (computeLateInfo(r as AttendanceSignalRecord).isLate) {
         lateEmployeeCodes.add(resolveRecordCode(r as any));
       }
     });
@@ -369,6 +374,99 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       totalHoursToday,
       chinhThucRate,
       thoiVuRate,
+      dateUsed,
+      startDateUsed,
+      endDateUsed,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// GET /api/statistics/late-employees?date=YYYY-MM-DD | ?start_date=&end_date=
+// Danh sách bản ghi đi trễ (cùng tiêu chí lateToday trên dashboard)
+export const getLateEmployees = async (req: Request, res: Response) => {
+  try {
+    const targetDate = req.query.date as string | undefined;
+    const startDate = req.query.start_date as string | undefined;
+    const endDate = req.query.end_date as string | undefined;
+
+    let dateToUse = targetDate;
+    let dateUsed: string | undefined;
+    let startDateUsed: string | undefined;
+    let endDateUsed: string | undefined;
+    if (startDate && endDate) {
+      startDateUsed = startDate;
+      endDateUsed = endDate;
+    } else {
+      if (!dateToUse) {
+        const mostRecentRecord = await q1<{ date: string }>(
+          'SELECT TOP 1 date FROM timekeeping_records WHERE is_archived = 0 ORDER BY date DESC',
+          {}
+        );
+        dateToUse = mostRecentRecord?.date || new Date().toISOString().split('T')[0];
+      }
+      dateUsed = dateToUse;
+    }
+
+    const useArchiveForRange = !!(startDate && endDate);
+    let dayRecords: any[];
+    if (useArchiveForRange) {
+      dayRecords = await q(
+        'SELECT * FROM timekeeping_records WHERE date >= @s AND date <= @e ORDER BY date DESC',
+        { s: startDate!, e: endDate! }
+      );
+    } else {
+      dayRecords = await q(
+        'SELECT * FROM timekeeping_records WHERE date = @d ORDER BY date DESC',
+        { d: dateToUse! }
+      );
+    }
+    dayRecords = dedupeLatestTimekeepingRecords(dayRecords);
+    const attendedRecords = filterAttendanceRecords(dayRecords);
+
+    type LateRow = {
+      employee_code: string;
+      employee_name: string;
+      department: string;
+      date: string;
+      check_in: string;
+      check_out: string;
+      late_minutes: number;
+      effective_late_minutes: number;
+      late_reason: 'late_minutes' | 'check_in_after_8';
+    };
+
+    const items: LateRow[] = [];
+    for (const r of attendedRecords) {
+      const info = computeLateInfo(r as AttendanceSignalRecord);
+      if (!info.isLate || !info.reason) continue;
+      const code = resolveRecordCode(r as any);
+      if (!code) continue;
+      items.push({
+        employee_code: code,
+        employee_name: String((r as any).employee_name || ''),
+        department: String((r as any).department || ''),
+        date: String((r as any).date || '').slice(0, 10),
+        check_in: String((r as any).check_in || ''),
+        check_out: String((r as any).check_out || ''),
+        late_minutes: Number((r as any).late_minutes) || 0,
+        effective_late_minutes: info.effectiveMinutes,
+        late_reason: info.reason,
+      });
+    }
+
+    items.sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      if (b.effective_late_minutes !== a.effective_late_minutes) {
+        return b.effective_late_minutes - a.effective_late_minutes;
+      }
+      return a.employee_name.localeCompare(b.employee_name, 'vi');
+    });
+
+    res.json({
+      total: items.length,
+      items,
       dateUsed,
       startDateUsed,
       endDateUsed,

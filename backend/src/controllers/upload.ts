@@ -31,7 +31,9 @@ const upload = multer({
     if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
         file.mimetype === 'application/vnd.ms-excel' ||
         file.mimetype === 'image/jpeg' ||
-        file.mimetype === 'image/png') {
+        file.mimetype === 'image/png' ||
+        file.mimetype === 'image/webp' ||
+        file.mimetype === 'image/gif') {
       cb(null, true);
     } else {
       cb(new Error('Invalid file type'));

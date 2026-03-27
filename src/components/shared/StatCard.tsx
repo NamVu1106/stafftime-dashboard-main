@@ -11,6 +11,8 @@ interface StatCardProps {
   };
   variant?: 'primary' | 'success' | 'warning' | 'info' | 'destructive';
   description?: string;
+  /** Thẻ có thể bấm (ví dụ mở chi tiết) */
+  onClick?: () => void;
 }
 
 const variantStyles = {
@@ -21,9 +23,24 @@ const variantStyles = {
   destructive: 'bg-destructive/10 text-destructive',
 };
 
-export const StatCard = ({ title, value, icon: Icon, trend, variant = 'primary', description }: StatCardProps) => {
+export const StatCard = ({ title, value, icon: Icon, trend, variant = 'primary', description, onClick }: StatCardProps) => {
   return (
-    <div className="stat-card group">
+    <div
+      className={cn('stat-card group', onClick && 'cursor-pointer transition-colors hover:bg-muted/40')}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+    >
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <p className="text-sm text-muted-foreground font-medium mb-1">{title}</p>

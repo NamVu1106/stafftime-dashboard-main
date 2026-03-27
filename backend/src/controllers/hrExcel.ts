@@ -553,7 +553,13 @@ export const getHrExcelReportStats = async (req: Request, res: Response) => {
     const uploadDir = getHrUploadDir();
     const filePath = path.join(uploadDir, latest.stored_file_name);
     if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Uploaded file not found on server' });
+      // 200 + FILE_NOT_FOUND: tránh 404 trong DevTools; dashboard đã hiển thị gợi ý upload lại
+      return res.json({
+        report_type,
+        error: 'FILE_NOT_FOUND',
+        message: 'Uploaded file not found on server',
+        stats: null,
+      });
     }
 
     // Limit parsed rows to keep stats fast on very large templates.
