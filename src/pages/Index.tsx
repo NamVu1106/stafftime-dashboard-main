@@ -562,7 +562,7 @@ const Index = () => {
     if (isSingleDayHrRange && hasEmployees) {
       return {
         value: `${formatNumberPlain(employeesNum)} ${t('common.people')}`,
-        description: 'Ngày này chưa chốt giờ công, đang hiển thị số NV đi làm.',
+        description: t('dashboard.hrTimesheetNoHoursNote'),
       };
     }
 
@@ -631,7 +631,7 @@ const Index = () => {
 
   const recentLinks = [
     { path: '/', label: t('sidebar.dashboard') },
-    { path: '/reports/day', label: t('sidebar.byDay') },
+    { path: '/reports/period', label: t('deptMenu.reportsPeriod') },
     { path: '/employees', label: t('sidebar.list') },
   ];
 
@@ -1104,7 +1104,7 @@ const Index = () => {
                     borderRadius: '8px',
                     fontSize: '12px'
                   }}
-                  formatter={(value: number) => [`${formatNumberPlain(value)} ${t('common.people')}`, t('common.quantity') || 'Số lượng']}
+                  formatter={(value: number) => [`${formatNumberPlain(value)} ${t('common.people')}`, t('common.quantity')]}
                 />
                 <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                   {(ageData as any[]).map((entry: any, index: number) => (
@@ -1127,21 +1127,19 @@ const Index = () => {
         {/* 4. Tỷ lệ đi làm các bộ phận — chỉ hiển thị bộ phận có dữ liệu chấm công */}
         <div className="p-4 bg-card border-2 border-border rounded-lg">
           <h3 className="text-base font-semibold mb-3">{t('dashboard.attendanceByDepartment')}</h3>
-          <p className="text-xs text-muted-foreground mb-2">
-            Tỷ lệ % = (số người đi làm / tổng nhân viên bộ phận) × 100. Chỉ hiển thị bộ phận có dữ liệu.
-          </p>
+          <p className="text-xs text-muted-foreground mb-2">{t('dashboard.deptAttendanceRateHelp')}</p>
           <div className="h-[220px]">
             {loadingAttendanceRateByDept ? (
               <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-                Đang tải dữ liệu bộ phận...
+                {t('dashboard.loadingDeptAttendance')}
               </div>
             ) : attendanceRateByDeptError ? (
               <div className="h-full flex items-center justify-center text-sm text-destructive text-center px-4">
-                Không tải được dữ liệu bộ phận.
+                {t('dashboard.errorDeptAttendance')}
               </div>
             ) : attendanceRateByDeptFiltered.length === 0 ? (
               <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-                Chưa có dữ liệu bộ phận để hiển thị.
+                {t('dashboard.noDeptAttendanceData')}
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -1211,7 +1209,7 @@ const Index = () => {
 
         {/* Quick Stats */}
         <div className="p-4 bg-card border-2 border-border rounded-lg">
-          <h3 className="text-lg font-semibold mb-4">{t('dashboard.attendanceLast7Days') || 'Số lượng đi làm 7 ngày gần nhất'}</h3>
+          <h3 className="text-lg font-semibold mb-4">{t('dashboard.attendanceLast7Days')}</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={formattedAttendanceData}>

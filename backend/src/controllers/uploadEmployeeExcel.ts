@@ -202,7 +202,7 @@ export const uploadEmployeesOfficial = [
       });
       fs.unlinkSync(req.file.path);
       if (upserted > 0) {
-        await createNotification('new_employees', `Đã đồng bộ ${upserted} nhân viên chính thức`, `Upload file chính thức: ${upserted} bản ghi`, { count: upserted });
+        await createNotification('new_employees', `Đã đồng bộ ${upserted} nhân viên chính thức`, `Upload file chính thức: ${upserted} bản ghi`, { count: upserted, link: '/employees' });
       }
       res.json({ message: 'OK', count: rawRows.length, upserted, headers: headerRow.length });
     } catch (error: any) {
@@ -431,7 +431,7 @@ VALUES (S.ec,S.n,S.g,S.dob,S.age,S.dept,@et,S.cc,S.ph,S.pr,@u,@u)`;
             'new_employees',
             `Đã đồng bộ ${upserted} nhân viên thời vụ`,
             `Upload file thời vụ: ${upserted} bản ghi`,
-            { count: upserted }
+            { count: upserted, link: '/employees' }
           );
         }
       } catch (_) {

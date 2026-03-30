@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Calendar, Search, Download, Filter, Building2 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Input } from '@/components/ui/input';
@@ -8,6 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { statisticsAPI, timekeepingAPI } from '@/services/api';
 import { DataTable } from '@/components/shared/DataTable';
+import {
+  ReportServerPaginationBar,
+  ReportTableFetchOverlay,
+  timekeepingRowsWithIds,
+} from '@/components/shared/ReportServerPagination';
 import { useI18n } from '@/hooks/useI18n';
 import { useTimeFilter } from '@/contexts/TimeFilterContext';
 
@@ -32,7 +37,11 @@ const ReportsDayPage = () => {
   });
 
   // Fetch timekeeping data cho ngày được chọn
-  const { data: timekeepingData, isLoading: loadingData } = useQuery({
+  const {
+    data: timekeepingData,
+    isPending: pendingTimekeeping,
+    isFetching: fetchingTimekeeping,
+  } = useQuery({
     queryKey: ['timekeeping-day', selectedDateEffective, department, search, page],
     queryFn: () => timekeepingAPI.getAll({
       date: selectedDateEffective,
@@ -43,6 +52,7 @@ const ReportsDayPage = () => {
       archived: false,
     }),
     enabled: !!selectedDateEffective,
+    placeholderData: keepPreviousData,
   });
 
   const handleExport = () => {
@@ -158,46 +168,35 @@ const ReportsDayPage = () => {
       {/* Bảng dữ liệu chi tiết */}
       <div className="p-4 bg-card border border-border rounded-lg">
         <h3 className="font-semibold text-lg mb-4">{t('reports.detailedData') || 'Bảng dữ liệu chi tiết'}</h3>
-        {loadingData ? (
+        {pendingTimekeeping ? (
           <div className="text-center py-8">{t('common.loading')}</div>
         ) : timekeepingRecords && timekeepingRecords.length > 0 ? (
           <>
-            <DataTable
-              data={timekeepingRecords}
-              columns={[
-                { key: 'employee_code', header: t('dashboard.employeeCode') },
-                { key: 'employee_name', header: t('realtime.name') },
-                { key: 'department', header: t('dashboard.department') },
-                { key: 'check_in', header: t('dashboard.timeIn') },
-                { key: 'check_out', header: t('dashboard.timeOut') },
-                { key: 'total_hours', header: t('dashboard.totalHoursLabel') },
-                { key: 'overtime_hours', header: t('reports.overtime') },
-                { key: 'late_minutes', header: t('reports.lateMinutes') },
-              ]}
+            <ReportTableFetchOverlay show={fetchingTimekeeping && !pendingTimekeeping}>
+              <DataTable
+                data={timekeepingRowsWithIds(timekeepingRecords, 'day')}
+                clientPagination={false}
+                showToolbar={false}
+                columns={[
+                  { key: 'employee_code', header: t('dashboard.employeeCode') },
+                  { key: 'employee_name', header: t('realtime.name') },
+                  { key: 'department', header: t('dashboard.department') },
+                  { key: 'check_in', header: t('dashboard.timeIn') },
+                  { key: 'check_out', header: t('dashboard.timeOut') },
+                  { key: 'total_hours', header: t('dashboard.totalHoursLabel') },
+                  { key: 'overtime_hours', header: t('reports.overtime') },
+                  { key: 'late_minutes', header: t('reports.lateMinutes') },
+                ]}
+              />
+            </ReportTableFetchOverlay>
+            <ReportServerPaginationBar
+              page={page}
+              limit={limit}
+              total={timekeepingData?.total ?? 0}
+              onPageChange={setPage}
+              t={t}
+              isBusy={fetchingTimekeeping && !pendingTimekeeping}
             />
-            <div className="flex items-center justify-between mt-4">
-              <div className="text-sm text-muted-foreground">
-                {t('common.page')} {page} / {Math.ceil((timekeepingData?.total || 0) / limit)}
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                >
-                  {t('reports.previous')}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage(p => p + 1)}
-                  disabled={page >= Math.ceil((timekeepingData?.total || 0) / limit)}
-                >
-                  {t('reports.next')}
-                </Button>
-              </div>
-            </div>
           </>
         ) : (
           <div className="text-center py-8 text-muted-foreground">

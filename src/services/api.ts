@@ -1,6 +1,32 @@
 // Default to same-origin API so Vite proxy works for local and LAN access.
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
+/** Phản hồi thống kê dashboard (một ngày) */
+export type StatisticsDashboard = {
+  totalEmployees?: number;
+  attendanceToday?: number;
+  totalHoursToday?: number;
+  attendanceRate?: number;
+};
+
+/** Phản hồi thống kê khoảng ngày */
+export type StatisticsRangeSummary = {
+  totalEmployees?: number;
+  totalDays?: number;
+  totalHours?: number;
+  totalOvertime?: number;
+};
+
+/** Danh sách chấm công phân trang hoặc mảng thuần */
+export type TimekeepingListResponse =
+  | { data?: Record<string, unknown>[]; total?: number }
+  | Record<string, unknown>[];
+
+export function timekeepingListTotal(data: TimekeepingListResponse | undefined): number {
+  if (data == null || Array.isArray(data)) return 0;
+  return data.total ?? 0;
+}
+
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   // Prefer sessionStorage (AuthContext), fallback to localStorage
   const token = sessionStorage.getItem('token') || localStorage.getItem('token');
@@ -63,7 +89,7 @@ export const statisticsAPI = {
     if (params?.date) queryParams.append('date', params.date);
     if (params?.start_date) queryParams.append('start_date', params.start_date);
     if (params?.end_date) queryParams.append('end_date', params.end_date);
-    return request(`/statistics/dashboard?${queryParams.toString()}`);
+    return request<StatisticsDashboard>(`/statistics/dashboard?${queryParams.toString()}`);
   },
   getLateEmployees: async (params?: { date?: string; start_date?: string; end_date?: string }) => {
     const queryParams = new URLSearchParams();
@@ -121,7 +147,7 @@ export const statisticsAPI = {
     queryParams.append('start_date', params.start_date);
     queryParams.append('end_date', params.end_date);
     if (params.department) queryParams.append('department', params.department);
-    return request(`/statistics/range?${queryParams.toString()}`);
+    return request<StatisticsRangeSummary>(`/statistics/range?${queryParams.toString()}`);
   },
   getCompare: async (params: { type: 'department' | 'period'; ids?: string; periods?: string }) => {
     const queryParams = new URLSearchParams();
@@ -152,8 +178,18 @@ export const statisticsAPI = {
 };
 
 export const timekeepingAPI = {
-  getAll: async (params?: { start_date?: string; end_date?: string; department?: string; search?: string; page?: number; limit?: number; archived?: boolean }) => {
+  getAll: async (params?: {
+    date?: string;
+    start_date?: string;
+    end_date?: string;
+    department?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+    archived?: boolean;
+  }): Promise<TimekeepingListResponse> => {
     const queryParams = new URLSearchParams();
+    if (params?.date) queryParams.append('date', params.date);
     if (params?.start_date) queryParams.append('start_date', params.start_date);
     if (params?.end_date) queryParams.append('end_date', params.end_date);
     if (params?.department) queryParams.append('department', params.department);
@@ -161,7 +197,7 @@ export const timekeepingAPI = {
     if (params?.archived !== undefined) queryParams.append('archived', params.archived ? 'true' : 'false');
     if (params?.page) queryParams.append('page', params.page.toString());
     if (params?.limit) queryParams.append('limit', params.limit.toString());
-    return request(`/timekeeping?${queryParams.toString()}`);
+    return request<TimekeepingListResponse>(`/timekeeping?${queryParams.toString()}`);
   },
 };
 

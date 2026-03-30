@@ -13,9 +13,11 @@ import { employeesAPI, hrExcelAPI, hrTemplatesAPI, vendorAssignmentsAPI } from '
 import { formatNumberPlain } from '@/lib/utils';
 import { hasBuiltInGrid } from '@/data/hrReportTemplates';
 import { HR_REPORT_DEFS } from '@/data/hrReportDefs';
+import { filterBuiltInTimesheetSheet, findTimesheetHeaderRowIndex } from '@/lib/hrAttendanceListFilter';
 import { buildHrBuiltInSummary, buildHrUploadSummary } from '@/lib/hrReportInsights';
 import { useTimeFilterOptional } from '@/contexts/TimeFilterContext';
 import { HrChartFromGrid } from './HrChartFromGrid';
+import { useI18n } from '@/hooks/useI18n';
 
 function safeParseSheetNames(sheetNamesRaw: any): string[] {
   if (!sheetNamesRaw) return [];
@@ -31,8 +33,33 @@ function safeParseSheetNames(sheetNamesRaw: any): string[] {
   return [];
 }
 
+function formatYmdLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function calendarMonthRangeFromYm(ym: string): { start: string; end: string } {
+  const [y, mo] = ym.split('-').map(Number);
+  const start = new Date(y, mo - 1, 1);
+  const end = new Date(y, mo, 0);
+  return { start: formatYmdLocal(start), end: formatYmdLocal(end) };
+}
+
+/** Giá trị input type=month khi start/end đúng cả tháng lịch */
+function fullCalendarMonthValue(start: string, end: string): string {
+  if (!start || !end || start.slice(0, 7) !== end.slice(0, 7)) return '';
+  const [y, m] = start.split('-').map(Number);
+  const first = `${y}-${String(m).padStart(2, '0')}-01`;
+  const lastD = new Date(y, m, 0).getDate();
+  const last = `${y}-${String(m).padStart(2, '0')}-${String(lastD).padStart(2, '0')}`;
+  return start === first && end === last ? start.slice(0, 7) : '';
+}
+
 /** Nhập Vendor trên cùng trang Tỉ lệ đi làm — lưu xong grid bên dưới cập nhật theo NCC */
 function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDate: string }) {
+  const { t } = useI18n();
   const qc = useQueryClient();
   const [filter, setFilter] = useState('');
   const [vendorDraft, setVendorDraft] = useState<Record<string, string>>({});
@@ -112,23 +139,25 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
       );
     },
     onSuccess: async (d) => {
-      toast.success(`Đã lưu NCC (${d.saved} cập nhật, ${d.removed} đã bỏ gán)`);
+      toast.success(
+        t('hrReport.toastSaveVendorOk', { saved: String(d.saved), removed: String(d.removed) })
+      );
       await qc.refetchQueries({ queryKey: ['vendor-assignments'] });
       setDraftDirty(false);
       await qc.invalidateQueries({ queryKey: ['hrTemplates', 'grid', 'attendance-rate', startDate, endDate] });
     },
-    onError: (e: any) => toast.error(e?.message || 'Lưu thất bại'),
+    onError: (e: any) => toast.error(e?.message || t('hrReport.toastSaveVendorFail')),
   });
 
   const uploadMut = useMutation({
     mutationFn: (f: File) => vendorAssignmentsAPI.upload(f),
     onSuccess: async (d) => {
-      toast.success(d.message || `Đã import ${d.upserted ?? 0} dòng`);
+      toast.success(d.message || t('hrReport.toastImportOk', { n: String(d.upserted ?? 0) }));
       await qc.refetchQueries({ queryKey: ['vendor-assignments'] });
       setDraftDirty(false);
       await qc.invalidateQueries({ queryKey: ['hrTemplates', 'grid', 'attendance-rate', startDate, endDate] });
     },
-    onError: (e: any) => toast.error(e?.message || 'Import thất bại'),
+    onError: (e: any) => toast.error(e?.message || t('hrReport.toastImportFail')),
   });
 
   const addOneMut = useMutation({
@@ -137,14 +166,14 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
         { employee_code: quickCode.trim().toUpperCase(), vendor_name: quickVendor.trim() },
       ]),
     onSuccess: async () => {
-      toast.success('Đã gán NCC cho Mã NV');
+      toast.success(t('hrReport.toastQuickAssignOk'));
       setQuickCode('');
       setQuickVendor('');
       setDraftDirty(false);
       await qc.refetchQueries({ queryKey: ['vendor-assignments'] });
       await qc.invalidateQueries({ queryKey: ['hrTemplates', 'grid', 'attendance-rate', startDate, endDate] });
     },
-    onError: (e: any) => toast.error(e?.message || 'Thêm thất bại'),
+    onError: (e: any) => toast.error(e?.message || t('hrReport.toastQuickAssignFail')),
   });
 
   const filtered = useMemo(() => {
@@ -190,16 +219,19 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
         <CardHeader className="pb-2">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1">
-              <CardTitle className="text-sm">Nguồn NCC cho báo cáo tỉ lệ đi làm</CardTitle>
+              <CardTitle className="text-sm">{t('hrReport.vendorPanelTitle')}</CardTitle>
               <CardDescription>
                 {editableCodes.length > 0
-                  ? `Đã gán ${assignedCount}/${editableCodes.length} mã NV. Mở khi cần chỉnh NCC để báo cáo phía trên nhóm đúng theo Vendor.`
-                  : 'Chưa có dữ liệu NCC để chỉnh. Có thể thêm nhanh theo Mã NV hoặc import file map Vendor.'}
+                  ? t('hrReport.vendorAssignedHint', {
+                      assigned: String(assignedCount),
+                      total: String(editableCodes.length),
+                    })
+                  : t('hrReport.vendorNoDataHint')}
               </CardDescription>
             </div>
             <CollapsibleTrigger asChild>
               <Button type="button" variant="outline" size="sm" className="w-full sm:w-auto">
-                {isEditorOpen ? 'Thu gọn chỉnh NCC' : 'Mở chỉnh NCC'}
+                {isEditorOpen ? t('hrReport.vendorCollapseClose') : t('hrReport.vendorCollapseOpen')}
               </Button>
             </CollapsibleTrigger>
           </div>
@@ -207,34 +239,34 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
         <CollapsibleContent>
           <CardContent className="space-y-3 pt-0">
             {loadingPanel ? (
-              <div className="text-sm text-muted-foreground py-2">Đang tải…</div>
+              <div className="text-sm text-muted-foreground py-2">{t('hrReport.loading')}</div>
             ) : null}
             {vaError ? (
               <div className="text-sm text-amber-600 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded p-2">
-                Không kết nối được API Gán Vendor (404). Hãy khởi động lại backend hoặc dùng menu «Gán Vendor (NCC)».
+                {t('hrReport.vendorApiError')}
               </div>
             ) : null}
 
             <div className="rounded-lg border bg-background p-3 space-y-2">
-              <div className="text-sm font-medium">Thêm nhanh (luôn dùng được)</div>
+              <div className="text-sm font-medium">{t('hrReport.quickAddTitle')}</div>
               <div className="flex flex-wrap gap-2 items-end">
                 <div className="w-[140px]">
-                  <Label htmlFor="vendor-quick-code">Mã NV</Label>
+                  <Label htmlFor="vendor-quick-code">{t('hrReport.labelEmployeeCode')}</Label>
                   <Input
                     id="vendor-quick-code"
                     value={quickCode}
                     onChange={(e) => setQuickCode(e.target.value)}
-                    placeholder="VD: 12345"
+                    placeholder={t('hrReport.placeholderCodeExample')}
                     className="font-mono"
                   />
                 </div>
                 <div className="flex-1 min-w-[180px]">
-                  <Label htmlFor="vendor-quick-ncc">Nhà cung cấp (Vendor)</Label>
+                  <Label htmlFor="vendor-quick-ncc">{t('hrReport.labelVendor')}</Label>
                   <Input
                     id="vendor-quick-ncc"
                     value={quickVendor}
                     onChange={(e) => setQuickVendor(e.target.value)}
-                    placeholder="Tên NCC"
+                    placeholder={t('hrReport.placeholderVendorName')}
                   />
                 </div>
                 <Button
@@ -242,7 +274,7 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
                   disabled={!quickCode.trim() || !quickVendor.trim() || addOneMut.isPending}
                   onClick={() => addOneMut.mutate()}
                 >
-                  {addOneMut.isPending ? 'Đang lưu…' : 'Thêm gán'}
+                  {addOneMut.isPending ? t('hrReport.savePending') : t('hrReport.addMapping')}
                 </Button>
               </div>
             </div>
@@ -250,22 +282,22 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
             <div className="flex flex-wrap gap-3 items-end">
               {emps.length > 0 ? (
                 <div className="flex-1 min-w-[200px]">
-                  <Label htmlFor="vendor-filter-nv">Lọc Mã NV / tên</Label>
+                  <Label htmlFor="vendor-filter-nv">{t('hrReport.filterCodeName')}</Label>
                   <Input
                     id="vendor-filter-nv"
                     value={filter}
                     onChange={(e) => setFilter(e.target.value)}
-                    placeholder="Tìm…"
+                    placeholder={t('hrReport.searchPlaceholder')}
                   />
                 </div>
               ) : items.length > 0 ? (
                 <div className="flex-1 min-w-[200px]">
-                  <Label htmlFor="vendor-filter-va">Lọc Mã NV / NCC</Label>
+                  <Label htmlFor="vendor-filter-va">{t('hrReport.filterCodeVendor')}</Label>
                   <Input
                     id="vendor-filter-va"
                     value={filter}
                     onChange={(e) => setFilter(e.target.value)}
-                    placeholder="Tìm…"
+                    placeholder={t('hrReport.searchPlaceholder')}
                   />
                 </div>
               ) : null}
@@ -274,7 +306,11 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
                 onClick={() => syncMut.mutate()}
                 disabled={syncMut.isPending || (emps.length === 0 && items.length === 0)}
               >
-                {syncMut.isPending ? 'Đang lưu…' : emps.length ? 'Lưu NCC (bảng NV)' : 'Lưu thay đổi (bảng dưới)'}
+                {syncMut.isPending
+                  ? t('hrReport.savePending')
+                  : emps.length
+                    ? t('hrReport.saveTableEmployees')
+                    : t('hrReport.saveTableBelow')}
               </Button>
               <input
                 ref={fileRef}
@@ -288,7 +324,7 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
                 }}
               />
               <Button type="button" variant="outline" disabled={uploadMut.isPending} onClick={() => fileRef.current?.click()}>
-                {uploadMut.isPending ? 'Import…' : 'Import Excel'}
+                {uploadMut.isPending ? t('hrReport.importPending') : t('hrReport.importExcel')}
               </Button>
             </div>
 
@@ -296,9 +332,9 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
               <table className="w-full">
                 <thead className="bg-muted sticky top-0 z-[1]">
                   <tr>
-                    <th className="text-left p-2">Mã NV</th>
-                    <th className="text-left p-2">Họ tên</th>
-                    <th className="text-left p-2 min-w-[220px]">Nhà cung cấp (Vendor)</th>
+                    <th className="text-left p-2">{t('hrReport.tableHeaderCode')}</th>
+                    <th className="text-left p-2">{t('hrReport.tableHeaderName')}</th>
+                    <th className="text-left p-2 min-w-[220px]">{t('hrReport.tableHeaderVendor')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -317,7 +353,7 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
                                   setDraftDirty(true);
                                   setVendorDraft((p) => ({ ...p, [c]: ev.target.value }));
                                 }}
-                                placeholder="Tên NCC"
+                                placeholder={t('hrReport.placeholderVendorName')}
                               />
                             </td>
                           </tr>
@@ -338,7 +374,7 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
                                     setDraftDirty(true);
                                     setVendorDraft((p) => ({ ...p, [c]: ev.target.value }));
                                   }}
-                                  placeholder="Tên NCC"
+                                  placeholder={t('hrReport.placeholderVendorName')}
                                 />
                               </td>
                             </tr>
@@ -347,7 +383,7 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
                       : !loadingPanel && (
                           <tr>
                             <td colSpan={3} className="p-4 text-center text-muted-foreground text-sm">
-                              Chưa có dòng nào. Nhập <strong>Mã NV</strong> + <strong>NCC</strong> ở khung «Thêm nhanh» bên trên rồi bấm <strong>Thêm gán</strong>, hoặc Import Excel.
+                              {t('hrReport.emptyVendorHint')}
                             </td>
                           </tr>
                         )}
@@ -368,9 +404,11 @@ interface HrReportContentProps {
 }
 
 export const HrReportContent = ({ reportType, compact }: HrReportContentProps) => {
+  const { t } = useI18n();
   const reportKey = reportType || '';
   const reportDef = HR_REPORT_DEFS[reportKey];
   const isBuiltIn = hasBuiltInGrid(reportKey);
+  const isBuiltInTimesheetReport = reportKey === 'official-timesheet' || reportKey === 'temp-timesheet';
 
   const queryClient = useQueryClient();
 
@@ -379,6 +417,10 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
   const [activeTemplateSheet, setActiveTemplateSheet] = useState<string>('');
   const [rowLimit, setRowLimit] = useState<number>(200);
   const [colLimit, setColLimit] = useState<number>(80);
+  const [builtInTimesheetCodeSearch, setBuiltInTimesheetCodeSearch] = useState('');
+  const [builtInTimesheetNameSearch, setBuiltInTimesheetNameSearch] = useState('');
+  const [timesheetStart, setTimesheetStart] = useState('');
+  const [timesheetEnd, setTimesheetEnd] = useState('');
 
   const {
     data: latestUpload,
@@ -422,14 +464,14 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
       return hrExcelAPI.upload(reportKey, f);
     },
     onSuccess: async () => {
-      toast.success('Upload HR Excel thành công');
+      toast.success(t('hrReport.toastUploadOk'));
       setFile(null);
       setSelectedSheet('');
       await queryClient.invalidateQueries({ queryKey: ['hrExcel', 'latest', reportKey] });
       await refetchLatest();
     },
     onError: (err: any) => {
-      toast.error(err?.message || 'Upload thất bại');
+      toast.error(err?.message || t('hrReport.toastUploadFail'));
     },
   });
 
@@ -456,7 +498,7 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
   });
 
   const timeFilter = useTimeFilterOptional();
-  const gridParams = (() => {
+  const defaultBuiltInRange = useMemo(() => {
     if (timeFilter?.params?.start_date && timeFilter?.params?.end_date) {
       return { start_date: timeFilter.params.start_date, end_date: timeFilter.params.end_date };
     }
@@ -467,8 +509,34 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
     const now = new Date();
     const y = now.getFullYear();
     const m = String(now.getMonth() + 1).padStart(2, '0');
-    return { start_date: `${y}-${m}-01`, end_date: `${y}-${m}-${new Date(y, now.getMonth() + 1, 0).getDate()}` };
-  })();
+    return {
+      start_date: `${y}-${m}-01`,
+      end_date: `${y}-${m}-${new Date(y, now.getMonth() + 1, 0).getDate()}`,
+    };
+  }, [
+    timeFilter?.params?.start_date,
+    timeFilter?.params?.end_date,
+    timeFilter?.filterMode,
+    timeFilter?.baseDate,
+  ]);
+
+  const gridParams = useMemo(() => {
+    if (
+      isBuiltInTimesheetReport &&
+      timesheetStart &&
+      timesheetEnd &&
+      timesheetStart <= timesheetEnd
+    ) {
+      return { start_date: timesheetStart, end_date: timesheetEnd };
+    }
+    return defaultBuiltInRange;
+  }, [isBuiltInTimesheetReport, timesheetStart, timesheetEnd, defaultBuiltInRange]);
+
+  useEffect(() => {
+    if (!isBuiltInTimesheetReport) return;
+    setTimesheetStart(defaultBuiltInRange.start_date);
+    setTimesheetEnd(defaultBuiltInRange.end_date);
+  }, [isBuiltInTimesheetReport, defaultBuiltInRange.start_date, defaultBuiltInRange.end_date, reportKey]);
 
   const { data: templateGrid, isLoading: loadingGrid } = useQuery({
     queryKey: ['hrTemplates', 'grid', reportKey, gridParams.start_date, gridParams.end_date],
@@ -506,13 +574,25 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
     );
   }, [multiSheets]);
 
-  if (!reportDef) {
-    return (
-      <div className={compact ? 'py-4' : 'p-6'}>
-        <PageHeader title="HR Report" description="Report type không tồn tại" />
-      </div>
+  useEffect(() => {
+    setBuiltInTimesheetCodeSearch('');
+    setBuiltInTimesheetNameSearch('');
+  }, [reportKey]);
+
+  const activeBuiltInSheetRaw = useMemo(
+    () => multiSheets?.find((sheet) => sheet.name === activeTemplateSheet) || multiSheets?.[0] || null,
+    [multiSheets, activeTemplateSheet],
+  );
+
+  const activeBuiltInSheet = useMemo(() => {
+    if (!activeBuiltInSheetRaw) return null;
+    if (reportKey !== 'official-timesheet' && reportKey !== 'temp-timesheet') return activeBuiltInSheetRaw;
+    return filterBuiltInTimesheetSheet(
+      activeBuiltInSheetRaw as SheetItem,
+      builtInTimesheetCodeSearch,
+      builtInTimesheetNameSearch,
     );
-  }
+  }, [activeBuiltInSheetRaw, reportKey, builtInTimesheetCodeSearch, builtInTimesheetNameSearch]);
 
   const createdAt = (latestUpload as any)?.created_at
     ? new Date((latestUpload as any).created_at).toLocaleString()
@@ -534,7 +614,6 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
         })
       : null;
   const templateMerges = singleGrid?.merges ? singleGrid.merges.map((m) => ({ s: m.s, e: m.e })) : [];
-  const activeBuiltInSheet = multiSheets?.find((sheet) => sheet.name === activeTemplateSheet) || multiSheets?.[0] || null;
   const isAttendanceRateLayout = isBuiltIn && reportKey === 'attendance-rate';
   const reportSummary = useMemo(() => {
     if (isBuiltIn) {
@@ -542,6 +621,14 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
     }
     return buildHrUploadSummary(reportKey, reportStats as any, latestUpload as any, sheetNames);
   }, [gridParams, isBuiltIn, latestUpload, reportKey, reportStats, sheetNames, templateGrid]);
+
+  if (!reportDef) {
+    return (
+      <div className={compact ? 'py-4' : 'p-6'}>
+        <PageHeader title={t('hrReport.pageInvalidTitle')} description={t('hrReport.pageInvalidDesc')} />
+      </div>
+    );
+  }
 
   return (
     <div className={wrapperClass}>
@@ -569,7 +656,7 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
             </div>
             {reportSummary.notes.length > 0 ? (
               <div className="rounded-lg border bg-background p-3">
-                <div className="text-sm font-medium">Nhận xét nhanh</div>
+                <div className="text-sm font-medium">{t('hrReport.quickComment')}</div>
                 <div className="mt-2 space-y-1 text-sm text-muted-foreground">
                   {reportSummary.notes.map((note) => (
                     <div key={note}>- {note}</div>
@@ -584,29 +671,112 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
       {isBuiltIn && (
         <Card className="mb-4">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Báo cáo từ dữ liệu hệ thống</CardTitle>
+            <CardTitle className="text-base">{t('hrReport.builtInReportTitle')}</CardTitle>
             <CardDescription className="text-xs">
               {reportKey === 'attendance-rate'
-                ? `Chấm công + NV thời vụ + NCC. Khoảng: ${gridParams.start_date} → ${gridParams.end_date}`
-                : `Bộ lọc: ${gridParams.start_date} → ${gridParams.end_date}`}
+                ? t('hrReport.builtInDescAttendance', {
+                    start: gridParams.start_date,
+                    end: gridParams.end_date,
+                  })
+                : t('hrReport.builtInDescFilter', {
+                    start: gridParams.start_date,
+                    end: gridParams.end_date,
+                  })}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 pt-0">
+            {isBuiltInTimesheetReport && (
+              <div className="rounded-md border border-border bg-muted/20 p-3 space-y-4">
+                <div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="hr-ts-start" className="text-xs text-muted-foreground">
+                        {t('reports.fromDate')}
+                      </Label>
+                      <Input
+                        id="hr-ts-start"
+                        type="date"
+                        className="h-9"
+                        value={timesheetStart}
+                        onChange={(e) => setTimesheetStart(e.target.value)}
+                        max={timesheetEnd || undefined}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="hr-ts-end" className="text-xs text-muted-foreground">
+                        {t('reports.toDate')}
+                      </Label>
+                      <Input
+                        id="hr-ts-end"
+                        type="date"
+                        className="h-9"
+                        value={timesheetEnd}
+                        onChange={(e) => setTimesheetEnd(e.target.value)}
+                        min={timesheetStart || undefined}
+                      />
+                    </div>
+                    <div className="space-y-1 sm:col-span-2 lg:col-span-1">
+                      <Label htmlFor="hr-ts-month" className="text-xs text-muted-foreground">
+                        {t('reports.quickPickMonth')}
+                      </Label>
+                      <Input
+                        id="hr-ts-month"
+                        type="month"
+                        className="h-9"
+                        value={fullCalendarMonthValue(timesheetStart, timesheetEnd)}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (!v) return;
+                          const { start, end } = calendarMonthRangeFromYm(v);
+                          setTimesheetStart(start);
+                          setTimesheetEnd(end);
+                        }}
+                      />
+                      <p className="text-xs text-muted-foreground">{t('reports.quickPickMonthHint')}</p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">{t('hrReport.timesheetDateRangeHint')}</p>
+                </div>
+                <div className="border-t border-border pt-3">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                    <div className="w-full md:w-56">
+                      <Label className="text-xs text-muted-foreground">{t('hrReport.timesheetSearchCode')}</Label>
+                      <Input
+                        className="h-9 mt-1"
+                        value={builtInTimesheetCodeSearch}
+                        onChange={(e) => setBuiltInTimesheetCodeSearch(e.target.value)}
+                        placeholder={t('hrReport.timesheetSearchCodePh')}
+                      />
+                    </div>
+                    <div className="w-full md:flex-1">
+                      <Label className="text-xs text-muted-foreground">{t('hrReport.timesheetSearchName')}</Label>
+                      <Input
+                        className="h-9 mt-1"
+                        value={builtInTimesheetNameSearch}
+                        onChange={(e) => setBuiltInTimesheetNameSearch(e.target.value)}
+                        placeholder={t('hrReport.timesheetSearchNamePh')}
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">{t('hrReport.timesheetSearchHint')}</p>
+                </div>
+              </div>
+            )}
             {loadingGrid ? (
-              <div className="py-4 text-center text-sm text-muted-foreground">Đang tải dữ liệu...</div>
+              <div className="py-4 text-center text-sm text-muted-foreground">{t('hrReport.loadingData')}</div>
             ) : isAttendanceRateLayout ? (
               <Tabs defaultValue="overview" className="space-y-3">
                 <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                   <TabsList className="w-full lg:w-auto">
                     <TabsTrigger value="overview" className="flex-1 lg:flex-none">
-                      Tổng quan
+                      {t('hrReport.tabOverview')}
                     </TabsTrigger>
                     <TabsTrigger value="detail" className="flex-1 lg:flex-none">
-                      Bảng chi tiết
+                      {t('hrReport.tabDetail')}
                     </TabsTrigger>
                   </TabsList>
                   <div className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-                    Gợi ý: xem nhanh ở tab Tổng quan, chuyển sang Bảng chi tiết khi cần kiểm tra đầy đủ theo NCC.
+                    {t('hrReport.tabHint')}
                   </div>
                 </div>
 
@@ -614,7 +784,7 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
                   {!loadingGrid && templateGrid ? (
                     <HrChartFromGrid reportType={reportKey} templateGrid={templateGrid} />
                   ) : (
-                    <div className="py-4 text-center text-sm text-muted-foreground">Chưa có dữ liệu biểu đồ cho khoảng thời gian này.</div>
+                    <div className="py-4 text-center text-sm text-muted-foreground">{t('hrReport.noChartData')}</div>
                   )}
                 </TabsContent>
 
@@ -626,7 +796,7 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
                           key={sheet.name}
                           type="button"
                           size="sm"
-                          variant={sheet.name === activeBuiltInSheet?.name ? 'default' : 'outline'}
+                          variant={sheet.name === activeBuiltInSheetRaw?.name ? 'default' : 'outline'}
                           className="h-8"
                           onClick={() => setActiveTemplateSheet(sheet.name)}
                         >
@@ -636,12 +806,29 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
                     </div>
                   ) : null}
 
-                  {activeBuiltInSheet ? (
+                  {activeBuiltInSheetRaw && activeBuiltInSheet ? (
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
-                        <span>Dữ liệu chi tiết theo NCC cho khoảng {gridParams.start_date} → {gridParams.end_date}.</span>
-                        <span>Cuộn ngang để xem đủ các mốc tháng / tuần / ngày.</span>
+                        <span>
+                          {t('hrReport.detailByNccRange', {
+                            start: gridParams.start_date,
+                            end: gridParams.end_date,
+                          })}
+                        </span>
+                        <span>{t('hrReport.scrollHorizontally')}</span>
                       </div>
+                      {(() => {
+                        const hi = findTimesheetHeaderRowIndex(activeBuiltInSheet.rows);
+                        const filteredEmpty =
+                          (builtInTimesheetCodeSearch.trim() || builtInTimesheetNameSearch.trim()) &&
+                          (activeBuiltInSheet.name === 'Attendance list' ||
+                            activeBuiltInSheet.name === 'Data') &&
+                          hi >= 0 &&
+                          activeBuiltInSheet.rows.length <= hi + 1;
+                        return filteredEmpty ? (
+                          <p className="text-sm text-muted-foreground">{t('hrReport.attendanceListFilteredEmpty')}</p>
+                        ) : null;
+                      })()}
                       <div className="rounded border">
                         <ExcelGrid
                           rows={activeBuiltInSheet.rows}
@@ -658,8 +845,13 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
                   ) : singleGrid && (singleGrid.rows?.length ?? 0) > 0 ? (
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
-                        <span>Dữ liệu chi tiết theo NCC cho khoảng {gridParams.start_date} → {gridParams.end_date}.</span>
-                        <span>Cuộn ngang để xem đủ các mốc tháng / tuần / ngày.</span>
+                        <span>
+                          {t('hrReport.detailByNccRange', {
+                            start: gridParams.start_date,
+                            end: gridParams.end_date,
+                          })}
+                        </span>
+                        <span>{t('hrReport.scrollHorizontally')}</span>
                       </div>
                       <div className="rounded border">
                         <ExcelGrid
@@ -675,11 +867,11 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
                       </div>
                     </div>
                   ) : (
-                    <div className="py-4 text-center text-sm text-muted-foreground">Chưa có dữ liệu chi tiết cho khoảng thời gian này.</div>
+                    <div className="py-4 text-center text-sm text-muted-foreground">{t('hrReport.noDetailData')}</div>
                   )}
                 </TabsContent>
               </Tabs>
-            ) : activeBuiltInSheet ? (
+            ) : activeBuiltInSheetRaw && activeBuiltInSheet ? (
               <div className="space-y-3">
                 {!loadingGrid && templateGrid && (
                   <HrChartFromGrid reportType={reportKey} templateGrid={templateGrid} />
@@ -691,7 +883,7 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
                         key={sheet.name}
                         type="button"
                         size="sm"
-                        variant={sheet.name === activeBuiltInSheet.name ? 'default' : 'outline'}
+                        variant={sheet.name === activeBuiltInSheetRaw.name ? 'default' : 'outline'}
                         className="h-8"
                         onClick={() => setActiveTemplateSheet(sheet.name)}
                       >
@@ -700,6 +892,18 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
                     ))}
                   </div>
                 ) : null}
+                {(() => {
+                  const hi = findTimesheetHeaderRowIndex(activeBuiltInSheet.rows);
+                  const filteredEmpty =
+                    (builtInTimesheetCodeSearch.trim() || builtInTimesheetNameSearch.trim()) &&
+                    (activeBuiltInSheet.name === 'Attendance list' ||
+                      activeBuiltInSheet.name === 'Data') &&
+                    hi >= 0 &&
+                    activeBuiltInSheet.rows.length <= hi + 1;
+                  return filteredEmpty ? (
+                    <p className="text-sm text-muted-foreground">{t('hrReport.attendanceListFilteredEmpty')}</p>
+                  ) : null;
+                })()}
                 <div className="rounded border">
                   <ExcelGrid
                     rows={activeBuiltInSheet.rows}
@@ -731,7 +935,7 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
                 {!loadingGrid && templateGrid && (
                   <HrChartFromGrid reportType={reportKey} templateGrid={templateGrid} />
                 )}
-                <div className="py-4 text-center text-sm text-muted-foreground">Chưa có dữ liệu cho khoảng thời gian này.</div>
+                <div className="py-4 text-center text-sm text-muted-foreground">{t('hrReport.noDataForRange')}</div>
               </div>
             )}
           </CardContent>
@@ -746,11 +950,14 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
       {!isBuiltIn && latestUpload && sheetNames.length > 0 && (
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle>File Excel đã tải lên</CardTitle>
+            <CardTitle>{t('hrReport.excelUploadedTitle')}</CardTitle>
             <CardDescription>
-              {isBuiltIn
-                ? `Dữ liệu từ file đã upload (loại báo cáo: ${reportDef?.title ?? reportKey}). Cập nhật lúc: ${createdAt}.`
-                : 'Chọn sheet để xem nội dung (hỗ trợ file nhiều sheet).'}
+              {createdAt
+                ? t('hrReport.excelUploadedDesc', {
+                    title: String(reportDef?.title ?? reportKey),
+                    time: createdAt,
+                  })
+                : t('hrReport.excelPickSheet')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -775,14 +982,14 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
                   onClick={() => setRowLimit((v) => v + 100)}
                   disabled={!sheetView || !(sheetView as any).hasMoreRows}
                 >
-                  +100 dòng
+                  {t('hrReport.moreRows')}
                 </Button>
                 <Button
                   variant="outline"
                   onClick={() => setColLimit((v) => v + 50)}
                   disabled={!sheetView || !(sheetView as any).hasMoreCols}
                 >
-                  +50 cột
+                  {t('hrReport.moreCols')}
                 </Button>
               </div>
               <div className="flex gap-2 items-end">
@@ -803,27 +1010,31 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
                   onClick={() => document.getElementById(`hr-upload-${reportKey}`)?.click()}
                   disabled={uploadMutation.isPending}
                 >
-                  {uploadMutation.isPending ? 'Đang tải lên…' : 'Chọn file mới'}
+                  {uploadMutation.isPending ? t('hrReport.uploading') : t('hrReport.pickNewFile')}
                 </Button>
               </div>
             </div>
 
             {loadingSheet ? (
-              <div className="text-sm text-muted-foreground">Đang tải sheet...</div>
+              <div className="text-sm text-muted-foreground">{t('hrReport.loadingSheet')}</div>
             ) : sheetError ? (
               <div className="text-sm text-destructive">
-                {(sheetError as any)?.message || 'Có lỗi khi tải sheet'}
+                {(sheetError as any)?.message || t('hrReport.sheetLoadError')}
               </div>
             ) : sheetView ? (
               <div className="space-y-3">
                 <div className="text-xs text-muted-foreground">
-                  Đang hiển thị {(sheetView as any)?.slice?.rows}×{(sheetView as any)?.slice?.cols} ô. Tổng sheet{' '}
-                  {(sheetView as any)?.total?.rows}×{(sheetView as any)?.total?.cols}.
+                  {t('hrReport.sheetViewSize', {
+                    r: String((sheetView as any)?.slice?.rows ?? ''),
+                    c: String((sheetView as any)?.slice?.cols ?? ''),
+                    tr: String((sheetView as any)?.total?.rows ?? ''),
+                    tc: String((sheetView as any)?.total?.cols ?? ''),
+                  })}
                 </div>
                 <ExcelGrid rows={(sheetView as any).rows || []} merges={(sheetView as any).merges || []} />
               </div>
             ) : (
-              <div className="text-sm text-muted-foreground">Chưa có dữ liệu sheet.</div>
+              <div className="text-sm text-muted-foreground">{t('hrReport.noSheetData')}</div>
             )}
           </CardContent>
         </Card>
@@ -833,10 +1044,8 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
       {!isBuiltIn && !latestUpload && !loadingLatest && (
         <Card className="mb-6 border-dashed">
           <CardHeader>
-            <CardTitle className="text-base">Chưa có file Excel nào</CardTitle>
-            <CardDescription>
-              Tải file lên để dữ liệu hiển thị ngay trên biểu mẫu. Có thể upload tại đây hoặc tại trang Upload (chọn đúng loại báo cáo).
-            </CardDescription>
+            <CardTitle className="text-base">{t('hrReport.noExcelFileTitle')}</CardTitle>
+            <CardDescription>{t('hrReport.noExcelFileDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
             <input
@@ -855,7 +1064,7 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
               onClick={() => document.getElementById(`hr-upload-first-${reportKey}`)?.click()}
               disabled={uploadMutation.isPending}
             >
-              {uploadMutation.isPending ? 'Đang tải lên…' : 'Chọn file Excel để tải lên'}
+              {uploadMutation.isPending ? t('hrReport.uploading') : t('hrReport.pickExcelUpload')}
             </Button>
           </CardContent>
         </Card>

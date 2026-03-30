@@ -250,7 +250,7 @@ export const createEmployee = async (req: Request, res: Response) => {
       'new_employees',
       'Có 1 nhân viên mới được thêm',
       `Nhân viên ${name} (${employee_code}) đã được thêm vào hệ thống`,
-      { count: 1, employee_code, employee_name: name }
+      { count: 1, employee_code, employee_name: name, link: '/employees' }
     );
     res.status(201).json({ ...employee, family_members: fam });
   } catch (error: any) {

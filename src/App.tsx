@@ -16,9 +16,7 @@ import ReportsPage from "./pages/ReportsPage";
 import HistoryPage from "./pages/HistoryPage";
 import RealtimePage from "./pages/RealtimePage";
 import ReportsRangePage from "./pages/ReportsRangePage";
-import ReportsDayPage from "./pages/ReportsDayPage";
-import ReportsMonthPage from "./pages/ReportsMonthPage";
-import ReportsYearPage from "./pages/ReportsYearPage";
+import ReportsPeriodPage from "./pages/ReportsPeriodPage";
 import DepartmentPage from "./pages/DepartmentPage";
 import DepartmentsListPage from "./pages/DepartmentsListPage";
 import ComparePage from "./pages/ComparePage";
@@ -57,9 +55,10 @@ const App = () => (
             <Route path="/employees" element={<EmployeesPage />} />
             <Route path="/employees/new" element={<EmployeesPage />} />
             <Route path="/reports" element={<ReportsPage />} />
-            <Route path="/reports/day" element={<ReportsDayPage />} />
-            <Route path="/reports/month" element={<ReportsMonthPage />} />
-            <Route path="/reports/year" element={<ReportsYearPage />} />
+            <Route path="/reports/period" element={<ReportsPeriodPage />} />
+            <Route path="/reports/day" element={<Navigate to="/reports/period?mode=day" replace />} />
+            <Route path="/reports/month" element={<Navigate to="/reports/period?mode=month" replace />} />
+            <Route path="/reports/year" element={<Navigate to="/reports/period?mode=month" replace />} />
             <Route path="/reports/range" element={<ReportsRangePage />} />
             <Route path="/reports/compare" element={<ComparePage />} />
             <Route path="/reports/weekly-temporary-workers" element={<WeeklyTemporaryWorkersPage />} />

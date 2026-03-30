@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationsAPI } from '@/services/api';
+import { resolveNotificationPath } from '@/lib/notificationNavigation';
 import { useToast } from '@/hooks/use-toast';
 import { toast as sonnerToast } from 'sonner';
 import { useDashboardTab } from '@/contexts/DashboardTabContext';
@@ -335,9 +336,35 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
   });
 
   const handleNotificationClick = (notification: Notification) => {
-    if (notification.is_read === 0) {
-      markAsReadMutation.mutate(notification.id);
+    const target = resolveNotificationPath(notification);
+    const unread = notification.is_read === 0;
+
+    const markReadSoon = () => {
+      if (!unread) return;
+      setTimeout(() => markAsReadMutation.mutate(notification.id), 0);
+    };
+
+    if (!target) {
+      if (unread) markAsReadMutation.mutate(notification.id);
+      return;
     }
+
+    if (target.external) {
+      void (async () => {
+        if (unread) {
+          try {
+            await markAsReadMutation.mutateAsync(notification.id);
+          } catch {
+            /* vẫn mở link */
+          }
+        }
+        window.location.assign(target.href);
+      })();
+      return;
+    }
+
+    navigate(target.href);
+    markReadSoon();
   };
 
   const handleMarkAllAsRead = () => {

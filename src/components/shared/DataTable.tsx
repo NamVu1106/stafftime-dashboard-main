@@ -18,6 +18,10 @@ interface DataTableProps<T> {
   searchPlaceholder?: string;
   onSearch?: (query: string) => void;
   pageSize?: number;
+  /** Mặc định true: cắt trang + footer << < 1/2 > >>. Đặt false khi cha đã phân trang server (API). */
+  clientPagination?: boolean;
+  /** Thanh tìm kiếm + chọn số dòng/trang. Tắt khi đã có bộ lọc bên ngoài. */
+  showToolbar?: boolean;
 }
 
 export function DataTable<T extends { id: number | string }>({
@@ -26,6 +30,8 @@ export function DataTable<T extends { id: number | string }>({
   searchPlaceholder,
   onSearch,
   pageSize: initialPageSize = 10,
+  clientPagination = true,
+  showToolbar = true,
 }: DataTableProps<T>) {
   const { t } = useI18n();
   const [currentPage, setCurrentPage] = useState(1);
@@ -62,10 +68,12 @@ export function DataTable<T extends { id: number | string }>({
     return sortConfig.direction === 'asc' ? comparison : -comparison;
   });
 
-  // Pagination
-  const totalPages = Math.ceil(sortedData.length / pageSize);
+  // Pagination (chỉ khi clientPagination — tránh trùng với phân trang API ở component cha)
+  const totalPages = Math.ceil(sortedData.length / pageSize) || 1;
   const startIndex = (currentPage - 1) * pageSize;
-  const paginatedData = sortedData.slice(startIndex, startIndex + pageSize);
+  const paginatedData = clientPagination
+    ? sortedData.slice(startIndex, startIndex + pageSize)
+    : sortedData;
 
   const handleSort = (key: string) => {
     setSortConfig(prev => {
@@ -91,36 +99,39 @@ export function DataTable<T extends { id: number | string }>({
 
   return (
     <div className="bg-card rounded-lg border border-border shadow-sm animate-fade-in-up transition-all duration-300 hover:shadow-md">
-      {/* Header */}
-      <div className="p-4 border-b border-border flex flex-col sm:flex-row gap-4 justify-between">
-        {searchPlaceholder && (
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder={defaultSearchPlaceholder}
-            value={searchQuery}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="pl-10"
-          />
+      {showToolbar && (searchPlaceholder || clientPagination) && (
+        <div className="p-4 border-b border-border flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+          {searchPlaceholder ? (
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder={defaultSearchPlaceholder}
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          ) : null}
+          {clientPagination ? (
+            <div className={`flex items-center gap-2 ${searchPlaceholder ? 'sm:ml-auto' : ''}`}>
+              <span className="text-sm text-muted-foreground">{t('common.display')}</span>
+              <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
+                <SelectTrigger className="w-20">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-sm text-muted-foreground">{t('common.rows')}</span>
+            </div>
+          ) : null}
         </div>
-        )}
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{t('common.display')}</span>
-          <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
-            <SelectTrigger className="w-20">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="10">10</SelectItem>
-              <SelectItem value="25">25</SelectItem>
-              <SelectItem value="50">50</SelectItem>
-              <SelectItem value="100">100</SelectItem>
-            </SelectContent>
-          </Select>
-          <span className="text-sm text-muted-foreground">{t('common.rows')}</span>
-        </div>
-      </div>
+      )}
 
       {/* Table - không overflow-x ở đây để thanh kéo ngang nằm ở viewport (main), chỉ giới hạn chiều dọc */}
       <div className="overflow-y-auto max-h-[calc(100vh-300px)] relative w-max min-w-full">
@@ -197,49 +208,60 @@ export function DataTable<T extends { id: number | string }>({
         </table>
       </div>
 
-      {/* Pagination */}
-      <div className="p-4 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
-          {t('common.showing')} {startIndex + 1} - {Math.min(startIndex + pageSize, sortedData.length)} {t('common.of')} {sortedData.length} {t('common.rows')}
-        </p>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setCurrentPage(1)}
-            disabled={currentPage === 1}
-          >
-            <ChevronsLeft className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setCurrentPage(p => p - 1)}
-            disabled={currentPage === 1}
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-          <span className="px-4 text-sm">
-            {t('common.page')} {currentPage} / {totalPages || 1}
-          </span>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setCurrentPage(p => p + 1)}
-            disabled={currentPage === totalPages}
-          >
-            <ChevronRight className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setCurrentPage(totalPages)}
-            disabled={currentPage === totalPages}
-          >
-            <ChevronsRight className="w-4 h-4" />
-          </Button>
+      {clientPagination && (
+        <div className="px-4 py-3 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground tabular-nums">
+            {t('common.showing')} {sortedData.length === 0 ? 0 : startIndex + 1} –{' '}
+            {Math.min(startIndex + pageSize, sortedData.length)} {t('common.of')} {sortedData.length}{' '}
+            {t('common.rows')}
+          </p>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              aria-label={t('reports.firstPage')}
+            >
+              <ChevronsLeft className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setCurrentPage((p) => p - 1)}
+              disabled={currentPage === 1}
+              aria-label={t('reports.previous')}
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <span className="px-3 text-sm tabular-nums min-w-[4.5rem] text-center">
+              {currentPage} / {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setCurrentPage((p) => p + 1)}
+              disabled={currentPage >= totalPages}
+              aria-label={t('reports.next')}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage >= totalPages}
+              aria-label={t('reports.lastPage')}
+            >
+              <ChevronsRight className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

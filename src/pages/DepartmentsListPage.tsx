@@ -41,7 +41,7 @@ const DepartmentsListPage = () => {
     <div>
       <PageHeader
         title={t('sidebar.departments')}
-        description={t('department.listDescription') || 'Chọn bộ phận để xem thống kê và danh sách nhân viên.'}
+        description={t('department.listDescription')}
       />
       {isLoading && (
         <div className="text-center py-12 text-muted-foreground">{t('common.loading')}</div>

@@ -577,6 +577,7 @@ export const uploadEmployees = [
             `Đã thêm ${newCount} nhân viên mới vào hệ thống`,
             {
               count: newCount,
+              link: '/employees',
             }
           );
         }
@@ -1782,6 +1783,7 @@ export const uploadTimekeeping = [
           {
             count: insertedCount,
             dateRange: dateRangeResponse,
+            link: '/upload',
           }
         );
         
@@ -1840,6 +1842,7 @@ export const uploadTimekeeping = [
             {
               count: lateCount,
               date: today,
+              link: '/reports/period?mode=day',
             }
           );
         }

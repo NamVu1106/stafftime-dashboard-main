@@ -19,6 +19,70 @@ import { employeesAPI, uploadAPI } from '@/services/api';
 import { Employee, FamilyMember } from '@/data/mockData';
 import { useI18n } from '@/hooks/useI18n';
 
+function stripVi(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function excelCellStr(v: unknown): string {
+  if (v == null || v === '') return '';
+  if (typeof v === 'object' && v instanceof Date && !isNaN(v.getTime())) return v.toISOString();
+  return String(v).trim();
+}
+
+/** Cột mã NV (file chính thức / thời vụ có header khác nhau) */
+function isLikelyEmployeeCodeColumn(header: string): boolean {
+  const x = stripVi(header);
+  if (/\bma\s*nv\b/.test(x)) return true;
+  if (x.includes('ma nhan vien')) return true;
+  return false;
+}
+
+function isLikelyEmployeeNameColumn(header: string): boolean {
+  const x = stripVi(header);
+  if (x.includes('ho') && x.includes('ten')) return true;
+  return false;
+}
+
+/** Lọc dòng Excel theo mã và/hoặc họ tên (không phân biệt hoa thường, bỏ dấu) */
+function filterExcelEmployeeRows(
+  rows: Record<string, unknown>[],
+  headers: string[],
+  codeQuery: string,
+  nameQuery: string,
+): Record<string, unknown>[] {
+  const cq = stripVi(codeQuery);
+  const nq = stripVi(nameQuery);
+  if (!cq && !nq) return rows;
+
+  const codeCols = headers.filter((h) => h && isLikelyEmployeeCodeColumn(h));
+  const nameCols = headers.filter((h) => h && isLikelyEmployeeNameColumn(h));
+
+  return rows.filter((row) => {
+    if (cq) {
+      const fromCodeCols = codeCols.map((h) => stripVi(excelCellStr(row[h]))).join('\u0000');
+      const haystack =
+        codeCols.length > 0
+          ? fromCodeCols
+          : headers.map((h) => stripVi(excelCellStr(row[h]))).join('\u0000');
+      if (!haystack.includes(cq)) return false;
+    }
+    if (nq) {
+      const fromNameCols = nameCols.map((h) => stripVi(excelCellStr(row[h]))).join('\u0000');
+      const haystack =
+        nameCols.length > 0
+          ? fromNameCols
+          : headers.map((h) => stripVi(excelCellStr(row[h]))).join('\u0000');
+      if (!haystack.includes(nq)) return false;
+    }
+    return true;
+  });
+}
+
 const EmployeesPage = () => {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -32,6 +96,8 @@ const EmployeesPage = () => {
   const [activeTab, setActiveTab] = useState<'list' | 'official' | 'seasonal'>('list');
   const [officialPage, setOfficialPage] = useState(1);
   const [seasonalPage, setSeasonalPage] = useState(1);
+  const [excelCodeSearch, setExcelCodeSearch] = useState('');
+  const [excelNameSearch, setExcelNameSearch] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
@@ -108,6 +174,20 @@ const EmployeesPage = () => {
   const officialRows = officialData?.rows ?? [];
   const seasonalHeaders = seasonalData?.headers ?? [];
   const seasonalRows = seasonalData?.rows ?? [];
+
+  const filteredOfficialRows = useMemo(
+    () => filterExcelEmployeeRows(officialRows, officialHeaders, excelCodeSearch, excelNameSearch),
+    [officialRows, officialHeaders, excelCodeSearch, excelNameSearch],
+  );
+  const filteredSeasonalRows = useMemo(
+    () => filterExcelEmployeeRows(seasonalRows, seasonalHeaders, excelCodeSearch, excelNameSearch),
+    [seasonalRows, seasonalHeaders, excelCodeSearch, excelNameSearch],
+  );
+
+  useEffect(() => {
+    setOfficialPage(1);
+    setSeasonalPage(1);
+  }, [excelCodeSearch, excelNameSearch]);
 
   // Transform data to match frontend format (convert family_members to family_relations)
   const transformedEmployees = useMemo(() => {
@@ -364,7 +444,7 @@ const EmployeesPage = () => {
     if (!file.type.startsWith('image/')) {
       toast({
         title: t('common.error'),
-        description: 'Vui lòng chọn file ảnh (JPG, PNG, WebP, GIF).',
+        description: t('employees.avatarPickImage'),
         variant: 'destructive',
       });
       return;
@@ -373,7 +453,7 @@ const EmployeesPage = () => {
     if (file.size > maxBytes) {
       toast({
         title: t('common.error'),
-        description: 'Ảnh quá lớn (tối đa 10MB).',
+        description: t('employees.avatarTooLarge'),
         variant: 'destructive',
       });
       return;
@@ -392,7 +472,7 @@ const EmployeesPage = () => {
     } catch (err: any) {
       toast({
         title: t('common.error'),
-        description: err?.message || 'Không đọc được ảnh. Vui lòng thử lại.',
+        description: err?.message || t('employees.avatarReadError'),
         variant: 'destructive',
       });
     }
@@ -406,7 +486,7 @@ const EmployeesPage = () => {
       img.src = avatarCropSrc;
       await new Promise<void>((resolve, reject) => {
         img.onload = () => resolve();
-        img.onerror = () => reject(new Error('Không tải được ảnh để crop.'));
+        img.onerror = () => reject(new Error(t('employees.avatarCropImageLoadError')));
       });
 
       const sourceSizeBase = Math.min(img.naturalWidth, img.naturalHeight);
@@ -430,14 +510,14 @@ const EmployeesPage = () => {
       canvas.width = 512;
       canvas.height = 512;
       const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Không tạo được vùng xử lý ảnh.');
+      if (!ctx) throw new Error(t('employees.avatarCanvasError'));
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, sx, sy, sourceSize, sourceSize, 0, 0, 512, 512);
 
       const blob = await new Promise<Blob>((resolve, reject) => {
         canvas.toBlob(
-          (b) => (b ? resolve(b) : reject(new Error('Không thể xuất ảnh đã crop.'))),
+          (b) => (b ? resolve(b) : reject(new Error(t('employees.avatarExportError')))),
           'image/jpeg',
           0.9
         );
@@ -450,12 +530,12 @@ const EmployeesPage = () => {
       setAvatarCropSrc('');
       toast({
         title: t('common.success'),
-        description: 'Đã crop và tải ảnh hồ sơ lên máy chủ.',
+        description: t('employees.avatarUploadSuccess'),
       });
     } catch (err: any) {
       toast({
         title: t('common.error'),
-        description: err?.message || 'Không crop/tải được ảnh. Vui lòng thử lại.',
+        description: err?.message || t('employees.avatarCropUploadError'),
         variant: 'destructive',
       });
     } finally {
@@ -466,8 +546,8 @@ const EmployeesPage = () => {
   const handleSubmit = () => {
     if (!formData.employee_code || !formData.name || !formData.date_of_birth || !formData.department) {
       toast({
-        title: 'Lỗi',
-        description: 'Vui lòng điền đầy đủ thông tin bắt buộc',
+        title: t('common.error'),
+        description: t('employees.fillRequiredFields'),
         variant: 'destructive',
       });
       return;
@@ -806,7 +886,7 @@ const EmployeesPage = () => {
     onPageChange,
   }: {
     headers: string[];
-    rows: Record<string, any>[];
+    rows: Record<string, unknown>[];
     loading: boolean;
     page: number;
     onPageChange: (page: number) => void;
@@ -833,7 +913,7 @@ const EmployeesPage = () => {
     if (displayHeaders.length === 0 && rows.length === 0) {
       return (
         <p className="text-muted-foreground py-8 text-center">
-          Chưa có dữ liệu. Vui lòng upload file Excel tại trang Upload Data (Nhân viên chính thức / Nhân viên thời vụ).
+          {t('employees.excelTabEmpty')}
         </p>
       );
     }
@@ -896,6 +976,31 @@ const EmployeesPage = () => {
       </div>
     );
   };
+
+  const excelEmployeeSearchToolbar = (
+    <div className="rounded-md border border-border bg-card/50 p-3">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end">
+        <div className="w-full md:w-64">
+          <Label className="text-xs text-muted-foreground">{t('employees.excelSearchCode')}</Label>
+          <Input
+            className="h-9 mt-1"
+            value={excelCodeSearch}
+            onChange={(e) => setExcelCodeSearch(e.target.value)}
+            placeholder={t('employees.excelSearchCodePlaceholder')}
+          />
+        </div>
+        <div className="w-full md:flex-1">
+          <Label className="text-xs text-muted-foreground">{t('employees.excelSearchName')}</Label>
+          <Input
+            className="h-9 mt-1"
+            value={excelNameSearch}
+            onChange={(e) => setExcelNameSearch(e.target.value)}
+            placeholder={t('employees.excelSearchNamePlaceholder')}
+          />
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -1017,9 +1122,15 @@ const EmployeesPage = () => {
           <p className="text-sm text-muted-foreground">
             Dữ liệu từ file mẫu THÔNG TIN CNV TỔNG VINA. Hiển thị đúng cột và thứ tự như Excel. Thanh cuộn ngang luôn nằm dưới vùng bảng, kéo ngang để xem đủ cột.
           </p>
+          {excelEmployeeSearchToolbar}
+          {!loadingOfficial &&
+            officialRows.length > 0 &&
+            filteredOfficialRows.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t('employees.excelSearchNoMatch')}</p>
+            )}
           <ExcelTable
             headers={officialHeaders}
-            rows={officialRows}
+            rows={filteredOfficialRows}
             loading={loadingOfficial}
             page={officialPage}
             onPageChange={setOfficialPage}
@@ -1030,9 +1141,15 @@ const EmployeesPage = () => {
           <p className="text-sm text-muted-foreground">
             Dữ liệu từ file mẫu Thời vụ tổng 2024. Hiển thị đúng cột và thứ tự như Excel. Thanh cuộn ngang luôn nằm dưới vùng bảng, kéo ngang để xem đủ cột.
           </p>
+          {excelEmployeeSearchToolbar}
+          {!loadingSeasonal &&
+            seasonalRows.length > 0 &&
+            filteredSeasonalRows.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t('employees.excelSearchNoMatch')}</p>
+            )}
           <ExcelTable
             headers={seasonalHeaders}
-            rows={seasonalRows}
+            rows={filteredSeasonalRows}
             loading={loadingSeasonal}
             page={seasonalPage}
             onPageChange={setSeasonalPage}
