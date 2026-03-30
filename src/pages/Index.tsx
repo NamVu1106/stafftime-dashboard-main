@@ -238,11 +238,18 @@ const Index = () => {
   });
 
   const { data: hrAttendanceCountStats } = useQuery({
-    queryKey: ['hrTemplates', 'stats', 'attendance-count', hrTemplateRange.start_date, hrTemplateRange.end_date],
+    queryKey: [
+      'hrTemplates',
+      'stats',
+      'attendance-count',
+      hrTemplateRange.start_date,
+      hrTemplateRange.end_date,
+      'summary',
+    ],
     queryFn: async () => ({
       stats: extractHrBuiltInStats(
         'attendance-count',
-        await hrTemplatesAPI.getGrid('attendance-count', hrTemplateRange)
+        await hrTemplatesAPI.getGrid('attendance-count', { ...hrTemplateRange, summary_only: true })
       ),
     }),
   });

@@ -549,11 +549,12 @@ export const hrExcelAPI = {
 export const hrTemplatesAPI = {
   getGrid: async (
     reportType: string,
-    params: { start_date?: string; end_date?: string }
+    params: { start_date?: string; end_date?: string; summary_only?: boolean }
   ) => {
     const queryParams = new URLSearchParams();
     if (params.start_date) queryParams.append('start_date', params.start_date);
     if (params.end_date) queryParams.append('end_date', params.end_date);
+    if (params.summary_only) queryParams.append('summary_only', '1');
     return request<
       | {
           rows: (string | number)[][];
@@ -564,6 +565,7 @@ export const hrTemplatesAPI = {
           rowHeights?: Record<number, number>;
           hiddenCols?: number[];
           hiddenRows?: number[];
+          productionSnapshot?: import('@/lib/hrBuiltInStats').AttendanceCountProductionSnapshot;
         }
       | {
           sheets: Array<{
@@ -577,6 +579,7 @@ export const hrTemplatesAPI = {
             hiddenCols?: number[];
             hiddenRows?: number[];
           }>;
+          productionSnapshot?: import('@/lib/hrBuiltInStats').AttendanceCountProductionSnapshot;
         }
     >(`/hr-templates/${encodeURIComponent(reportType)}/grid?${queryParams.toString()}`);
   },

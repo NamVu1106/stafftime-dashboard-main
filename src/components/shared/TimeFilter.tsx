@@ -129,6 +129,16 @@ export const TimeFilter = ({ collapsed = false, compact = true }: TimeFilterProp
                 className="h-8 text-xs bg-sidebar-hover/30 border-sidebar-hover text-white"
               />
             </div>
+            <p className="text-[10px] text-sidebar-foreground/75 leading-snug">{t('dashboard.periodMultiDayHint')}</p>
+            {dateRange.start && dateRange.end && dateRange.start !== dateRange.end ? (
+              <button
+                type="button"
+                onClick={() => setDateRange((p) => ({ start: p.end, end: p.end }))}
+                className="text-left text-[11px] text-sidebar-foreground underline underline-offset-2 hover:text-white w-full"
+              >
+                {t('dashboard.snapRangeToEndDay')}
+              </button>
+            ) : null}
             <div className="pt-1 border-t border-sidebar-hover/50">
               <Label className="text-xs text-sidebar-foreground/80 mb-1.5 block">Loại hợp đồng</Label>
               <div className="flex flex-wrap gap-x-3 gap-y-1">

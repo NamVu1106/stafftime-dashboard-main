@@ -89,7 +89,10 @@ export default function HrSummaryPage() {
         HR_STATS_REPORT_TYPES.map(async (type) => {
           try {
             if (BUILT_IN_HR_REPORT_TYPES.has(type)) {
-              const grid = await hrTemplatesAPI.getGrid(type, range);
+              const grid = await hrTemplatesAPI.getGrid(type, {
+                ...range,
+                summary_only: type === 'attendance-count',
+              });
               results[type] = {
                 stats: extractHrBuiltInStats(type, grid),
                 summary: buildHrBuiltInSummary(type, grid, range),

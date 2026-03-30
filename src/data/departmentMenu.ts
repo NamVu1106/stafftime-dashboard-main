@@ -1,4 +1,4 @@
-import { Package, Stethoscope, LayoutGrid, Wallet, Banknote, FileCheck, TrendingUp, ClipboardList, Shield, Users, Building2, Upload, History, FileText, Calendar, GitCompare, Clock, BarChart3, Truck } from 'lucide-react';
+import { Package, Stethoscope, LayoutGrid, Wallet, Banknote, FileCheck, TrendingUp, ClipboardList, Shield, Users, Building2, Upload, History, FileText, Calendar, GitCompare, Clock, BarChart3 } from 'lucide-react';
 import type { MenuTreeItem } from '@/components/dashboard/DepartmentMenuTree';
 
 export type DeptId = 'accounting' | 'administration' | 'hr' | 'congvu' | 'muahang' | 'ehs';
@@ -39,7 +39,6 @@ export const hrMenu: MenuTreeItem[] = [
   { id: 'reports-range', label: 'Báo cáo theo giai đoạn', labelKey: 'deptMenu.reportsRange', icon: Calendar },
   { id: 'reports-compare', label: 'So sánh báo cáo', labelKey: 'deptMenu.reportsCompare', icon: GitCompare },
   { id: 'weekly-temporary-workers', label: 'Công nhân thời vụ 1 ngày', labelKey: 'deptMenu.weeklyTempWorker', icon: Clock },
-  { id: 'vendor-assignments', label: 'Gán Vendor (NCC)', labelKey: 'deptMenu.vendorNcc', icon: Truck },
   { id: 'attendance-rate', label: 'Tỉ lệ đi làm', labelKey: 'deptMenu.attendanceRate', icon: TrendingUp },
   { id: 'temp-timesheet', label: 'Công thời vụ', labelKey: 'deptMenu.tempTimesheet', icon: ClipboardList },
   { id: 'official-timesheet', label: 'Công chính thức', labelKey: 'deptMenu.officialTimesheet', icon: ClipboardList },
@@ -73,7 +72,6 @@ export const hrMenuRoute: Record<string, string> = {
   'reports-range': '/reports/range',
   'reports-compare': '/reports/compare',
   'weekly-temporary-workers': '/reports/weekly-temporary-workers',
-  'vendor-assignments': '/hr/vendor-assignments',
   'attendance-rate': '/hr/attendance-rate',
   'temp-timesheet': '/hr/temp-timesheet',
   'official-timesheet': '/hr/official-timesheet',

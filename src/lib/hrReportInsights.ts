@@ -1,4 +1,4 @@
-import { extractHrBuiltInStats } from '@/lib/hrBuiltInStats';
+import { extractHrBuiltInStats, type AttendanceCountProductionSnapshot } from '@/lib/hrBuiltInStats';
 import { formatNumberPlain } from '@/lib/utils';
 
 type GridRows = (string | number)[][];
@@ -12,6 +12,7 @@ type GridLike =
   | {
       rows?: GridRows;
       sheets?: SheetLike[];
+      productionSnapshot?: AttendanceCountProductionSnapshot;
     }
   | null
   | undefined;
@@ -261,17 +262,34 @@ export function buildHrBuiltInSummary(
     case 'attendance-count': {
       const sums = builtInStats?.attendanceCount?.sums;
       if (!sums) return null;
-      const totalAttended = Number(sums.official || 0) + Number(sums.seasonal || 0);
-      const officialShare = totalAttended > 0 ? ((Number(sums.official || 0) / totalAttended) * 100).toFixed(1) : '0.0';
-      notes.push(`Tỷ trọng chính thức trong tổng đi làm: ${officialShare}%.`);
+      const snap = templateGrid?.productionSnapshot;
+      const ct = Number(sums.official || 0);
+      const tv = Number(sums.seasonal || 0);
+      const nm = Number(sums.newEmployees || 0);
+      const totalAttended = ct + tv;
+      const officialShareCtTv =
+        ct + tv > 0 ? ((ct / (ct + tv)) * 100).toFixed(1) : '0.0';
+      notes.push(`Tỷ trọng chính thức trong khối CT+TV (tổng lượt đi làm kỳ): ${officialShareCtTv}%.`);
+      if (snap) {
+        const rng =
+          snap.aggregationStart && snap.aggregationEnd
+            ? `${snap.aggregationStart} → ${snap.aggregationEnd} (${snap.aggregationDays ?? 1} ngày)`
+            : snap.snapshotDate;
+        notes.push(
+          `Bảng TT SX gộp kỳ ${rng}: nhân lực theo DS (ngày ${snap.snapshotDate}); đi làm / nghỉ là tổng lượt qua các ngày trong bộ lọc.`
+        );
+        if (snap.note) notes.push(snap.note);
+      }
       return {
         title: 'Tóm tắt số lượng đi làm',
-        description: 'So sánh nhân sự chính thức, thời vụ và biến động nhân viên mới trong kỳ.',
+        description: snap
+          ? 'Ca ngày / ca đêm; đi làm và nghỉ cộng dồn theo từng ngày trong kỳ lọc; tỉ lệ = đi làm ÷ (nhân lực × số ngày). Nhân lực hiển thị theo DS tại ngày cuối kỳ (mốc danh sách).'
+          : 'So sánh nhân sự chính thức, thời vụ và biến động nhân viên mới trong kỳ.',
         metrics: [
-          { label: 'Chính thức', value: formatMetricValue(sums.official), hint: 'Người' },
-          { label: 'Thời vụ', value: formatMetricValue(sums.seasonal), hint: 'Người' },
-          { label: 'Tổng đi làm', value: formatMetricValue(totalAttended), hint: 'Người' },
-          { label: 'Nhân viên mới', value: formatMetricValue(sums.newEmployees), hint: 'Người' },
+          { label: 'Chính thức', value: formatMetricValue(sums.official), hint: snap ? 'Tổng lượt đi làm kỳ' : 'Người' },
+          { label: 'Thời vụ', value: formatMetricValue(sums.seasonal), hint: snap ? 'Tổng lượt đi làm kỳ' : 'Người' },
+          { label: 'Tổng đi làm', value: formatMetricValue(totalAttended), hint: snap ? 'Tổng lượt CT + TV (đã gộp NV mới)' : 'Người' },
+          { label: 'Nhân viên mới', value: formatMetricValue(sums.newEmployees), hint: snap ? 'Chỉ để thống kê (đã nằm trong CT/TV)' : 'Người' },
         ],
         notes,
       };

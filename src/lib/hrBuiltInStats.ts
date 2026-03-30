@@ -5,9 +5,38 @@ type HrSheet = {
   rows: (string | number)[][];
 };
 
+/** Khớp JSON `productionSnapshot` từ API attendance-count (TT SX — cộng dồn các ngày trong kỳ lọc). */
+export type AttendanceCountShiftBlock = {
+  headOfficial: number;
+  headSeasonal: number;
+  headNew: number;
+  presentOfficial: number;
+  presentSeasonal: number;
+  presentNew: number;
+  absentOfficial: number;
+  absentSeasonal: number;
+  rateOfficialPct: number;
+  rateSeasonalPct: number;
+};
+
+export type AttendanceCountProductionSnapshot = {
+  snapshotDate: string;
+  aggregationStart: string;
+  aggregationEnd: string;
+  aggregationDays: number;
+  monthYm: string;
+  note?: string;
+  day: AttendanceCountShiftBlock;
+  night: AttendanceCountShiftBlock;
+};
+
 export type HrGridResponse =
-  | { rows: (string | number)[][]; merges?: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }> }
-  | { sheets: HrSheet[] };
+  | {
+      rows: (string | number)[][];
+      merges?: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }>;
+      productionSnapshot?: AttendanceCountProductionSnapshot;
+    }
+  | { sheets: HrSheet[]; productionSnapshot?: AttendanceCountProductionSnapshot };
 
 const normalizeText = (value: unknown) =>
   String(value ?? '')
@@ -44,8 +73,8 @@ const toNumber = (value: unknown): number | null => {
 
 const firstSheetRows = (grid: HrGridResponse | null | undefined) => {
   if (!grid) return [] as (string | number)[][];
-  if ('sheets' in grid) return grid.sheets?.[0]?.rows || [];
-  return grid.rows || [];
+  if ('sheets' in grid && Array.isArray(grid.sheets)) return grid.sheets?.[0]?.rows || [];
+  return 'rows' in grid && Array.isArray(grid.rows) ? grid.rows : [];
 };
 
 const getSummaryValue = (row: (string | number)[]) => {
@@ -151,6 +180,20 @@ const extractAttendanceRateStatsFromGrid = (grid: HrGridResponse) => {
 };
 
 const extractAttendanceCountStatsFromGrid = (grid: HrGridResponse) => {
+  const snap = grid && typeof grid === 'object' ? grid.productionSnapshot : undefined;
+  if (snap) {
+    const official = snap.day.presentOfficial + snap.night.presentOfficial;
+    const seasonal = snap.day.presentSeasonal + snap.night.presentSeasonal;
+    const newEmployees = snap.day.presentNew + snap.night.presentNew;
+    return {
+      sums: {
+        official,
+        seasonal,
+        newEmployees,
+      },
+      usesProductionSnapshot: true as const,
+    };
+  }
   const rows = firstSheetRows(grid);
   const official = getSummaryValue(findMetricRow(rows, ['chinh thuc'], ['so di lam']) || []);
   const seasonal = getSummaryValue(findMetricRow(rows, ['thoi vu'], ['so di lam']) || []);
@@ -161,6 +204,7 @@ const extractAttendanceCountStatsFromGrid = (grid: HrGridResponse) => {
       seasonal: seasonal ?? 0,
       newEmployees: newEmployees ?? 0,
     },
+    usesProductionSnapshot: false as const,
   };
 };
 

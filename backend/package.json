@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "create:user": "ts-node src/scripts/createDefaultUser.ts",
     "test:upload-timekeeping": "ts-node src/scripts/testUploadTimekeeping.ts",
+    "audit:attendance-snapshot": "ts-node src/scripts/auditAttendanceCountSnapshot.ts",
     "test": "vitest run",
     "test:all": "npm run test && npm run test --prefix ..",
     "test:watch": "vitest"

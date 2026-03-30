@@ -525,12 +525,17 @@ async function resolveReportRange(start_date: string, end_date: string) {
     dates.push(toLocalYmd(dt));
   }
 
+  /** Ngày chốt báo cáo SX: không vượt quá hôm nay (server local) — tránh chốt 31/3 khi mới 30/3 → đi làm = 0. */
+  const todayYmd = toLocalYmd(new Date());
+  let snapshotDate = end > todayYmd ? todayYmd : end;
+  if (snapshotDate < start) snapshotDate = start;
+
   return {
     start,
     end,
     dates,
     monthLabel: `${start.slice(5, 7)}/${start.slice(0, 4)}`,
-    snapshotDate: dates[dates.length - 1] || end,
+    snapshotDate,
   };
 }
 
@@ -1649,7 +1654,115 @@ function normTkCode(c: unknown): string {
 
 function isNightShiftTk(shift: unknown): boolean {
   const s = String(shift ?? '').toUpperCase();
-  return /DEM|ĐÊM|DÊM|NIGHT|CA\s*ĐÊM|CA\s*2\b/.test(s);
+  return /DEM|ĐÊM|DÊM|NIGHT|CA\s*ĐÊM|CA\s*2\b|MAIN\s*\(\s*N\)|MAIN\s+N\b/.test(s);
+}
+
+/** Nhận dạng text ca (DS hoặc cột shift trên chấm công) — dùng chung để khớp Excel. */
+function parseRosterMainShift(val: unknown): 'day' | 'night' | null {
+  const raw = String(val ?? '').trim();
+  if (!raw) return null;
+  const s = raw
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (!s) return null;
+
+  const hasMainD = /MAIN\s*\(\s*D\s*\)|MAIN\s+D\b/.test(s);
+  const hasMainN = /MAIN\s*\(\s*N\s*\)|MAIN\s+N\b/.test(s);
+  if (hasMainN && !hasMainD) return 'night';
+  if (hasMainD && !hasMainN) return 'day';
+  if (hasMainN && hasMainD) return null;
+
+  if (/CA\s*DEM|CA\s*DE\b|CA\s*2\b|CA2\b|DEM\b|NIGHT|H\s*DEM|HDEM|\bTOI\b|CHIEU\s*DEM/i.test(s)) {
+    return 'night';
+  }
+  if (/CA\s*NGAY|CA\s*1\b|CA1\b|\bNGAY\b|\bSANG\b|\bTRUA\b|DAY\s*SHIFT|HC\s*NGAY/i.test(s)) {
+    return 'day';
+  }
+
+  const compact = s.replace(/\s+/g, '');
+  if (/^(D|DAY|NGAY)$/.test(compact)) return 'day';
+  if (/^(N|NIGHT|DEM|TOI)$/.test(compact)) return 'night';
+
+  if (/^CA0*1$/i.test(compact) || /^1$/.test(compact)) return 'day';
+  if (/^CA0*2$/i.test(compact) || /^2$/.test(compact)) return 'night';
+
+  if (/SX\s*-?\s*N|SAN\s*XUAT\s*-?\s*N/i.test(s)) return 'night';
+  if (/SX\s*-?\s*D|SAN\s*XUAT\s*-?\s*D/i.test(s)) return 'day';
+
+  return null;
+}
+
+/** Một mã NV / một ngày: gom các dòng chấm công, quyết định ca ngày vs ca đêm (khớp logic bảng Excel: Tổng = ca ngày + ca đêm, hai tập rời nhau). */
+function inferAttendanceCountShiftBucket(records: TimekeepingLite[]): 'day' | 'night' {
+  let nightW = 0;
+  let dayW = 0;
+  for (const r of records) {
+    const fromCell = parseRosterMainShift(r.shift);
+    if (fromCell === 'night') {
+      nightW += 5;
+      continue;
+    }
+    if (fromCell === 'day') {
+      dayW += 5;
+      continue;
+    }
+    if (isNightShiftTk(r.shift)) {
+      nightW += 3;
+      continue;
+    }
+    const s = String(r.shift ?? '').toUpperCase();
+    if (/NGAY|DAY|CA\s*NGAY|MAIN\s*\(\s*D\s*\)|\(\s*D\s*\)/.test(s)) {
+      dayW += 3;
+      continue;
+    }
+    const cin = String(r.check_in || '').trim();
+    const m = cin.match(/(\d{1,2})[:.h](\d{2})/i);
+    if (m) {
+      const h = parseInt(m[1], 10);
+      if (h >= 18 || h <= 5) nightW += 2;
+      else dayW += 2;
+      continue;
+    }
+    dayW += 1;
+  }
+  return nightW > dayW ? 'night' : 'day';
+}
+
+/** Ngày vào làm (ưu tiên cột trong file danh sách CT/TV đã import vào employee_excel_store), fallback created_at bảng employees. */
+async function loadHireDateByCodeMap(): Promise<Map<string, string>> {
+  const [officialRows, seasonalRows, emps] = await Promise.all([
+    loadEmployeeStoreRows('official'),
+    loadEmployeeStoreRows('seasonal'),
+    query<{ employee_code: string; created_at: string }>(
+      `SELECT employee_code, created_at FROM employees`,
+      {}
+    ),
+  ]);
+  const map = new Map<string, string>();
+  for (const e of emps) {
+    const c = normalizeCode(e.employee_code);
+    const ymd = clampYmd(String(e.created_at || '').slice(0, 10));
+    if (c && ymd) map.set(c, ymd);
+  }
+  const ingest = (rows: Record<string, unknown>[]) => {
+    for (const row of rows) {
+      const code = extractEmployeeCodeFromStoreRow(row);
+      if (!code) continue;
+      const hireRaw = getRowValueByHeader(row, [
+        ['ngay vao'],
+        ['ngay bat dau'],
+        ['ngay nhan viec'],
+        ['ngay ky hd'],
+        ['tu ngay'],
+      ]);
+      const ymd = clampYmd(parseLooseDate(hireRaw));
+      if (ymd) map.set(code, ymd);
+    }
+  };
+  ingest(officialRows);
+  ingest(seasonalRows);
+  return map;
 }
 
 const UNASSIGNED_VENDOR = '— Chưa gán NCC —';
@@ -2127,7 +2240,7 @@ async function buildAttendanceRateFromTimekeeping(
   }
   rows.push(totalRow);
 
-  let no = 1;
+      let no = 1;
   for (const vendor of vendors) {
     const row: (string | number)[] = [no++, vendor];
     for (const block of blocks) {
@@ -3037,8 +3150,8 @@ async function buildTempTimesheetFromSystem(
             toFixed1(agg.totalWorkday),
             toFixed1(agg.totalHours),
             toFixed1(agg.overtimeHours),
-            '',
-            '',
+          '',
+          '',
           ];
         })
       : [['(Chưa có dữ liệu thời vụ trong khoảng đã chọn)']];
@@ -3199,53 +3312,487 @@ async function buildOfficialTimesheetFromSystem(
   ];
 }
 
+/** Khối số liệu một ca (ca ngày / ca đêm) — khớp hàng trong báo cáo Excel TT SX. */
+type AttendanceCountShiftProductionBlock = {
+  headOfficial: number;
+  headSeasonal: number;
+  headNew: number;
+  presentOfficial: number;
+  presentSeasonal: number;
+  presentNew: number;
+  absentOfficial: number;
+  absentSeasonal: number;
+  rateOfficialPct: number;
+  rateSeasonalPct: number;
+};
+
+type AttendanceCountProductionSnapshot = {
+  /** Ngày cuối trong kỳ gộp (mốc DS). */
+  snapshotDate: string;
+  /** Ngày đầu / cuối thực tế được cộng dồn (theo bộ lọc, không vượt quá hôm nay). */
+  aggregationStart: string;
+  aggregationEnd: string;
+  /** Số ngày cộng dồn (đi làm / nghỉ = tổng lượt; mẫu số tỉ lệ = nhân lực × số ngày). */
+  aggregationDays: number;
+  monthYm: string;
+  note?: string;
+  day: AttendanceCountShiftProductionBlock;
+  night: AttendanceCountShiftProductionBlock;
+};
+
+/** Lấy text ca từ nhiều kiểu tên cột file Excel. */
+function pickShiftRawFromStoreRow(row: Record<string, unknown>): string {
+  const headerGroups: string[][] = [
+    ['ca lam viec'],
+    ['ca làm việc'],
+    ['ca lam'],
+    ['ca làm'],
+    ['loai ca'],
+    ['loại ca'],
+    ['ten ca'],
+    ['tên ca'],
+    ['ca chinh'],
+    ['ca chính'],
+    ['phan cong ca'],
+    ['phan ca'],
+    ['shift'],
+    ['gio ca'],
+    ['giờ ca'],
+  ];
+  for (const g of headerGroups) {
+    const v = getRowValueByHeader(row, [g]);
+    if (String(v ?? '').trim()) return String(v).trim();
+  }
+  for (const [k, v] of Object.entries(row)) {
+    const nk = normalizeTextValue(k);
+    if (!/\bca\b|shift|lam\s*viec|lamviec|phan\s*ca|loai\s*ca|ten\s*ca/.test(nk)) continue;
+    const sv = String(v ?? '').trim();
+    if (!sv || sv.length > 80) continue;
+    if (parseRosterMainShift(sv)) return sv;
+  }
+  return '';
+}
+
+function isIndirectAttendanceCountRow(row: Record<string, unknown>): boolean {
+  const job = normalizeTextValue(
+    getRowValueByHeader(row, [['chuc vu'], ['chức vụ'], ['chuc danh'], ['chức danh']])
+  );
+  const line = normalizeTextValue(getRowValueByHeader(row, [['line'], ['to'], ['tổ']]));
+  const t = ` ${job} ${line} `;
+  return /to\s*truong|tổ\s*trưởng|doi\s*truong|đội\s*trưởng|\btransfer\b|\bkitting\b|ke\s*chang|kechang|pho\s*phong|phó\s*phòng|giam\s*doc|giám\s*đốc/i.test(
+    t
+  );
+}
+
+/**
+ * TT sản xuất (hàng SX trong báo cáo Excel): phải biết BP/phòng/tổ hoặc phòng trên hệ thống.
+ * Trước đây `!bp && !dept → true` khiến cả nghìn dòng TV thiếu cột bộ phận vẫn vào nhân lực → lệch Excel.
+ */
+function isProductionDirectLaborRow(row: Record<string, unknown>, fallbackDept?: string | null): boolean {
+  const bp = normalizeTextValue(getRowValueByHeader(row, [['bp'], ['bo phan'], ['bộ phận']]));
+  const dept = normalizeTextValue(getRowValueByHeader(row, [['phong'], ['phòng'], ['phòng ban']]));
+  const line = normalizeTextValue(getRowValueByHeader(row, [['line'], ['to'], ['tổ']]));
+  let c = `${bp} ${dept} ${line}`.replace(/\s+/g, ' ').trim();
+  if (!c) {
+    c = normalizeTextValue(fallbackDept ?? '').replace(/\s+/g, ' ').trim();
+  }
+  if (!c) return false;
+  if (
+    /^h$|^h\s|hanh\s*chinh|ke\s*toan|nhan\s*su|nhân\s*sự|moi\s*truong|bao\s*tri|ky\s*thuat\s*don|kho\s*vat\s*tu|admin|office|van\s*phong|hc\b/i.test(
+      c
+    )
+  ) {
+    return false;
+  }
+  /** Khối gián tiếp / phi SX trong layout tổ chức (QL-EQM-HQ-QC-MM-SM…), khớp tinh thần cột SX Excel */
+  if (
+    /\b(qc|eqm|mm|sm|ql|hq)\b|quality|chất\s*lượng|kiểm\s*tra|chat\s*luong|materials?|vật\s*tư|vat\s*tu|warehouse|kho\b|mua\s*hàng|purchase|marketing|kinh\s*doanh|bán\s*hàng|ban\s*hang|office\s*admin|giám\s*sát\s*chất|품질|자재|영업|기술\s*\(eqm\)|관리\s*\(\s*ql|관리\s*\(\s*hq|제조\s*기술/i.test(
+      c
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function parseHireYmdFromStoreRow(row: Record<string, unknown>): string {
+  const hireRaw = getRowValueByHeader(row, [
+    ['ngay vao'],
+    ['ngay bat dau'],
+    ['ngay nhan viec'],
+    ['ngay ky hd'],
+    ['tu ngay'],
+  ]);
+  return clampYmd(parseLooseDate(hireRaw));
+}
+
+function parseQuitYmdFromStoreRow(row: Record<string, unknown>): string {
+  const raw = getRowValueByHeader(row, [
+    ['ngay nghi'],
+    ['ngày nghỉ'],
+    ['ngay thoi viec'],
+    ['ngày thôi việc'],
+    ['ngay nghi viec'],
+    ['den ngay'],
+    ['đến ngày'],
+  ]);
+  return clampYmd(parseLooseDate(raw));
+}
+
+function activeRosterOnDate(hireYmd: string, quitYmd: string, d: string): boolean {
+  if (hireYmd && hireYmd > d) return false;
+  if (quitYmd && quitYmd < d) return false;
+  return true;
+}
+
+/** CT hoặc TV; NV mới vẫn thuộc CT/TV, isNew chỉ để cột «Người mới» (theo hướng dẫn nhân sự). */
+type RosterEmployment = 'official' | 'seasonal';
+
+type RosterMeta = { shift: 'day' | 'night'; kind: RosterEmployment; isNew: boolean };
+
+function buildProductionRosterByCode(
+  officialRows: Record<string, unknown>[],
+  seasonalRows: Record<string, unknown>[],
+  snapshotDate: string,
+  monthYm: string,
+  byDateCode: Map<string, TimekeepingLite[]>,
+  employeeMap: Map<string, EmployeeLite>
+): {
+  byCode: Map<string, RosterMeta>;
+  inferredFromTk: number;
+  defaultedShiftDay: number;
+} {
+  const byCode = new Map<string, RosterMeta>();
+  let inferredFromTk = 0;
+  let defaultedShiftDay = 0;
+
+  const ingest = (rows: Record<string, unknown>[], employment: 'official' | 'seasonal') => {
+    for (const row of rows) {
+      const code = extractEmployeeCodeFromStoreRow(row);
+      if (!code) continue;
+      if (isIndirectAttendanceCountRow(row)) continue;
+      const empDept = employeeMap.get(code)?.department ?? null;
+      if (!isProductionDirectLaborRow(row, empDept)) continue;
+      const hireYmd = parseHireYmdFromStoreRow(row);
+      const quitYmd = parseQuitYmdFromStoreRow(row);
+      if (!activeRosterOnDate(hireYmd, quitYmd, snapshotDate)) continue;
+      const shiftRaw = pickShiftRawFromStoreRow(row);
+      let shift = parseRosterMainShift(shiftRaw);
+      if (!shift) {
+        const tk = byDateCode.get(`${snapshotDate}\t${code}`);
+        if (tk?.length) {
+          shift = inferAttendanceCountShiftBucket(tk);
+          inferredFromTk += 1;
+        }
+      }
+      if (!shift) {
+        shift = 'day';
+        defaultedShiftDay += 1;
+      }
+      const isNew = !!(hireYmd && hireYmd.slice(0, 7) === monthYm);
+      const kind: RosterEmployment = employment === 'seasonal' ? 'seasonal' : 'official';
+      byCode.set(code, { shift, kind, isNew });
+    }
+  };
+
+  ingest(officialRows, 'official');
+  ingest(seasonalRows, 'seasonal');
+  return { byCode, inferredFromTk, defaultedShiftDay };
+}
+
+/** Khi không có DS sau lọc: gom NV có chấm công trong các ngày kỳ (mỗi mã, ngày sau ghi đè ca nếu trùng). */
+function buildTkOnlyRosterForSnapshot(
+  effectiveDates: string[],
+  monthYm: string,
+  byDateCode: Map<string, TimekeepingLite[]>,
+  hireByCode: Map<string, string>,
+  employeeMap: Map<string, EmployeeLite>
+): Map<string, RosterMeta> {
+  const map = new Map<string, RosterMeta>();
+  for (const d of effectiveDates) {
+    const prefix = `${d}\t`;
+    for (const [key, group] of byDateCode) {
+      if (!key.startsWith(prefix)) continue;
+      const code = key.slice(prefix.length);
+      if (!code) continue;
+      const emp = employeeMap.get(code);
+      if (emp) {
+        const dept = normalizeTextValue(emp.department);
+        if (/hanh\s*chinh|ke\s*toan|nhan\s*su|hc\b/i.test(dept)) continue;
+      }
+      const shift = inferAttendanceCountShiftBucket(group);
+      const hireYmd = hireByCode.get(code) || '';
+      const isNew = !!(hireYmd && hireYmd.slice(0, 7) === monthYm);
+      const kind: RosterEmployment =
+        emp && resolveEmploymentCategory(emp.employment_type, emp.department) === 'Thời vụ'
+          ? 'seasonal'
+          : emp
+            ? 'official'
+            : 'seasonal';
+      map.set(code, { shift, kind, isNew });
+    }
+  }
+  return map;
+}
+
+function rosterSetsForShift(
+  byCode: Map<string, RosterMeta>,
+  bucket: 'day' | 'night'
+): { official: Set<string>; seasonal: Set<string>; neu: Set<string> } {
+  const official = new Set<string>();
+  const seasonal = new Set<string>();
+  const neu = new Set<string>();
+  for (const [code, meta] of byCode) {
+    if (meta.shift !== bucket) continue;
+    if (meta.kind === 'seasonal') seasonal.add(code);
+    else official.add(code);
+    if (meta.isNew) neu.add(code);
+  }
+  return { official, seasonal, neu };
+}
+
+/**
+ * Đi làm theo ca trên DS: ưu tiên khớp suy từ cả cụm dòng chấm công; nếu có dòng có cột ca rõ (Ca1/Main D…)
+ * thì khớp theo từng dòng; nếu cột ca trống nhưng có công → tính đi làm đúng ca DS (tránh lệch hàng nghìn «nghỉ vắng» giả).
+ */
+function recordPresentForRosterShift(
+  group: TimekeepingLite[] | undefined,
+  rosterBucket: 'day' | 'night'
+): boolean {
+  if (!group?.length) return false;
+  if (inferAttendanceCountShiftBucket(group) === rosterBucket) return true;
+  for (const r of group) {
+    const cell = parseRosterMainShift(r.shift);
+    if (cell === rosterBucket) return true;
+    if (rosterBucket === 'night' && isNightShiftTk(r.shift)) return true;
+  }
+  const hasExplicitShift = group.some((r) => String(r.shift ?? '').trim() !== '');
+  if (!hasExplicitShift) return true;
+  return false;
+}
+
+function countPresentInShiftBucket(
+  codes: Set<string>,
+  snapshotDate: string,
+  expectedBucket: 'day' | 'night',
+  byDateCode: Map<string, TimekeepingLite[]>
+): number {
+  let n = 0;
+  for (const code of codes) {
+    const key = `${snapshotDate}\t${code}`;
+    const group = byDateCode.get(key);
+    if (!group?.length) continue;
+    if (recordPresentForRosterShift(group, expectedBucket)) n += 1;
+  }
+  return n;
+}
+
+/**
+ * Cột Người mới: chỉ thể hiện số. Đi làm / nghỉ / tỉ lệ: cộng dồn theo từng ngày trong `effectiveDates`
+ * (tổng lượt); mẫu tỉ lệ = nhân lực × số ngày.
+ */
+function buildShiftProductionBlock(
+  official: Set<string>,
+  seasonal: Set<string>,
+  neu: Set<string>,
+  effectiveDates: string[],
+  bucket: 'day' | 'night',
+  byDateCode: Map<string, TimekeepingLite[]>
+): AttendanceCountShiftProductionBlock {
+  const ho = official.size;
+  const hs = seasonal.size;
+  const hn = neu.size;
+  const nDays = Math.max(1, effectiveDates.length);
+  let po = 0;
+  let ps = 0;
+  let pn = 0;
+  for (const d of effectiveDates) {
+    po += countPresentInShiftBucket(official, d, bucket, byDateCode);
+    ps += countPresentInShiftBucket(seasonal, d, bucket, byDateCode);
+    pn += countPresentInShiftBucket(neu, d, bucket, byDateCode);
+  }
+  const capO = ho * nDays;
+  const capS = hs * nDays;
+  return {
+    headOfficial: ho,
+    headSeasonal: hs,
+    headNew: hn,
+    presentOfficial: po,
+    presentSeasonal: ps,
+    presentNew: pn,
+    absentOfficial: Math.max(0, capO - po),
+    absentSeasonal: Math.max(0, capS - ps),
+    rateOfficialPct: capO > 0 ? toFixed1((po / capO) * 100) : 0,
+    rateSeasonalPct: capS > 0 ? toFixed1((ps / capS) * 100) : 0,
+  };
+}
+
+function buildAttendanceCountProductionSnapshot(
+  range: Awaited<ReturnType<typeof resolveReportRange>>,
+  byDateCode: Map<string, TimekeepingLite[]>,
+  officialRows: Record<string, unknown>[],
+  seasonalRows: Record<string, unknown>[],
+  hireByCode: Map<string, string>,
+  employeeMap: Map<string, EmployeeLite>
+): AttendanceCountProductionSnapshot {
+  const effectiveDates = range.dates.filter((d) => d <= range.snapshotDate);
+  const rosterAnchor = effectiveDates[effectiveDates.length - 1] || range.snapshotDate;
+  const aggregationStart = effectiveDates[0] || range.snapshotDate;
+  const aggregationEnd = rosterAnchor;
+  const aggregationDays = Math.max(1, effectiveDates.length);
+  const monthYm = rosterAnchor.slice(0, 7);
+
+  let { byCode, inferredFromTk, defaultedShiftDay } = buildProductionRosterByCode(
+    officialRows,
+    seasonalRows,
+    rosterAnchor,
+    monthYm,
+    byDateCode,
+    employeeMap
+  );
+
+  const notes: string[] = [];
+  notes.push(
+    `Đang gộp ${aggregationDays} ngày (${aggregationStart} → ${aggregationEnd}): đi làm / nghỉ là tổng lượt các ngày trong bộ lọc (không quá hôm nay); tỉ lệ = đi làm ÷ (nhân lực × ${aggregationDays}).`
+  );
+
+  if (byCode.size === 0) {
+    byCode = buildTkOnlyRosterForSnapshot(
+      effectiveDates,
+      monthYm,
+      byDateCode,
+      hireByCode,
+      employeeMap
+    );
+    if (byCode.size === 0) {
+      notes.push(
+        'Không có nhân sự sau lọc: kiểm tra import DS CT/TV, cột mã NV, hoặc chấm công trong các ngày kỳ.'
+      );
+    } else {
+      notes.push(
+        'Không đọc được DS CT/TV sau lọc — nhân lực suy từ chấm công các ngày kỳ. Nên import DS đầy đủ để khớp Excel.'
+      );
+    }
+  } else {
+    if (inferredFromTk > 0) {
+      notes.push(
+        `${inferredFromTk} dòng DS: ca suy từ chấm công ngày ${rosterAnchor} (cột ca trên DS trống hoặc khác định dạng).`
+      );
+    }
+    if (defaultedShiftDay > 0) {
+      notes.push(
+        `${defaultedShiftDay} dòng DS: không đọc được ca và không có chấm công ngày ${rosterAnchor} — tạm xếp ca ngày (nên sửa cột Ca: Main (D)/(N), Ca ngày/đêm, hoặc Ca 1/2).`
+      );
+    }
+  }
+
+  const daySets = rosterSetsForShift(byCode, 'day');
+  const nightSets = rosterSetsForShift(byCode, 'night');
+
+  const day = buildShiftProductionBlock(
+    daySets.official,
+    daySets.seasonal,
+    daySets.neu,
+    effectiveDates,
+    'day',
+    byDateCode
+  );
+  const night = buildShiftProductionBlock(
+    nightSets.official,
+    nightSets.seasonal,
+    nightSets.neu,
+    effectiveDates,
+    'night',
+    byDateCode
+  );
+
+  return {
+    snapshotDate: rosterAnchor,
+    aggregationStart,
+    aggregationEnd,
+    aggregationDays,
+    monthYm,
+    ...(notes.length ? { note: notes.join(' ') } : {}),
+    day,
+    night,
+  };
+}
+
 async function buildAttendanceCountFromSystem(
   start_date: string,
   end_date: string
-): Promise<TemplateSheetGrid[]> {
+): Promise<{ sheets: TemplateSheetGrid[]; productionSnapshot: AttendanceCountProductionSnapshot }> {
   const range = await resolveReportRange(start_date, end_date);
-  const [employeesAll, records] = await Promise.all([
+  const [employeesAll, records, hireByCode, officialRows, seasonalRows] = await Promise.all([
     loadEmployeesLite(),
     loadTimekeepingLite(range.start, range.end),
+    loadHireDateByCodeMap(),
+    loadEmployeeStoreRows('official'),
+    loadEmployeeStoreRows('seasonal'),
   ]);
 
   const employeeMap = new Map(
     employeesAll.map((emp) => [normalizeCode(emp.employee_code), emp] as const)
   );
 
-  const officialByDay = Array.from({ length: DAY_COLS }, () => new Set<string>());
-  const seasonalByDay = Array.from({ length: DAY_COLS }, () => new Set<string>());
+  const officialDayByDay = Array.from({ length: DAY_COLS }, () => new Set<string>());
+  const officialNightByDay = Array.from({ length: DAY_COLS }, () => new Set<string>());
+  const seasonalDayByDay = Array.from({ length: DAY_COLS }, () => new Set<string>());
+  const seasonalNightByDay = Array.from({ length: DAY_COLS }, () => new Set<string>());
   const totalByDay = Array.from({ length: DAY_COLS }, () => new Set<string>());
-  const newEmployeesByDay = Array(DAY_COLS).fill(0);
+  const newEmployeesByDaySets = Array.from({ length: DAY_COLS }, () => new Set<string>());
 
-  for (const employee of employeesAll) {
-    const createdAt = clampYmd(String(employee.created_at || '').slice(0, 10));
-    if (!createdAt || createdAt < range.start || createdAt > range.end) continue;
-    const day = parseInt(createdAt.slice(8, 10), 10);
-    if (day >= 1 && day <= DAY_COLS) newEmployeesByDay[day - 1] += 1;
-  }
-
+  const byDateCode = new Map<string, TimekeepingLite[]>();
   for (const record of records) {
     const code = resolveRecordCode(record);
-    const day = parseInt(String(record.date || '').slice(8, 10), 10);
-    if (!code || day < 1 || day > DAY_COLS) continue;
-    const employee = employeeMap.get(code);
-    const employmentType = resolveEmploymentCategory(employee?.employment_type, employee?.department || record.department);
-    totalByDay[day - 1].add(code);
-    if (employmentType === 'Chính thức') officialByDay[day - 1].add(code);
-    else if (employmentType === 'Thời vụ') seasonalByDay[day - 1].add(code);
+    const dateStr = String(record.date || '').slice(0, 10);
+    if (!code || !dateStr) continue;
+    const key = `${dateStr}\t${code}`;
+    if (!byDateCode.has(key)) byDateCode.set(key, []);
+    byDateCode.get(key)!.push(record);
   }
 
-  const officialCounts = officialByDay.map((set) => set.size);
-  const seasonalCounts = seasonalByDay.map((set) => set.size);
+  for (const [key, group] of byDateCode) {
+    const tab = key.indexOf('\t');
+    const dateStr = key.slice(0, tab);
+    const code = key.slice(tab + 1);
+    const day = parseInt(dateStr.slice(8, 10), 10);
+    if (day < 1 || day > DAY_COLS) continue;
+    const idx = day - 1;
+    const employee = employeeMap.get(code);
+    const employmentType = resolveEmploymentCategory(
+      employee?.employment_type,
+      employee?.department || group[0]?.department
+    );
+    const shiftBucket = inferAttendanceCountShiftBucket(group);
+
+    totalByDay[idx].add(code);
+
+    if (employmentType === 'Chính thức') {
+      if (shiftBucket === 'night') officialNightByDay[idx].add(code);
+      else officialDayByDay[idx].add(code);
+    } else if (employmentType === 'Thời vụ') {
+      if (shiftBucket === 'night') seasonalNightByDay[idx].add(code);
+      else seasonalDayByDay[idx].add(code);
+    }
+
+    const hireYmd = hireByCode.get(code);
+    if (hireYmd && hireYmd === dateStr) {
+      newEmployeesByDaySets[idx].add(code);
+    }
+  }
+
+  const officialCounts = officialDayByDay.map((set, i) => set.size + officialNightByDay[i].size);
+  const seasonalCounts = seasonalDayByDay.map((set, i) => set.size + seasonalNightByDay[i].size);
   const totalCounts = totalByDay.map((set) => set.size);
+  const newEmployeesByDay = newEmployeesByDaySets.map((set) => set.size);
   const rateValues = totalCounts.map((count) =>
     employeesAll.length > 0 ? toFixed1((count / employeesAll.length) * 100) : 0
   );
 
   const summary = buildMonthOverviewSheet(
     `BÁO CÁO SỐ LƯỢNG ĐI LÀM (${range.monthLabel})`,
-    `Khoảng ${range.start} → ${range.end} | Tổng NV hệ thống: ${employeesAll.length}`,
+    `Khoảng ${range.start} → ${range.end} | Tổng NV hệ thống: ${employeesAll.length}. Số đi làm CT/TV mỗi ngày = ca ngày + ca đêm (rời nhau, theo shift hoặc giờ vào). Nhân viên mới: có ngày vào = ngày công (ưu tiên cột ngày vào trong DS CT/TV đã import; fallback ngày tạo NV).`,
     [
       {
         group: 'Chính thức',
@@ -3280,7 +3827,16 @@ async function buildAttendanceCountFromSystem(
 
   const avg = (values: number[]) => (values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0);
 
-  return [
+  const productionSnapshot = buildAttendanceCountProductionSnapshot(
+    range,
+    byDateCode,
+    officialRows,
+    seasonalRows,
+    hireByCode,
+    employeeMap
+  );
+
+  const sheets: TemplateSheetGrid[] = [
     {
       name: 'Tổng quan tháng',
       rows: summary.rows,
@@ -3292,7 +3848,7 @@ async function buildAttendanceCountFromSystem(
     buildSimpleTableSheet({
       name: 'Sheet1',
       title: `CHI TIẾT SỐ LƯỢNG ĐI LÀM (${range.monthLabel})`,
-      subtitle: `Tự động từ chấm công + nhân sự | ${range.start} → ${range.end}`,
+      subtitle: `Tự động từ chấm công + nhân sự (ca ngày/đêm; NV mới theo ngày vào) | ${range.start} → ${range.end}`,
       headers: ['Nhóm', ...Array.from({ length: DAY_COLS }, (_, i) => i + 1), 'Tổng kỳ', 'TB/ngày'],
       dataRows: [
         ['Chính thức', ...officialCounts, officialCounts.reduce((sum, value) => sum + value, 0), toFixed1(avg(officialCounts))],
@@ -3304,6 +3860,8 @@ async function buildAttendanceCountFromSystem(
       dayStartCol: 1,
     }),
   ];
+
+  return { sheets, productionSnapshot };
 }
 
 function splitRangeIntoWeeks(start: string, end: string) {
@@ -3807,7 +4365,7 @@ async function buildPayrollKpiFromSystem(
   const employeeMap = new Map(
     employeesAll.map((emp) => [normalizeCode(emp.employee_code), emp] as const)
   );
-  const byDay = new Map<number, { count: number; totalHours: number; overtimeHours: number; codes: Set<string> }>();
+      const byDay = new Map<number, { count: number; totalHours: number; overtimeHours: number; codes: Set<string> }>();
   for (let day = 1; day <= DAY_COLS; day++) {
     byDay.set(day, { count: 0, totalHours: 0, overtimeHours: 0, codes: new Set<string>() });
   }
@@ -3823,7 +4381,7 @@ async function buildPayrollKpiFromSystem(
     const overtimeHours = Number(record.overtime_hours) || 0;
     const rate = getHourlyRate(employee?.employment_type || 'Thời vụ');
 
-    if (day >= 1 && day <= DAY_COLS) {
+        if (day >= 1 && day <= DAY_COLS) {
       const bucket = byDay.get(day)!;
       bucket.codes.add(code);
       bucket.count = bucket.codes.size;
@@ -3842,7 +4400,7 @@ async function buildPayrollKpiFromSystem(
   }
 
   const sheet1Rows = buildSheet1Ingunbi(range.monthLabel, byDay);
-  const sheet1Styles = getSheet1KpiStyles(COLS_KPI);
+      const sheet1Styles = getSheet1KpiStyles(COLS_KPI);
   const deptRows = [...deptAgg.entries()]
     .sort((a, b) => b[1].estimatedCost - a[1].estimatedCost)
     .map(([dept, info], index) => [
@@ -3872,6 +4430,11 @@ async function buildPayrollKpiFromSystem(
   ];
 }
 
+/** Dùng cho script audit / test tự động (cùng pipeline với API attendance-count). */
+export async function runAttendanceCountSnapshotAudit(start_date: string, end_date: string) {
+  return buildAttendanceCountFromSystem(start_date, end_date);
+}
+
 /** GET /api/hr-templates/:reportType/grid?start_date=&end_date= */
 export const getHrTemplateGrid = async (req: Request, res: Response) => {
   try {
@@ -3893,8 +4456,14 @@ export const getHrTemplateGrid = async (req: Request, res: Response) => {
       const sheets = await buildOfficialTimesheetFromSystem(start_date, end_date);
       return res.json({ sheets });
     } else if (reportTypeStr === 'attendance-count') {
-      const sheets = await buildAttendanceCountFromSystem(start_date, end_date);
-      return res.json({ sheets });
+      const { sheets, productionSnapshot } = await buildAttendanceCountFromSystem(start_date, end_date);
+      const summaryOnly =
+        String(req.query.summary_only ?? req.query.summaryOnly ?? '').toLowerCase() === '1' ||
+        String(req.query.summary_only ?? req.query.summaryOnly ?? '').toLowerCase() === 'true';
+      if (summaryOnly && sheets.length > 0) {
+        return res.json({ sheets: [sheets[0]], productionSnapshot });
+      }
+      return res.json({ sheets, productionSnapshot });
     } else if (reportTypeStr === 'attendance-rate') {
       const sheet = await buildAttendanceRateFromTimekeeping(start_date, end_date);
       return res.json({ sheets: [sheet] });

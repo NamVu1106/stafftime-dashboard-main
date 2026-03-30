@@ -437,10 +437,10 @@ const UploadPage = () => {
           <p>
             <strong className="text-foreground">① Nhân sự &amp; chấm công</strong> — Upload nhân viên / chấm công. Báo cáo
             «Tỉ lệ đi làm» theo <em>nhà cung cấp (Vendor)</em>: vào{' '}
-            <Link to="/hr/vendor-assignments" className="font-medium text-primary underline">
-              Gán Vendor (NCC)
+            <Link to="/hr/attendance-rate" className="font-medium text-primary underline">
+              Tỉ lệ đi làm
             </Link>{' '}
-            (Mã NV → NCC), không dùng phòng ban làm Vendor.{' '}
+            rồi mở khung <strong>Gán Vendor (NCC)</strong> ở cuối trang để map <strong>Mã NV → NCC</strong>, không dùng phòng ban làm Vendor.{' '}
             <Link to="/employees" className="font-medium text-primary underline inline-flex items-center gap-1">
               <Users className="w-3.5 h-3.5" /> Danh sách NV
             </Link>

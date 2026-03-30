@@ -23,6 +23,7 @@ describe('extractHrBuiltInStats', () => {
           seasonal: 12,
           newEmployees: 3,
         },
+        usesProductionSnapshot: false,
       },
     });
   });

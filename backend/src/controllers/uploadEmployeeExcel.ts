@@ -54,6 +54,29 @@ function excelDateToStr(v: any): string {
   return String(v);
 }
 
+function normalizeHeaderToken(v: unknown): string {
+  return String(v ?? '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ');
+}
+
+function pickByHeaderAliases(rowObj: Record<string, any>, aliases: string[]): string {
+  if (!rowObj || !aliases.length) return '';
+  const normalizedAliases = aliases.map((a) => normalizeHeaderToken(a));
+  for (const [k, v] of Object.entries(rowObj)) {
+    const nk = normalizeHeaderToken(k);
+    if (normalizedAliases.includes(nk)) {
+      return String(v ?? '').trim();
+    }
+  }
+  return '';
+}
+
 // POST /api/upload/employees/official - File mẫu THÔNG TIN CNV TỔNG VINA (sheet "Thông tin công nhân", header row 2, data from row 3)
 export const uploadEmployeesOfficial = [
   upload.single('file'),
@@ -219,32 +242,50 @@ export const uploadEmployeesSeasonal = [
     try {
       if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
       const workbook = XLSX.readFile(req.file.path, { cellDates: true, sheetStubs: true });
-      const sheetNamesToTry = [...new Set(['TT', 'Sheet1', 'Data', workbook.SheetNames[0]].filter(Boolean))];
       let ws: XLSX.WorkSheet | undefined;
       let sheetName = '';
-      for (const name of sheetNamesToTry) {
-        if (!name || !workbook.SheetNames.includes(name)) continue;
+      let sheetRows: any[][] = [];
+      let bestScore = -1;
+      for (const name of workbook.SheetNames) {
         const s = workbook.Sheets[name];
-        if (s && s['!ref']) {
+        if (!s || !s['!ref']) continue;
+        const rows = XLSX.utils.sheet_to_json(s, { header: 1, defval: '' }) as any[][];
+        const scan = rows.slice(0, 40);
+        let score = 0;
+        for (const r of scan) {
+          const cells = (r || []).map((c: any) => normalizeHeaderToken(c));
+          const hasCode = cells.some((c: string) => /\b(ma nv|ma nhan vien|employee code)\b/.test(c));
+          const hasName = cells.some((c: string) => /\b(ho ten|ho va ten|ten nhan vien|name)\b/.test(c));
+          if (hasCode) score += 2;
+          if (hasName) score += 2;
+          if (hasCode && hasName) score += 3;
+        }
+        if (score > bestScore) {
+          bestScore = score;
           ws = s;
           sheetName = name;
-          break;
+          sheetRows = rows;
         }
       }
       if (!ws || !sheetName) {
         fs.unlinkSync(req.file.path);
         return res.status(400).json({ error: 'Không tìm thấy sheet có dữ liệu. Thử sheet TT hoặc Sheet1.' });
       }
-      const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as any[][];
+      const rawData = sheetRows.length
+        ? sheetRows
+        : (XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as any[][]);
       let headerRowIndex = 2;
-      for (let r = 0; r < Math.min(10, rawData.length); r++) {
-        const row = (rawData[r] || []).map((c: any) => (c != null ? String(c).trim() : ''));
-        if (row.some((c: string) => c === 'Mã NV' || c === 'Ma NV')) {
+      for (let r = 0; r < Math.min(40, rawData.length); r++) {
+        const row = rawData[r] || [];
+        const normalized = row.map((c: any) => normalizeHeaderToken(c));
+        const hasCode = normalized.some((c: string) => /\b(ma nv|ma nhan vien|employee code)\b/.test(c));
+        const hasName = normalized.some((c: string) => /\b(ho ten|ho va ten|ten nhan vien|name)\b/.test(c));
+        if (hasCode && hasName) {
           headerRowIndex = r;
           break;
         }
       }
-      const dataStartIndex = headerRowIndex + 2;
+      const dataStartIndex = headerRowIndex + 1;
       const headerRow = (rawData[headerRowIndex] || []).map((c: any) => (c != null ? String(c).trim() : ''));
       const rawRows: Record<string, any>[] = [];
       const toUpsert: Array<{
@@ -267,21 +308,43 @@ export const uploadEmployeesSeasonal = [
           if (h) rowObj[h] = row[idx] != null ? row[idx] : '';
         });
         rawRows.push(rowObj);
-        const empCode = String(rowObj['Mã NV'] ?? rowObj['Ma NV'] ?? '').trim();
-        const name = String(rowObj['HỌ VÀ TÊN'] ?? rowObj['Họ và tên'] ?? rowObj['Họ tên'] ?? '').trim();
+        const empCode = pickByHeaderAliases(rowObj, [
+          'Mã NV',
+          'Ma NV',
+          'MÃ NV',
+          'Mã nhân viên',
+          'MÃ NHÂN VIÊN',
+          'MANV',
+          'Employee code',
+        ]);
+        const name = pickByHeaderAliases(rowObj, [
+          'HỌ VÀ TÊN',
+          'Họ và tên',
+          'Họ tên',
+          'Tên nhân viên',
+          'Ho va ten',
+          'HOTEN',
+          'Name',
+        ]);
         if (!empCode || !name) continue;
-        const gender = String(rowObj['Giới tính'] ?? 'Nam').trim();
-        const dobRaw = rowObj['NGÀY SINH'] ?? rowObj['Ngày sinh'];
+        const gender = pickByHeaderAliases(rowObj, ['Giới tính', 'Gioi tinh']) || 'Nam';
+        const dobRaw =
+          pickByHeaderAliases(rowObj, ['NGÀY SINH', 'Ngày sinh', 'Ngay sinh', 'DOB']) || '';
         const date_of_birth = excelDateToStr(dobRaw);
         let age = 0;
         if (date_of_birth) {
           const b = new Date(date_of_birth);
           if (!isNaN(b.getTime())) age = Math.floor((Date.now() - b.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
         }
-        const department = String(rowObj['BP'] ?? '').trim() || 'Chưa xác định';
-        const cccd = String(rowObj['SỐ CMT'] ?? rowObj['Số CMT'] ?? '').trim() || null;
-        const phone = String(rowObj['SỐ ĐT '] ?? rowObj['Số ĐT'] ?? '').trim() || null;
-        const permanent_residence = String(rowObj['ĐỊA CHỈ'] ?? rowObj['Địa chỉ'] ?? '').trim() || null;
+        const department =
+          pickByHeaderAliases(rowObj, ['BP', 'Bộ phận', 'Bo phan', 'Phòng ban', 'Phong ban']) ||
+          'Chưa xác định';
+        const cccd =
+          pickByHeaderAliases(rowObj, ['SỐ CMT', 'Số CMT', 'CCCD', 'CMND', 'Số CCCD']) || null;
+        const phone =
+          pickByHeaderAliases(rowObj, ['SỐ ĐT', 'SỐ ĐT ', 'Số ĐT', 'Điện thoại', 'Phone']) || null;
+        const permanent_residence =
+          pickByHeaderAliases(rowObj, ['ĐỊA CHỈ', 'Địa chỉ', 'Dia chi', 'Thường trú']) || null;
         toUpsert.push({
           empCode,
           name,

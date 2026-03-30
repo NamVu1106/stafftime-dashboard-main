@@ -10,7 +10,6 @@ import { AdminLayout } from "@/components/layout/AdminLayout";
 import LoginPage from "./pages/LoginPage";
 import Index from "./pages/Index";
 import UploadPage from "./pages/UploadPage";
-import VendorAssignmentsPage from "./pages/VendorAssignmentsPage";
 import EmployeesPage from "./pages/EmployeesPage";
 import ReportsPage from "./pages/ReportsPage";
 import HistoryPage from "./pages/HistoryPage";
@@ -62,7 +61,7 @@ const App = () => (
             <Route path="/reports/range" element={<ReportsRangePage />} />
             <Route path="/reports/compare" element={<ComparePage />} />
             <Route path="/reports/weekly-temporary-workers" element={<WeeklyTemporaryWorkersPage />} />
-            <Route path="/hr/vendor-assignments" element={<VendorAssignmentsPage />} />
+            <Route path="/hr/vendor-assignments" element={<Navigate to="/hr/attendance-rate" replace />} />
             <Route path="/hr/summary" element={<HrSummaryPage />} />
             <Route path="/hr/:reportType" element={<HrReportPage />} />
             <Route path="/departments" element={<DepartmentsListPage />} />

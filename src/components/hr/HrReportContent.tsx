@@ -16,8 +16,12 @@ import { HR_REPORT_DEFS } from '@/data/hrReportDefs';
 import { filterBuiltInTimesheetSheet, findTimesheetHeaderRowIndex } from '@/lib/hrAttendanceListFilter';
 import { buildHrBuiltInSummary, buildHrUploadSummary } from '@/lib/hrReportInsights';
 import { useTimeFilterOptional } from '@/contexts/TimeFilterContext';
+import type { AttendanceCountProductionSnapshot } from '@/lib/hrBuiltInStats';
+import { AttendanceCountSnapshotPanel } from './AttendanceCountSnapshotPanel';
 import { HrChartFromGrid } from './HrChartFromGrid';
 import { useI18n } from '@/hooks/useI18n';
+
+const MAX_VENDOR_EDITOR_ROWS = 200;
 
 function safeParseSheetNames(sheetNamesRaw: any): string[] {
   if (!sheetNamesRaw) return [];
@@ -207,6 +211,35 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
     [editableCodes, vendorDraft]
   );
 
+  const vendorTableState = useMemo(() => {
+    const hasFilter = filter.trim().length > 0;
+
+    if (emps.length > 0) {
+      const assignedEmployees = emps.filter((e: any) => {
+        const code = String(e.employee_code ?? '').toUpperCase();
+        return String(vendorDraft[code] ?? '').trim();
+      });
+      const source = hasFilter ? filtered : assignedEmployees.length > 0 ? assignedEmployees : filtered;
+      return {
+        mode: 'employees' as const,
+        rows: source.slice(0, MAX_VENDOR_EDITOR_ROWS),
+        total: source.length,
+        truncated: source.length > MAX_VENDOR_EDITOR_ROWS,
+        hasFilter,
+        prefersAssigned: !hasFilter && assignedEmployees.length > 0,
+      };
+    }
+
+    return {
+      mode: 'assignments' as const,
+      rows: itemsFiltered.slice(0, MAX_VENDOR_EDITOR_ROWS),
+      total: itemsFiltered.length,
+      truncated: itemsFiltered.length > MAX_VENDOR_EDITOR_ROWS,
+      hasFilter,
+      prefersAssigned: false,
+    };
+  }, [emps, filter, filtered, itemsFiltered, vendorDraft]);
+
   const loadingPanel = loadingEmps || loadingVa;
 
   useEffect(() => {
@@ -329,6 +362,18 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
             </div>
 
             <div className="max-h-60 overflow-auto border rounded-md text-sm bg-background">
+              {(emps.length > MAX_VENDOR_EDITOR_ROWS || items.length > MAX_VENDOR_EDITOR_ROWS) && (
+                <div className="border-b bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                  {vendorTableState.hasFilter
+                    ? `Kết quả đang khớp ${formatNumberPlain(vendorTableState.total)} dòng.`
+                    : vendorTableState.prefersAssigned
+                      ? `Đang ưu tiên hiển thị ${formatNumberPlain(vendorTableState.total)} mã đã gán NCC.`
+                      : `Đang có ${formatNumberPlain(emps.length || items.length)} dòng dữ liệu NCC.`}{' '}
+                  {vendorTableState.truncated
+                    ? `Chỉ hiển thị ${formatNumberPlain(MAX_VENDOR_EDITOR_ROWS)} dòng đầu để tránh treo trình duyệt. Hãy lọc theo Mã NV / tên hoặc dùng Import Excel khi cần chỉnh hàng loạt.`
+                    : null}
+                </div>
+              )}
               <table className="w-full">
                 <thead className="bg-muted sticky top-0 z-[1]">
                   <tr>
@@ -338,8 +383,8 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
                   </tr>
                 </thead>
                 <tbody>
-                  {emps.length > 0
-                    ? filtered.map((e: any) => {
+                  {vendorTableState.mode === 'employees'
+                    ? vendorTableState.rows.map((e: any) => {
                         const c = String(e.employee_code ?? '').toUpperCase();
                         return (
                           <tr key={e.id ?? c} className="border-t border-border/60">
@@ -359,8 +404,8 @@ function InlineVendorNccPanel({ startDate, endDate }: { startDate: string; endDa
                           </tr>
                         );
                       })
-                    : itemsFiltered.length > 0
-                      ? itemsFiltered.map((i) => {
+                    : vendorTableState.total > 0
+                      ? vendorTableState.rows.map((i) => {
                           const c = i.employee_code.toUpperCase();
                           return (
                             <tr key={c} className="border-t border-border/60">
@@ -409,12 +454,15 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
   const reportDef = HR_REPORT_DEFS[reportKey];
   const isBuiltIn = hasBuiltInGrid(reportKey);
   const isBuiltInTimesheetReport = reportKey === 'official-timesheet' || reportKey === 'temp-timesheet';
+  /** Chỉ cần số liệu + biểu đồ, không render bảng Excel (nhẹ trang). */
+  const isStatsOnlyBuiltInReport = reportKey === 'attendance-count';
 
   const queryClient = useQueryClient();
 
   const [file, setFile] = useState<File | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<string>('');
   const [activeTemplateSheet, setActiveTemplateSheet] = useState<string>('');
+  const [attendanceTab, setAttendanceTab] = useState<'overview' | 'detail'>('overview');
   const [rowLimit, setRowLimit] = useState<number>(200);
   const [colLimit, setColLimit] = useState<number>(80);
   const [builtInTimesheetCodeSearch, setBuiltInTimesheetCodeSearch] = useState('');
@@ -436,6 +484,7 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
 
   useEffect(() => {
     setSelectedSheet('');
+    setAttendanceTab('overview');
   }, [reportKey]);
 
   useEffect(() => {
@@ -539,8 +588,19 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
   }, [isBuiltInTimesheetReport, defaultBuiltInRange.start_date, defaultBuiltInRange.end_date, reportKey]);
 
   const { data: templateGrid, isLoading: loadingGrid } = useQuery({
-    queryKey: ['hrTemplates', 'grid', reportKey, gridParams.start_date, gridParams.end_date],
-    queryFn: () => hrTemplatesAPI.getGrid(reportKey, gridParams),
+    queryKey: [
+      'hrTemplates',
+      'grid',
+      reportKey,
+      gridParams.start_date,
+      gridParams.end_date,
+      isStatsOnlyBuiltInReport ? 'summary' : 'full',
+    ],
+    queryFn: () =>
+      hrTemplatesAPI.getGrid(reportKey, {
+        ...gridParams,
+        summary_only: isStatsOnlyBuiltInReport,
+      }),
     enabled: !!reportKey && isBuiltIn,
   });
 
@@ -622,6 +682,12 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
     return buildHrUploadSummary(reportKey, reportStats as any, latestUpload as any, sheetNames);
   }, [gridParams, isBuiltIn, latestUpload, reportKey, reportStats, sheetNames, templateGrid]);
 
+  const attendanceProductionSnapshot = useMemo((): AttendanceCountProductionSnapshot | null => {
+    if (!templateGrid || typeof templateGrid !== 'object') return null;
+    const s = (templateGrid as { productionSnapshot?: AttendanceCountProductionSnapshot }).productionSnapshot;
+    return s ?? null;
+  }, [templateGrid]);
+
   if (!reportDef) {
     return (
       <div className={compact ? 'py-4' : 'p-6'}>
@@ -673,15 +739,20 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
           <CardHeader className="pb-2">
             <CardTitle className="text-base">{t('hrReport.builtInReportTitle')}</CardTitle>
             <CardDescription className="text-xs">
-              {reportKey === 'attendance-rate'
-                ? t('hrReport.builtInDescAttendance', {
+              {isStatsOnlyBuiltInReport
+                ? t('hrReport.builtInDescStatsOnly', {
                     start: gridParams.start_date,
                     end: gridParams.end_date,
                   })
-                : t('hrReport.builtInDescFilter', {
-                    start: gridParams.start_date,
-                    end: gridParams.end_date,
-                  })}
+                : reportKey === 'attendance-rate'
+                  ? t('hrReport.builtInDescAttendance', {
+                      start: gridParams.start_date,
+                      end: gridParams.end_date,
+                    })
+                  : t('hrReport.builtInDescFilter', {
+                      start: gridParams.start_date,
+                      end: gridParams.end_date,
+                    })}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 pt-0">
@@ -764,8 +835,25 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
             )}
             {loadingGrid ? (
               <div className="py-4 text-center text-sm text-muted-foreground">{t('hrReport.loadingData')}</div>
+            ) : isStatsOnlyBuiltInReport ? (
+              <div className="space-y-3">
+                {!loadingGrid && templateGrid ? (
+                  <>
+                    {attendanceProductionSnapshot ? (
+                      <AttendanceCountSnapshotPanel snapshot={attendanceProductionSnapshot} />
+                    ) : null}
+                    <HrChartFromGrid reportType={reportKey} templateGrid={templateGrid} />
+                  </>
+                ) : (
+                  <div className="py-4 text-center text-sm text-muted-foreground">{t('hrReport.noChartData')}</div>
+                )}
+              </div>
             ) : isAttendanceRateLayout ? (
-              <Tabs defaultValue="overview" className="space-y-3">
+              <Tabs
+                value={attendanceTab}
+                onValueChange={(value) => setAttendanceTab(value === 'detail' ? 'detail' : 'overview')}
+                className="space-y-3"
+              >
                 <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                   <TabsList className="w-full lg:w-auto">
                     <TabsTrigger value="overview" className="flex-1 lg:flex-none">
@@ -786,6 +874,7 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
                   ) : (
                     <div className="py-4 text-center text-sm text-muted-foreground">{t('hrReport.noChartData')}</div>
                   )}
+                  <InlineVendorNccPanel startDate={gridParams.start_date} endDate={gridParams.end_date} />
                 </TabsContent>
 
                 <TabsContent value="detail" className="mt-0 space-y-3">
@@ -940,10 +1029,6 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
             )}
           </CardContent>
         </Card>
-      )}
-
-      {isBuiltIn && reportKey === 'attendance-rate' && (
-        <InlineVendorNccPanel startDate={gridParams.start_date} endDate={gridParams.end_date} />
       )}
 
       {/* File Excel đã upload — hiển thị cho mọi loại báo cáo khi có file (đồng bộ upload → biểu mẫu) */}

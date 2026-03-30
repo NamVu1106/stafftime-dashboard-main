@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import type { AttendanceCountProductionSnapshot } from '@/lib/hrBuiltInStats';
 import {
   extractOverviewTable,
   findOverviewRow,
@@ -244,10 +245,59 @@ function extractTimesheetDailyBars(rows: (string | number)[][], groupNeedle: str
   };
 }
 
+function attendanceCountChartFromSnapshot(snap: AttendanceCountProductionSnapshot): {
+  type: 'split-pie';
+  title: string;
+  items: SplitPieItem[];
+  summaryRows: ComparisonSummaryRow[];
+} {
+  const o = snap.day.presentOfficial + snap.night.presentOfficial;
+  const s = snap.day.presentSeasonal + snap.night.presentSeasonal;
+  const n = snap.day.presentNew + snap.night.presentNew;
+  const items: SplitPieItem[] = [];
+  if (o > 0)
+    items.push({
+      name: 'Chính thức',
+      fullName: 'Chính thức (tổng lượt đi làm trong kỳ, gồm NV mới)',
+      value: o,
+    });
+  if (s > 0)
+    items.push({
+      name: 'Thời vụ',
+      fullName: 'Thời vụ (tổng lượt đi làm trong kỳ, gồm NV mới)',
+      value: s,
+    });
+  if (!items.length) {
+    items.push({ name: 'Không có dữ liệu', fullName: 'Không có lượt đi làm trong kỳ', value: 1 });
+  }
+  return {
+    type: 'split-pie',
+    title: 'Biểu đồ: Cơ cấu đi làm (TT SX — ca ngày + ca đêm, tổng lượt kỳ)',
+    items,
+    summaryRows: [
+      {
+        label: 'Kỳ gộp',
+        value:
+          snap.aggregationStart && snap.aggregationEnd
+            ? `${snap.aggregationStart} → ${snap.aggregationEnd} (${snap.aggregationDays ?? 1} ngày)`
+            : snap.snapshotDate,
+      },
+      { label: 'Tổng đi làm', value: formatCompactNumber(o + s) },
+      { label: 'Chính thức', value: formatCompactNumber(o) },
+      { label: 'Thời vụ', value: formatCompactNumber(s) },
+      { label: 'NV mới (thống kê)', value: formatCompactNumber(n) },
+    ],
+  };
+}
+
 interface HrChartFromGridProps {
   reportType: string;
   /** Grid từ API: { rows } hoặc { sheets: [{ name, rows }] } */
-  templateGrid: { rows?: (string | number)[][]; sheets?: SheetItem[] } | null;
+  templateGrid: {
+    rows?: (string | number)[][];
+    sheets?: SheetItem[];
+    productionSnapshot?: AttendanceCountProductionSnapshot;
+  } | null;
   className?: string;
 }
 
@@ -262,7 +312,11 @@ export function HrChartFromGrid({ reportType, templateGrid, className = '' }: Hr
         const extracted = extractAttendanceRatePie(rows);
         return extracted ? { type: 'attendance-rate' as const, ...extracted } : null;
       }
-      case 'attendance-count':
+      case 'attendance-count': {
+        const snap = templateGrid?.productionSnapshot;
+        if (snap) {
+          return attendanceCountChartFromSnapshot(snap);
+        }
         return extractSplitPieChart(
           rows,
           'Biểu đồ: Cơ cấu đi làm chính thức vs thời vụ',
@@ -279,6 +333,7 @@ export function HrChartFromGrid({ reportType, templateGrid, className = '' }: Hr
             ];
           }
         );
+      }
       case 'workforce-summary':
         return extractSplitPieChart(
           rows,
