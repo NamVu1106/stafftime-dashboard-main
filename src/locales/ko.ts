@@ -121,6 +121,7 @@ export default {
     snsDesc: 'SNS 기능',
     favorites: '즐겨찾기',
     recent: '최근',
+    quickAccess: '빠른 이동',
     goBack: '돌아가기',
     downloadExcel: 'Excel 다운로드',
     menuStructure: '메뉴 구조',
@@ -578,10 +579,10 @@ export default {
     builtInDescAttendance: '출근 + 계약직 + NCC. 기간: {{start}} → {{end}}',
     builtInDescFilter: '필터: {{start}} → {{end}}',
     builtInDescStatsOnly:
-      '통계·차트만 표시(Excel 상세 표 없음). 필터 기간: {{start}} → {{end}}. TT SX(주간/야간) 표는 필터 기간 내 각 일(오늘 이전까지)을 합산합니다. Excel «하루」 보고서와 맞추려면 시작일=종료일로 지정하세요.',
-    attendanceCountMultiDayWarningTitle: '필터에 여러 날이 포함됨 — Excel 단일 일자 보고서와 다릅니다',
-    attendanceCountMultiDayWarningBody:
-      '현재 {{days}}일({{range}})을 합산합니다. Excel의 특정 하루 수치와 맞추려면 시작일=종료일을 그날로 두거나 사이드바에서 «1일»을 선택하세요.',
+      '통계 + 차트(Excel 격자 없음). 기간: {{start}} → {{end}}.',
+    attendanceCountTableCaption:
+      '기간 {{range}} ({{days}}일). 명단 기준일 {{anchor}}. 정규/계약: 인원×{{days}} = 출근+결근; 비율 = 출근÷(인원×{{days}}).',
+    attendanceCountMultiDayHintShort: 'Excel 하루 보고: 시작=종료.',
     timesheetDateRangeHint:
       '날짜 범위는 이 페이지에서 불러오는 시스템 데이터(요약, 차트, 표)를 결정합니다. 사이드바는 기본 월/일을 설정하고, 다른 기간이 필요하면 여기서 조정하세요.',
     tabOverview: '개요',

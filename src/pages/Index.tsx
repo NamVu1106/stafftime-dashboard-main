@@ -94,6 +94,8 @@ const Index = () => {
   } = useTimeFilter();
 
   const [lateListOpen, setLateListOpen] = useState(false);
+  const [noticePanelOpen, setNoticePanelOpen] = useState(false);
+  const [shortcutsPanelOpen, setShortcutsPanelOpen] = useState(false);
   /** Khi mở từ thông báo "đi trễ hôm nay", dùng ngày trong metadata */
   const [lateNoticeDateOverride, setLateNoticeDateOverride] = useState<string | null>(null);
   const [lateListSearch, setLateListSearch] = useState('');
@@ -649,66 +651,115 @@ const Index = () => {
         description={`${t('dashboard.welcome')} ${headerDateLabel}.`}
       />
 
-      {/* YS-Smart: Notice & Favorites - luôn hiện (ảnh 2) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        <div className="lg:col-span-2 rounded-lg border border-border bg-card overflow-hidden">
-          <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center gap-2">
-            <Bell className="w-4 h-4" />
-            <span className="font-semibold">{t('dashboard.notice')}</span>
-          </div>
-          <div className="p-4">
-            <div className="space-y-2 max-h-40 overflow-y-auto">
-              {(noticeData as any[]).length > 0 ? (
-                (noticeData as any[]).map((n: any) => (
-                  <div key={n.id} className="flex items-start justify-between gap-2 py-2 border-b border-border last:border-0">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm truncate">{translateNoticeTitle(n.title, language, t)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(n.created_at).toLocaleDateString(language === 'ko' ? 'ko-KR' : 'vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                      </p>
-                    </div>
-                    {n.type === 'late_employees' && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0 text-xs h-8"
-                        onClick={() => {
-                          const d = n.metadata?.date as string | undefined;
-                          setLateNoticeDateOverride(d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
-                          setLateListOpen(true);
-                        }}
-                      >
-                        {t('dashboard.viewLateList')}
-                      </Button>
-                    )}
+      {/* Notice & shortcuts — nút gọn, mở popup */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9 gap-2"
+          onClick={() => setNoticePanelOpen(true)}
+        >
+          <Bell className="w-4 h-4 shrink-0" />
+          <span>{t('dashboard.notice')}</span>
+          {(noticeData as any[]).length > 0 ? (
+            <Badge variant="secondary" className="tabular-nums font-normal">
+              {(noticeData as any[]).length}
+            </Badge>
+          ) : null}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9 gap-2"
+          onClick={() => setShortcutsPanelOpen(true)}
+        >
+          <Star className="w-4 h-4 shrink-0" />
+          {t('dashboard.quickAccess')}
+        </Button>
+      </div>
+
+      <Dialog open={noticePanelOpen} onOpenChange={setNoticePanelOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bell className="w-5 h-5" />
+              {t('dashboard.notice')}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 overflow-y-auto max-h-[60vh] pr-1 -mr-1">
+            {(noticeData as any[]).length > 0 ? (
+              (noticeData as any[]).map((n: any) => (
+                <div
+                  key={n.id}
+                  className="flex items-start justify-between gap-2 py-2 border-b border-border last:border-0"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm">{translateNoticeTitle(n.title, language, t)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(n.created_at).toLocaleDateString(language === 'ko' ? 'ko-KR' : 'vi-VN', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                      })}
+                    </p>
                   </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground py-4">{t('common.noNotifications')}</p>
-              )}
-            </div>
+                  {n.type === 'late_employees' && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 text-xs h-8"
+                      onClick={() => {
+                        const d = n.metadata?.date as string | undefined;
+                        setLateNoticeDateOverride(d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
+                        setNoticePanelOpen(false);
+                        setLateListOpen(true);
+                      }}
+                    >
+                      {t('dashboard.viewLateList')}
+                    </Button>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground py-4">{t('common.noNotifications')}</p>
+            )}
           </div>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="space-y-4">
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={shortcutsPanelOpen} onOpenChange={setShortcutsPanelOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Star className="w-5 h-5" />
+              {t('dashboard.quickAccess')}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
             <div>
-              <h3 className="flex items-center gap-2 text-sm font-semibold mb-2">
+              <h3 className="flex items-center gap-2 font-semibold text-foreground mb-2">
                 <Star className="w-4 h-4 text-primary" />
                 {t('dashboard.favorites')}
               </h3>
-              <p className="text-xs text-muted-foreground">—</p>
+              <p className="text-muted-foreground">—</p>
             </div>
             <div>
-              <h3 className="flex items-center gap-2 text-sm font-semibold mb-2">
+              <h3 className="flex items-center gap-2 font-semibold text-foreground mb-2">
                 <History className="w-4 h-4 text-primary" />
                 {t('dashboard.recent')}
               </h3>
-              <ul className="space-y-1">
+              <ul className="space-y-2">
                 {recentLinks.map((link, i) => (
                   <li key={link.path}>
-                    <Link to={link.path} className="text-sm text-primary hover:underline flex items-center gap-1">
-                      <span className="text-muted-foreground">{i + 1}.</span>
+                    <Link
+                      to={link.path}
+                      className="text-primary hover:underline flex items-center gap-2"
+                      onClick={() => setShortcutsPanelOpen(false)}
+                    >
+                      <span className="text-muted-foreground tabular-nums w-5">{i + 1}.</span>
                       {link.label}
                     </Link>
                   </li>
@@ -716,8 +767,8 @@ const Index = () => {
               </ul>
             </div>
           </div>
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
 
       {/* 5 hạng mục - tabs đã chuyển lên TopBar — Bộ lọc thời gian đã chuyển sang Sidebar */}
       <div className="w-full">

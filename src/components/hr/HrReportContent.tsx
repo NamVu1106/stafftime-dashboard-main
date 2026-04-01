@@ -738,22 +738,24 @@ export const HrReportContent = ({ reportType, compact }: HrReportContentProps) =
         <Card className="mb-4">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">{t('hrReport.builtInReportTitle')}</CardTitle>
-            <CardDescription className="text-xs">
-              {isStatsOnlyBuiltInReport
-                ? t('hrReport.builtInDescStatsOnly', {
-                    start: gridParams.start_date,
-                    end: gridParams.end_date,
-                  })
-                : reportKey === 'attendance-rate'
-                  ? t('hrReport.builtInDescAttendance', {
+            {reportKey === 'attendance-count' ? null : (
+              <CardDescription className="text-xs">
+                {isStatsOnlyBuiltInReport
+                  ? t('hrReport.builtInDescStatsOnly', {
                       start: gridParams.start_date,
                       end: gridParams.end_date,
                     })
-                  : t('hrReport.builtInDescFilter', {
-                      start: gridParams.start_date,
-                      end: gridParams.end_date,
-                    })}
-            </CardDescription>
+                  : reportKey === 'attendance-rate'
+                    ? t('hrReport.builtInDescAttendance', {
+                        start: gridParams.start_date,
+                        end: gridParams.end_date,
+                      })
+                    : t('hrReport.builtInDescFilter', {
+                        start: gridParams.start_date,
+                        end: gridParams.end_date,
+                      })}
+              </CardDescription>
+            )}
           </CardHeader>
           <CardContent className="space-y-3 pt-0">
             {isBuiltInTimesheetReport && (

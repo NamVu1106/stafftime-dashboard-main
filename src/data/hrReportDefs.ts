@@ -40,8 +40,7 @@ export const HR_REPORT_DEFS: Record<
   },
   'attendance-count': {
     title: 'HR - Số lượng đi làm',
-    description:
-      'Tự tính từ chấm công theo kỳ lọc: mỗi ngày CT/TV = số người ca ngày + ca đêm (theo shift/giờ vào). NV mới: ngày vào làm trùng ngày công (ưu tiên ngày vào trong DS CT/TV đã import).',
+    description: 'TT SX: ca ngày / ca đêm theo kỳ lọc. CT/TV: nhân lực×số ngày = đi làm + nghỉ; tỉ lệ = đi làm ÷ (nhân lực×số ngày).',
     defaultRowLimit: 100,
     defaultColLimit: 200,
   },

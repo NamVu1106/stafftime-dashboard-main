@@ -265,33 +265,23 @@ export function buildHrBuiltInSummary(
       const snap = templateGrid?.productionSnapshot;
       const ct = Number(sums.official || 0);
       const tv = Number(sums.seasonal || 0);
-      const nm = Number(sums.newEmployees || 0);
       const totalAttended = ct + tv;
-      const officialShareCtTv =
-        ct + tv > 0 ? ((ct / (ct + tv)) * 100).toFixed(1) : '0.0';
-      notes.push(`Tỷ trọng chính thức trong khối CT+TV (tổng lượt đi làm kỳ): ${officialShareCtTv}%.`);
-      if (snap) {
-        const rng =
-          snap.aggregationStart && snap.aggregationEnd
-            ? `${snap.aggregationStart} → ${snap.aggregationEnd} (${snap.aggregationDays ?? 1} ngày)`
-            : snap.snapshotDate;
-        notes.push(
-          `Bảng TT SX gộp kỳ ${rng}: nhân lực theo DS (ngày ${snap.snapshotDate}); đi làm / nghỉ là tổng lượt qua các ngày trong bộ lọc.`
-        );
-        if (snap.note) notes.push(snap.note);
-      }
+      const n = snap?.aggregationDays ?? 1;
+      const desc = snap
+        ? n <= 1
+          ? `Theo DS ngày ${snap.snapshotDate}: nhân lực = đi làm + nghỉ; tỉ lệ = đi làm ÷ nhân lực (CT/TV, từng ca).`
+          : `Kỳ ${snap.aggregationStart}→${snap.aggregationEnd} (${n} ngày): nhân lực×${n} = đi làm + nghỉ; tỉ lệ = đi làm ÷ (nhân lực×${n}). Mốc DS: ${snap.snapshotDate}.`
+        : 'Theo dữ liệu hệ thống trong kỳ lọc.';
       return {
         title: 'Tóm tắt số lượng đi làm',
-        description: snap
-          ? 'Ca ngày / ca đêm; đi làm và nghỉ cộng dồn theo từng ngày trong kỳ lọc; tỉ lệ = đi làm ÷ (nhân lực × số ngày). Nhân lực hiển thị theo DS tại ngày cuối kỳ (mốc danh sách).'
-          : 'So sánh nhân sự chính thức, thời vụ và biến động nhân viên mới trong kỳ.',
+        description: desc,
         metrics: [
-          { label: 'Chính thức', value: formatMetricValue(sums.official), hint: snap ? 'Tổng lượt đi làm kỳ' : 'Người' },
-          { label: 'Thời vụ', value: formatMetricValue(sums.seasonal), hint: snap ? 'Tổng lượt đi làm kỳ' : 'Người' },
-          { label: 'Tổng đi làm', value: formatMetricValue(totalAttended), hint: snap ? 'Tổng lượt CT + TV (đã gộp NV mới)' : 'Người' },
-          { label: 'Nhân viên mới', value: formatMetricValue(sums.newEmployees), hint: snap ? 'Chỉ để thống kê (đã nằm trong CT/TV)' : 'Người' },
+          { label: 'Chính thức', value: formatMetricValue(sums.official), hint: snap ? 'Lượt đi làm (kỳ)' : undefined },
+          { label: 'Thời vụ', value: formatMetricValue(sums.seasonal), hint: snap ? 'Lượt đi làm (kỳ)' : undefined },
+          { label: 'Tổng đi làm', value: formatMetricValue(totalAttended), hint: snap ? 'CT + TV' : undefined },
+          { label: 'Nhân viên mới', value: formatMetricValue(sums.newEmployees), hint: snap ? 'Thống kê' : undefined },
         ],
-        notes,
+        notes: [],
       };
     }
     case 'temp-timesheet':

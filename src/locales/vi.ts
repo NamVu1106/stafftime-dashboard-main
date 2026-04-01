@@ -121,6 +121,7 @@ export default {
     snsDesc: 'Mạng xã hội nội bộ',
     favorites: 'Favorites',
     recent: 'Recent',
+    quickAccess: 'Truy cập nhanh',
     goBack: 'Quay lại',
     downloadExcel: 'Download Excel',
     menuStructure: 'Menu Structure',
@@ -579,10 +580,10 @@ export default {
     builtInDescAttendance: 'Chấm công + NV thời vụ + NCC. Khoảng: {{start}} → {{end}}',
     builtInDescFilter: 'Bộ lọc: {{start}} → {{end}}',
     builtInDescStatsOnly:
-      'Chỉ số thống kê và biểu đồ (không hiển thị bảng Excel chi tiết). Khoảng lọc: {{start}} → {{end}}. Hai bảng TT SX (ca ngày/đêm) cộng dồn mọi ngày trong kỳ lọc (không vượt hôm nay): đi làm / nghỉ là tổng lượt; nhân lực theo DS tại ngày cuối kỳ. Muốn giống file Excel «một ngày» thì Từ = Đến = ngày đó (lọc 28–30/3 thì gộp 3 ngày, khác so với chỉ 27/3).',
-    attendanceCountMultiDayWarningTitle: 'Nhiều ngày trong bộ lọc — không tương đương báo cáo Excel một ngày',
-    attendanceCountMultiDayWarningBody:
-      'Hiện đang gộp {{days}} ngày ({{range}}). File Excel của bạn là một ngày: nhân lực / đi làm / tỉ lệ tính cho đúng ngày đó. Để số gần giống Excel, đặt Từ ngày = Đến ngày = ngày cần xem (vd. 27/03/2026), hoặc chọn «1 ngày» trên sidebar.',
+      'Thống kê + biểu đồ (không có lưới Excel). Khoảng: {{start}} → {{end}}.',
+    attendanceCountTableCaption:
+      'Kỳ {{range}} ({{days}} ngày). Mốc DS: {{anchor}}. CT/TV: nhân lực×{{days}} = đi làm + nghỉ; tỉ lệ = đi làm ÷ (nhân lực×{{days}}).',
+    attendanceCountMultiDayHintShort: 'Excel một ngày: Từ = Đến.',
     timesheetDateRangeHint:
       'Khoảng ngày quyết định dữ liệu hệ thống tải cho trang (tóm tắt, biểu đồ, bảng). Thanh bên đặt tháng/ngày mặc định; chỉnh ở đây nếu cần khoảng khác.',
     tabOverview: 'Tổng quan',
