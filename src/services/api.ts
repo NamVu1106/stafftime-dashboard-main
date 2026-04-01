@@ -244,14 +244,25 @@ export const employeesAPI = {
   },
 };
 
+/** Thông báo từ API /notifications (dùng TopBar, v.v.) */
+export type ApiNotification = {
+  id: number;
+  type: string;
+  title: string;
+  message: string;
+  is_read: number;
+  metadata: unknown;
+  created_at: string;
+};
+
 export const notificationsAPI = {
   getAll: async (params?: { limit?: number }) => {
     const queryParams = new URLSearchParams();
     if (params?.limit) queryParams.append('limit', params.limit.toString());
-    return request(`/notifications?${queryParams.toString()}`);
+    return request<ApiNotification[]>(`/notifications?${queryParams.toString()}`);
   },
   getUnreadCount: async () => {
-    return request('/notifications/unread-count');
+    return request<{ count: number }>('/notifications/unread-count');
   },
   markAsRead: async (id: number) => {
     return request(`/notifications/${id}/read`, {

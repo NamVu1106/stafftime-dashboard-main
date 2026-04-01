@@ -540,3 +540,103 @@
     print-color-adjust: exact;
   }
 }
+
+/* HR Pro intro — chữ gradient kim loại (phân cảnh bảo mật) */
+@keyframes hr-metallic-shift {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: -200% center;
+  }
+}
+.hr-metallic-text {
+  background: linear-gradient(
+    105deg,
+    #6b7280 0%,
+    #e5e7eb 35%,
+    #ffffff 50%,
+    #9ca3af 65%,
+    #4b5563 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .hr-metallic-text {
+    animation: hr-metallic-shift 7s linear infinite;
+  }
+}
+
+/* Trang HR Pro — phong cách product page (apple.com) */
+.hr-pro-apple {
+  --hr-apple-blue: #0071e3;
+  --hr-apple-blue-hover: #0077ed;
+  --hr-apple-gray-tertiary: #6e6e73;
+  --hr-apple-gray-secondary: #a1a1a6;
+}
+.hr-pro-apple .hr-apple-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--hr-apple-gray-tertiary);
+}
+.hr-pro-apple .hr-apple-headline {
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+.hr-pro-apple .hr-apple-body {
+  font-size: 1.0625rem;
+  line-height: 1.47059;
+  color: var(--hr-apple-gray-secondary);
+}
+@media (min-width: 768px) {
+  .hr-pro-apple .hr-apple-body {
+    font-size: 1.1875rem;
+  }
+}
+.hr-pro-apple .hr-apple-link {
+  font-size: 1.0625rem;
+  color: var(--hr-apple-blue);
+  text-decoration: none;
+}
+.hr-pro-apple .hr-apple-link:hover {
+  text-decoration: underline;
+}
+.hr-pro-apple .hr-apple-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 7.25rem;
+  padding: 0.65rem 1.35rem;
+  border-radius: 9999px;
+  font-size: 1.0625rem;
+  font-weight: 400;
+  background: var(--hr-apple-blue);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.hr-pro-apple .hr-apple-cta:hover {
+  background: var(--hr-apple-blue-hover);
+}
+
+/* Cuộn ngang highlights — ẩn thanh cuộn (kiểu apple.com) */
+.hr-apple-scroll-rail {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hr-apple-scroll-rail::-webkit-scrollbar {
+  display: none;
+}
+.hr-pro-apple-light .hr-apple-eyebrow {
+  color: #6e6e73;
+}
+.hr-pro-apple-light .hr-apple-body {
+  color: #86868b;
+}

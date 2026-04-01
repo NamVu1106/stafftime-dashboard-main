@@ -23,6 +23,7 @@ import WeeklyTemporaryWorkersPage from "./pages/WeeklyTemporaryWorkersPage";
 import HrReportPage from "./pages/HrReportPage";
 import HrSummaryPage from "./pages/HrSummaryPage";
 import RevisionHistoryPage from "./pages/RevisionHistoryPage";
+import HRProIntroductionPage from "./pages/HRProIntroductionPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -47,6 +48,7 @@ const App = () => (
         <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route element={<ProtectedRoute />}>
+            <Route path="/introduction" element={<HRProIntroductionPage />} />
           <Route element={<AdminLayout />}>
             <Route path="/" element={<Index />} />
             <Route path="/realtime" element={<RealtimePage />} />

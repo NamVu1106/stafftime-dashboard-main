@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, Menu, User, LogOut, X, Trash2, AlertTriangle, Search, Settings, Calculator, FileText, Users, Briefcase, ShoppingCart, Home, HelpCircle, ShieldCheck, ChevronDown, LayoutGrid, FolderOpen, FileSpreadsheet, ListTree } from 'lucide-react';
+import { Bell, Menu, User, LogOut, X, Trash2, AlertTriangle, Settings, Calculator, FileText, Users, Briefcase, ShoppingCart, Home, HelpCircle, ShieldCheck, ChevronDown, LayoutGrid, FolderOpen, FileSpreadsheet, ListTree } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useI18n } from '@/hooks/useI18n';
@@ -13,12 +13,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { notificationsAPI } from '@/services/api';
+import { notificationsAPI, type ApiNotification } from '@/services/api';
 import { resolveNotificationPath } from '@/lib/notificationNavigation';
+import { QuickFunctionSearch } from '@/components/layout/QuickFunctionSearch';
 import { useToast } from '@/hooks/use-toast';
 import { toast as sonnerToast } from 'sonner';
 import { useDashboardTab } from '@/contexts/DashboardTabContext';
@@ -28,16 +28,6 @@ import type { MenuTreeItem } from '@/components/dashboard/DepartmentMenuTree';
 
 interface TopBarProps {
   onMenuClick: () => void;
-}
-
-interface Notification {
-  id: number;
-  type: string;
-  title: string;
-  message: string;
-  is_read: number;
-  metadata: any;
-  created_at: string;
 }
 
 /** Popup chọn chức năng - hover hiện, layout giống ảnh (4 cột + sidebar) */
@@ -262,7 +252,7 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
   }, [activeDeptTab, location.pathname, setActiveDeptTab]);
 
   // Fetch notifications
-  const { data: notifications = [], refetch: refetchNotifications } = useQuery<Notification[]>({
+  const { data: notifications = [], refetch: refetchNotifications } = useQuery<ApiNotification[]>({
     queryKey: ['notifications'],
     queryFn: () => notificationsAPI.getAll({ limit: 10 }),
     refetchInterval: 30000, // Refetch every 30 seconds
@@ -335,7 +325,7 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
     },
   });
 
-  const handleNotificationClick = (notification: Notification) => {
+  const handleNotificationClick = (notification: ApiNotification) => {
     const target = resolveNotificationPath(notification);
     const unread = notification.is_read === 0;
 
@@ -514,7 +504,7 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
           variant="ghost"
           size="icon"
           className="h-9 w-9"
-          onClick={() => uiToast({ title: 'Help', description: t('common.help') + ' - YS Smart' })}
+          onClick={() => navigate('/introduction')}
           title={t('common.help')}
         >
           <HelpCircle className="w-5 h-5" />
@@ -529,16 +519,9 @@ export const TopBar = ({ onMenuClick }: TopBarProps) => {
         </Button>
       </div>
 
-      {/* Center - Search (YS-Smart Quick Search) */}
-      <div className="flex-1 max-w-md mx-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            type="text"
-            placeholder={t('common.searchPlaceholder')}
-            className="pl-9 h-9 bg-muted/50 border-0 focus-visible:ring-2"
-          />
-        </div>
+      {/* Center - Tìm nhanh chức năng (gợi ý + icon) */}
+      <div className="flex-1 max-w-md mx-4 min-w-0">
+        <QuickFunctionSearch />
       </div>
 
       {/* Right Side */}

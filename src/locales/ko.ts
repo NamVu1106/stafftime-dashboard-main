@@ -1,3 +1,5 @@
+import { koHrProIntro } from './hrProIntroContent';
+
 export default {
   common: {
     language: '언어',
@@ -18,7 +20,10 @@ export default {
     loading: '로딩 중...',
     search: '검색',
     filter: '필터',
-    searchPlaceholder: '빠른 검색...',
+    searchPlaceholder: '기능·페이지 검색...',
+    quickSearchEmpty: '일치하는 기능이 없습니다',
+    quickSearchGroupPages: '페이지·바로가기',
+    quickSearchShortcutHint: '입력하여 필터 — Enter로 첫 항목 — Ctrl+K로 포커스',
     export: 'Excel 내보내기',
     view: '보기',
     edit: '수정',
@@ -47,6 +52,7 @@ export default {
     deleteAllNotifications: '모든 알림 삭제',
     deleteAllConfirmDesc: '이 작업은 되돌릴 수 없습니다.',
   },
+  hrProIntro: koHrProIntro,
   dashboard: {
     title: '개요',
     welcome: '다시 오신 것을 환영합니다! 오늘의 활동 개요입니다',

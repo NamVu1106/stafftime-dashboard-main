@@ -1,3 +1,5 @@
+import { viHrProIntro } from './hrProIntroContent';
+
 export default {
   common: {
     language: 'Ngôn ngữ',
@@ -18,7 +20,10 @@ export default {
     loading: 'Đang tải...',
     search: 'Tìm kiếm',
     filter: 'Bộ lọc',
-    searchPlaceholder: 'Tìm kiếm nhanh...',
+    searchPlaceholder: 'Tìm chức năng, trang...',
+    quickSearchEmpty: 'Không có chức năng khớp',
+    quickSearchGroupPages: 'Trang & lối tắt',
+    quickSearchShortcutHint: 'Gõ để lọc — Enter chọn mục đầu — Ctrl+K mở ô tìm',
     export: 'Xuất Excel',
     view: 'Xem',
     edit: 'Sửa',
@@ -47,6 +52,7 @@ export default {
     deleteAllNotifications: 'Xóa tất cả thông báo',
     deleteAllConfirmDesc: 'Hành động này không thể hoàn tác.',
   },
+  hrProIntro: viHrProIntro,
   dashboard: {
     title: 'Tổng quan',
     welcome: 'Chào mừng bạn quay trở lại! Đây là tổng quan hoạt động',
