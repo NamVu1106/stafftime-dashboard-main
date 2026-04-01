@@ -1,515 +1,630 @@
-import { useLayoutEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check } from 'lucide-react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { Button } from '@/components/ui/button';
 import { useI18n } from '@/hooks/useI18n';
-import { cn } from '@/lib/utils';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import {
+  ArrowLeft,
+  ScanFace,
+  Fingerprint,
+  Radio,
+  Monitor,
+  Laptop,
+  Smartphone,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { MagneticButton } from '@/pages/hr-pro-intro/MagneticButton';
 import { ParticleShield } from '@/pages/hr-pro-intro/ParticleShield';
+import { cn } from '@/lib/utils';
 
 gsap.registerPlugin(ScrollTrigger);
 
-const PERF_FLOATS = [
-  { t: '1840.5h', l: '8%', top: '12%' },
-  { t: 'NV-2044', l: '72%', top: '18%' },
-  { t: 'OT++', l: '18%', top: '68%' },
-  { t: '12 ca', l: '80%', top: '52%' },
-  { t: '99.2%', l: '42%', top: '8%' },
-  { t: 'λ sort', l: '55%', top: '72%' },
-  { t: 'Σ 48k', l: '12%', top: '38%' },
-  { t: 'sync', l: '88%', top: '34%' },
-  { t: '176ms', l: '28%', top: '82%' },
-  { t: 'batch', l: '62%', top: '28%' },
-  { t: 'HR-Δ', l: '5%', top: '55%' },
-  { t: '8.4M', l: '75%', top: '78%' },
-];
-
-function DashboardMock({ t, className }: { t: (k: string) => string; className?: string }) {
+function DashboardMock({ className }: { className?: string }) {
+  const { t } = useI18n();
   return (
-    <div className={cn('hr-hero-dash relative w-full max-w-lg sm:max-w-xl lg:max-w-none lg:max-w-[min(100%,560px)]', className)}>
-      <div
-        className={cn(
-          'relative rounded-[1.35rem] p-px',
-          'shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_40px_100px_-28px_rgba(0,0,0,0.9),inset_0_1px_0_rgba(255,255,255,0.06)]'
-        )}
-        style={{
-          background: 'linear-gradient(150deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.03) 50%, rgba(140,160,200,0.1) 100%)',
-        }}
-      >
-        <div className="overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#14141a] via-[#0c0c10] to-[#030304] px-5 pb-8 pt-6 sm:px-7 sm:pb-9 sm:pt-7">
-          <div className="mb-4 flex items-center justify-between gap-2">
-            <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[9px] font-medium uppercase tracking-[0.18em] text-white/45">
-              {t('hrProIntro.mockBadge')}
-            </span>
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.65)]" />
-          </div>
-          <p className="text-xl font-semibold tracking-tight text-white sm:text-2xl">{t('hrProIntro.mockTitle')}</p>
-          <p className="mt-1.5 text-xs text-white/40">{t('hrProIntro.mockSub')}</p>
-          <div className="mt-6 grid grid-cols-3 gap-2">
-            {[72, 94, 88].map((n, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-white/[0.06] bg-white/[0.03] px-1 py-3 text-center backdrop-blur-sm"
-              >
-                <p className="text-base font-semibold tabular-nums text-white sm:text-lg">{n}%</p>
-                <p className="mt-0.5 text-[8px] uppercase tracking-wider text-white/30">KPI</p>
-              </div>
-            ))}
-          </div>
+    <div
+      className={cn(
+        'rounded-2xl border border-white/10 bg-gradient-to-br from-zinc-900/95 to-black/90 p-5 shadow-2xl shadow-black/60 backdrop-blur-xl',
+        className
+      )}
+    >
+      <div className="mb-4 flex items-center justify-between">
+        <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+          {t('hrProIntro.mockBadge')}
+        </span>
+        <div className="flex gap-1">
+          <span className="h-2 w-2 rounded-full bg-red-500/60" />
+          <span className="h-2 w-2 rounded-full bg-amber-500/60" />
+          <span className="h-2 w-2 rounded-full bg-emerald-500/60" />
         </div>
       </div>
+      <div className="space-y-3">
+        <div className="text-lg font-semibold tracking-tight text-white">
+          {t('hrProIntro.mockTitle')}
+        </div>
+        <div className="h-2 w-3/4 rounded-full bg-white/10" />
+        <div className="h-2 w-1/2 rounded-full bg-white/5" />
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          {[72, 94, 88].map((n, i) => (
+            <div key={i} className="rounded-lg bg-white/5 p-2 text-center">
+              <div className="text-lg font-bold text-emerald-400">{n}%</div>
+              <div className="text-[9px] text-zinc-500">KPI</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <p className="mt-4 text-[10px] text-zinc-500">{t('hrProIntro.mockSub')}</p>
     </div>
   );
 }
 
 export default function HRProIntroductionPage() {
   const navigate = useNavigate();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLElement>(null);
-  const archRef = useRef<HTMLElement>(null);
+  const heroVeilRef = useRef<HTMLDivElement>(null);
+  const heroBezelRef = useRef<HTMLDivElement>(null);
+  const heroDashRef = useRef<HTMLDivElement>(null);
+  const heroLineRef = useRef<HTMLDivElement>(null);
+  const coreRef = useRef<HTMLElement>(null);
+  const orbRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const coreGlowRef = useRef<HTMLDivElement>(null);
   const perfRef = useRef<HTMLElement>(null);
-  const perfParallaxRef = useRef<HTMLDivElement>(null);
-  const touchRef = useRef<HTMLElement>(null);
-  const shieldRef = useRef<HTMLElement>(null);
-  const closingRef = useRef<HTMLElement>(null);
+  const perfNumRef = useRef<HTMLSpanElement>(null);
+  const xdrRef = useRef<HTMLElement>(null);
+  const xdrWidgetsRef = useRef<HTMLDivElement[]>([]);
+  const connectRef = useRef<HTMLElement>(null);
+  const bioRef = useRef<HTMLElement>(null);
+  const lineupRef = useRef<HTMLElement>(null);
+  const lineupDevicesRef = useRef<HTMLDivElement[]>([]);
+  const [reduced, setReduced] = useState(false);
 
-  const scrollToGuide = useCallback(() => {
-    document.getElementById('hr-pro-guide')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReduced(mq.matches);
+    const h = () => setReduced(mq.matches);
+    mq.addEventListener('change', h);
+    return () => mq.removeEventListener('change', h);
   }, []);
 
-  const scrollToArch = useCallback(() => {
-    archRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
-
-  const scrollToHighlights = useCallback(() => {
-    document.getElementById('hr-pro-highlights')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
-
-  useLayoutEffect(() => {
+  useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduced) {
-      gsap.set('.hr-hero-line, .hr-hero-dash, .hr-scroll-cue, .arch-layer, .perf-float, .perf-chart, .perf-bg-slow, .phone-3d, .phone-inner, .phone-tick, .closing-brand, .closing-fade', {
-        clearProps: 'all',
-      });
-      gsap.set('.hr-hero-line, .hr-hero-dash, .hr-scroll-cue', { opacity: 1, y: 0, scale: 1 });
-      gsap.set('.arch-layer', { opacity: 1 });
-      gsap.set('.perf-chart', { opacity: 1, scale: 1 });
-      gsap.set('.perf-float', { opacity: 0.35 });
-      return;
-    }
-
     const ctx = gsap.context(() => {
-      gsap.to('.hr-logo-sheen', {
-        rotation: 360,
-        duration: 18,
-        repeat: -1,
-        ease: 'none',
-      });
+      if (reduced) {
+        gsap.set(
+          [
+            heroVeilRef.current,
+            heroBezelRef.current,
+            heroDashRef.current,
+            heroLineRef.current,
+            coreGlowRef.current,
+            ...orbRefs.current,
+            perfNumRef.current,
+            ...xdrWidgetsRef.current,
+            ...lineupDevicesRef.current,
+          ].filter(Boolean),
+          { clearProps: 'all' }
+        );
+        return;
+      }
 
-      gsap.set('.hr-hero-line', { yPercent: 120, opacity: 0 });
-      gsap.set('.hr-hero-dash', { scale: 0.82, opacity: 0, y: 48 });
-      gsap.set('.hr-scroll-cue', { opacity: 0, y: 12 });
+      /* —— Màn 1: Hero — veil, bezel, tilt dashboard —— */
+      if (heroRef.current && heroVeilRef.current && heroDashRef.current) {
+        gsap.set(heroVeilRef.current, { opacity: 1 });
+        gsap.set(heroBezelRef.current, { opacity: 0, scale: 0.98 });
+        gsap.set(heroDashRef.current, {
+          opacity: 0,
+          y: 120,
+          rotateX: 28,
+          rotateY: -12,
+          scale: 0.82,
+          transformPerspective: 1400,
+          transformOrigin: '50% 80%',
+        });
+        if (heroLineRef.current) gsap.set(heroLineRef.current, { opacity: 0, y: 24 });
 
-      gsap
-        .timeline({
+        const heroTl = gsap.timeline({
           scrollTrigger: {
             trigger: heroRef.current,
             start: 'top top',
-            end: '+=170%',
+            end: '+=130%',
+            scrub: 1.1,
             pin: true,
-            scrub: 0.75,
+            anticipatePin: 1,
           },
-        })
-        .to('.hr-hero-line', { yPercent: 0, opacity: 1, stagger: 0.14, ease: 'power2.out' }, 0.06)
-        .to('.hr-hero-dash', { scale: 1, opacity: 1, y: 0, ease: 'power2.out' }, 0.22)
-        .to('.hr-scroll-cue', { opacity: 0.55, y: 0, ease: 'power1.out' }, 0.72);
+        });
+        heroTl
+          .to(heroVeilRef.current, { opacity: 0, duration: 0.35 }, 0)
+          .to(heroBezelRef.current, { opacity: 1, scale: 1, duration: 0.4 }, 0.05)
+          .to(
+            heroDashRef.current,
+            { opacity: 1, y: 0, rotateX: 8, rotateY: -4, scale: 1, duration: 0.55 },
+            0.12
+          )
+          .to(heroDashRef.current, { rotateX: 4, rotateY: -2, duration: 0.25 }, 0.5);
+        if (heroLineRef.current) {
+          heroTl.to(heroLineRef.current, { opacity: 1, y: 0, duration: 0.35 }, 0.35);
+        }
+      }
 
-      const archLayers = gsap.utils.toArray<HTMLElement>('.arch-layer');
-      gsap.set(archLayers, {
-        transformPerspective: 1400,
-        transformOrigin: '50% 50%',
-        force3D: true,
-      });
-      gsap
-        .timeline({
+      /* —— Màn 2: Y-Core — 3 orbs → merge —— */
+      if (coreRef.current && coreGlowRef.current) {
+        const orbs = orbRefs.current.filter(Boolean);
+        orbs.forEach((el, i) => {
+          const spread = (i - 1) * 140;
+          gsap.set(el, { x: spread, y: 0, scale: 1, opacity: 1, rotation: 0 });
+        });
+        gsap.set(coreGlowRef.current, { scale: 0.4, opacity: 0.3 });
+
+        const coreTl = gsap.timeline({
           scrollTrigger: {
-            trigger: archRef.current,
+            trigger: coreRef.current,
             start: 'top top',
-            end: '+=240%',
+            end: '+=120%',
+            scrub: 1,
             pin: true,
-            scrub: 0.85,
+            anticipatePin: 1,
           },
-        })
-        .fromTo(
-          archLayers,
-          { z: 0, y: 0, rotateX: 6, rotationY: 0, opacity: 0.9 },
-          {
-            z: (i) => 40 + (archLayers.length - 1 - i) * 56,
-            y: (i) => -i * 24,
-            rotateX: 22,
-            rotationY: (i) => -8 + i * 5,
-            opacity: 1,
-            stagger: 0.04,
-            ease: 'none',
-            force3D: true,
-          },
-          0
-        )
-        .to('.arch-light', { backgroundPosition: '220% 50%', ease: 'none', duration: 1 }, 0);
-
-      gsap.set('.perf-float', { x: 0, y: 0, scale: 1, opacity: 0.45 });
-      gsap.set('.perf-chart', { scale: 0.35, opacity: 0 });
-      gsap.set('.perf-bg-slow', { y: 0 });
-
-      gsap
-        .timeline({
-          scrollTrigger: {
-            trigger: perfRef.current,
-            start: 'top top',
-            end: '+=210%',
-            pin: true,
-            scrub: 0.95,
-            onUpdate: (self) => {
-              const fast = perfParallaxRef.current?.querySelector('.perf-parallax-fast') as HTMLElement | null;
-              if (fast) gsap.set(fast, { y: self.progress * -120 });
+        });
+        coreTl
+          .to(
+            orbs,
+            {
+              x: 0,
+              y: (i) => (i === 0 ? -20 : i === 2 ? 20 : 0),
+              rotation: 360,
+              scale: 0.85,
+              stagger: 0.05,
+              duration: 0.5,
             },
+            0
+          )
+          .to(orbs, { scale: 0.2, opacity: 0, duration: 0.25 }, 0.45)
+          .to(coreGlowRef.current, { scale: 1.15, opacity: 1, duration: 0.35 }, 0.4);
+      }
+
+      /* —— Màn 3: Performance — counter —— */
+      if (perfRef.current && perfNumRef.current) {
+        const counter = { v: 0 };
+        ScrollTrigger.create({
+          trigger: perfRef.current,
+          start: 'top 55%',
+          end: 'bottom 45%',
+          scrub: 0.5,
+          onUpdate(self) {
+            const target = 10000;
+            counter.v = Math.floor(self.progress * target);
+            const loc = language === 'ko' ? 'ko-KR' : 'vi-VN';
+            perfNumRef.current!.textContent = counter.v.toLocaleString(loc) + '+';
           },
-        })
-        .to('.perf-float', { scale: 0.15, opacity: 0, x: '42vw', y: '28vh', stagger: 0.03, ease: 'power2.in' }, 0.25)
-        .to('.perf-chart', { scale: 1, opacity: 1, ease: 'power2.out' }, 0.48)
-        .to('.perf-bg-slow', { y: -80, ease: 'none' }, 0);
+        });
+        gsap.from(perfRef.current.querySelectorAll('.perf-reveal'), {
+          opacity: 0,
+          y: 40,
+          stagger: 0.08,
+          duration: 0.8,
+          ease: 'power3.out',
+          scrollTrigger: { trigger: perfRef.current, start: 'top 70%', toggleActions: 'play none none reverse' },
+        });
+      }
 
-      gsap.set('.phone-3d', { transformPerspective: 1100, rotateY: -26, rotateX: 8 });
-      gsap.set('.phone-inner', { y: '0%' });
-      gsap.set('.phone-tick', { scale: 0, opacity: 0 });
+      /* —— Màn 4: XDR — parallax widgets —— */
+      if (xdrRef.current) {
+        const widgets = xdrWidgetsRef.current.filter(Boolean);
+        widgets.forEach((w, i) => {
+          const depth = 0.15 + i * 0.12;
+          ScrollTrigger.create({
+            trigger: xdrRef.current!,
+            start: 'top bottom',
+            end: 'bottom top',
+            scrub: true,
+            onUpdate(self) {
+              const y = (self.progress - 0.5) * 80 * depth;
+              gsap.set(w, { y });
+            },
+          });
+        });
+        gsap.from(xdrRef.current.querySelectorAll('.xdr-fade'), {
+          opacity: 0,
+          y: 30,
+          stagger: 0.06,
+          duration: 0.7,
+          ease: 'power2.out',
+          scrollTrigger: { trigger: xdrRef.current, start: 'top 65%', toggleActions: 'play none none reverse' },
+        });
+      }
 
-      gsap
-        .timeline({
-          scrollTrigger: {
-            trigger: touchRef.current,
-            start: 'top top',
-            end: '+=190%',
-            pin: true,
-            scrub: 0.8,
+      /* —— Màn 5: Connectivity —— */
+      if (connectRef.current) {
+        gsap.from(connectRef.current.querySelectorAll('.conn-item'), {
+          opacity: 0,
+          scale: 0.85,
+          y: 24,
+          stagger: 0.12,
+          duration: 0.65,
+          ease: 'back.out(1.4)',
+          scrollTrigger: { trigger: connectRef.current, start: 'top 68%', toggleActions: 'play none none reverse' },
+        });
+      }
+
+      /* —— Màn 6: Bio —— */
+      if (bioRef.current) {
+        gsap.from(bioRef.current.querySelectorAll('.bio-fade'), {
+          opacity: 0,
+          y: 28,
+          stagger: 0.08,
+          duration: 0.75,
+          ease: 'power2.out',
+          scrollTrigger: { trigger: bioRef.current, start: 'top 70%', toggleActions: 'play none none reverse' },
+        });
+      }
+
+      /* —— Màn 7: Lineup —— */
+      if (lineupRef.current) {
+        const devs = lineupDevicesRef.current.filter(Boolean);
+        devs.forEach((d, i) => {
+          const fromX = i === 0 ? -120 : i === 1 ? 0 : 120;
+          gsap.fromTo(
+            d,
+            { x: fromX, opacity: 0, scale: 0.92 },
+            {
+              x: 0,
+              opacity: 1,
+              scale: 1,
+              duration: 1,
+              ease: 'power3.out',
+              scrollTrigger: {
+                trigger: lineupRef.current!,
+                start: 'top 60%',
+                toggleActions: 'play none none reverse',
+              },
+              delay: i * 0.12,
+            }
+          );
+        });
+        ScrollTrigger.create({
+          trigger: lineupRef.current,
+          start: 'top 50%',
+          end: 'center center',
+          scrub: true,
+          onUpdate(self) {
+            const glow = 20 + self.progress * 40;
+            const a = 0.15 + self.progress * 0.2;
+            devs.forEach((d) => {
+              (d as HTMLElement).style.boxShadow = `0 0 ${glow}px rgba(16,185,129,${a})`;
+            });
           },
-        })
-        .to('.phone-3d', { rotateY: 4, rotateX: 2, ease: 'none' }, 0)
-        .to('.phone-inner', { y: '-38%', ease: 'none' }, 0.08)
-        .to('.phone-tick', { scale: 1, opacity: 1, ease: 'back.out(2)' }, 0.55);
-
-      gsap.set('.closing-brand', { opacity: 0, scale: 0.92, filter: 'blur(12px)' });
-      gsap.set('.closing-fade', { opacity: 0, y: 24 });
-
-      gsap
-        .timeline({
-          scrollTrigger: {
-            trigger: closingRef.current,
-            start: 'top 80%',
-            end: 'top 20%',
-            scrub: 0.6,
-          },
-        })
-        .to('.closing-brand', { opacity: 1, scale: 1, filter: 'blur(0px)', ease: 'power2.out' }, 0)
-        .to('.closing-fade', { opacity: 1, y: 0, stagger: 0.08, ease: 'power2.out' }, 0.12);
+        });
+      }
     }, root);
+    return () => ctx.revert();
+  }, [reduced, language]);
 
-    return () => {
-      ctx.revert();
-    };
-  }, []);
+  const scrollToCore = () => {
+    coreRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
     <div
       ref={rootRef}
-      className="hr-pro-apple min-h-screen bg-black text-white antialiased [font-feature-settings:'ss01','cv11']"
+      className="hr-pro-apple relative min-h-screen overflow-x-hidden bg-black text-zinc-100 selection:bg-emerald-500/30"
     >
-      <header className="sticky top-0 z-[200] flex h-12 items-center border-b border-white/[0.08] bg-black/80 px-5 backdrop-saturate-150 backdrop-blur-xl sm:h-[52px] sm:px-8 lg:px-14 xl:px-20">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => navigate(-1)}
-          className="h-9 w-9 shrink-0 text-white hover:bg-white/10 hover:text-white"
-          aria-label={t('hrProIntro.backAria')}
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[15px] font-semibold tracking-tight text-white/95">
-          {t('hrProIntro.navCenter')}
-        </span>
-        <div className="w-9 shrink-0 sm:w-10" aria-hidden />
+      {/* Ambient */}
+      <div className="pointer-events-none fixed inset-0 z-0">
+        <div className="absolute -left-1/4 top-0 h-[70vh] w-[70vw] rounded-full bg-emerald-500/[0.06] blur-[120px]" />
+        <div className="absolute -right-1/4 bottom-0 h-[60vh] w-[60vw] rounded-full bg-cyan-500/[0.05] blur-[100px]" />
+      </div>
+
+      {/* Nav */}
+      <header className="fixed left-0 right-0 top-0 z-50 border-b border-white/[0.06] bg-black/50 backdrop-blur-xl">
+        <div className="mx-auto flex h-12 max-w-[1440px] items-center justify-between px-4 sm:px-8">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-2 text-zinc-400 hover:text-white"
+            onClick={() => navigate(-1)}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">{t('hrProIntro.backAria')}</span>
+          </Button>
+          <span className="text-sm font-medium tracking-tight text-white/90">
+            {t('hrProIntro.navCenter')}
+          </span>
+          <MagneticButton
+            variant="outline"
+            className="border-white/15 bg-white/5 px-4 py-2 text-xs text-white hover:bg-white/10"
+            onClick={() => navigate('/')}
+          >
+            {t('hrProIntro.ctaStart')}
+          </MagneticButton>
+        </div>
       </header>
 
-      {/* Phân cảnh 1 — Hero (kiểu apple.com/iphone — tiêu đề khổng lồ + CTA) */}
-      <section
-        ref={heroRef}
-        className="relative z-10 flex min-h-[100dvh] w-full flex-col items-center justify-center overflow-hidden bg-black px-5 pb-16 pt-8 sm:px-8 lg:px-14 xl:px-20"
-      >
-        <div
-          className="pointer-events-none absolute inset-0 opacity-90"
-          style={{
-            background:
-              'radial-gradient(ellipse 100% 80% at 30% -20%, rgba(80,100,160,0.2), transparent 50%), radial-gradient(ellipse 70% 50% at 100% 40%, rgba(40,60,100,0.14), transparent 45%), #000',
-          }}
-        />
+      <main className="relative z-10 pt-12">
+        {/* —— Màn 1: Hero —— */}
+        <section
+          ref={heroRef}
+          className="relative flex min-h-[100dvh] flex-col items-center justify-center px-4 py-24 sm:px-8"
+        >
+          <div
+            ref={heroVeilRef}
+            className="pointer-events-none absolute inset-0 z-20 bg-black"
+            aria-hidden
+          />
+          <div
+            ref={heroBezelRef}
+            className="pointer-events-none absolute inset-[8%] z-[19] rounded-[2rem] border border-white/[0.12] opacity-0 shadow-[inset_0_0_60px_rgba(255,255,255,0.04)] sm:inset-[10%]"
+            aria-hidden
+          />
 
-        <div className="relative z-[1] mx-auto w-full max-w-[1440px]">
-          <div className="flex flex-col items-center text-center lg:flex-row lg:items-center lg:justify-between lg:gap-10 lg:text-left xl:gap-16">
-            <div className="w-full shrink-0 lg:max-w-[min(42rem,48%)] xl:max-w-[min(44rem,46%)]">
-              <p className="hr-apple-eyebrow mb-6 sm:mb-8 lg:mb-6">{t('hrProIntro.heroEyebrow')}</p>
-
-              <div className="relative inline-block lg:block">
-                <div
-                  className="hr-logo-sheen pointer-events-none absolute -inset-6 rounded-[2rem] opacity-50 sm:-inset-10 sm:rounded-[2.5rem]"
-                  style={{
-                    background:
-                      'conic-gradient(from 0deg, transparent 0%, rgba(255,255,255,0.04) 12%, rgba(200,220,255,0.28) 50%, transparent 68%, transparent 100%)',
-                  }}
-                />
-                <div className="overflow-hidden px-2 lg:px-0">
-                  <h1 className="hr-hero-line hr-apple-headline text-[clamp(3rem,11vw,7rem)] font-semibold tracking-[-0.04em] text-white xl:text-[clamp(3.5rem,6.5vw,6.5rem)]">
-                    {t('hrProIntro.heroMega')}
-                  </h1>
+          <div className="relative z-10 mx-auto w-full max-w-[1440px]">
+            <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
+              <div className="text-center lg:text-left">
+                <h1 className="hr-metallic-text text-4xl font-semibold tracking-tight sm:text-5xl lg:text-[3.25rem] lg:leading-[1.08]">
+                  {t('hrProIntro.s1_line1')}
+                </h1>
+                <p className="mt-4 text-lg text-zinc-400 sm:text-xl">{t('hrProIntro.s1_line2')}</p>
+                <div ref={heroLineRef} className="mt-8 flex flex-wrap justify-center gap-3 lg:justify-start">
+                  <MagneticButton
+                    className="rounded-full bg-white px-8 py-4 text-base font-semibold text-black hover:bg-zinc-200"
+                    onClick={scrollToCore}
+                  >
+                    {t('hrProIntro.s1_cta')}
+                  </MagneticButton>
                 </div>
               </div>
 
-              <div className="mt-6 overflow-hidden sm:mt-8 lg:mt-6">
-                <p className="hr-hero-line text-[clamp(1.25rem,3.2vw,1.85rem)] font-medium leading-snug text-white/88 xl:text-[clamp(1.35rem,2.2vw,2rem)]">
-                  {t('hrProIntro.heroLine1')}
-                </p>
+              <div
+                className="relative flex justify-center lg:justify-end"
+                style={{ perspective: '1400px' }}
+              >
+                <div ref={heroDashRef} className="w-full max-w-md will-change-transform">
+                  <DashboardMock />
+                </div>
               </div>
-              <div className="mt-3 overflow-hidden sm:mt-4">
-                <p className="hr-hero-line text-[clamp(1rem,2.2vw,1.25rem)] font-normal text-[#a1a1a6]">{t('hrProIntro.heroLine2')}</p>
-              </div>
-
-              <p className="mt-4 text-sm text-[#6e6e73]">{t('hrProIntro.heroBrand')}</p>
-
-              <div className="mt-10 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 sm:mt-12 lg:justify-start">
-                <button type="button" className="hr-apple-cta" onClick={scrollToArch}>
-                  {t('hrProIntro.exploreCta')}
-                </button>
-                <button type="button" className="hr-apple-link bg-transparent font-normal" onClick={scrollToHighlights}>
-                  {t('hrProIntro.learnMore')}
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-12 flex w-full justify-center lg:mt-0 lg:w-auto lg:flex-1 lg:justify-end xl:justify-center">
-              <DashboardMock t={t} className="mt-0" />
             </div>
           </div>
 
-          <p className="hr-scroll-cue mt-14 text-center text-xs font-medium uppercase tracking-[0.2em] text-[#6e6e73] lg:mt-16">
+          <p className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 text-xs text-zinc-600">
             {t('hrProIntro.scrollCue')}
           </p>
-        </div>
-      </section>
+        </section>
 
-      {/* Highlights — rail cuộn ngang full-bleed kiểu “Get the highlights” (apple.com) */}
-      <section id="hr-pro-highlights" className="relative z-[4] border-t border-white/[0.06] bg-black py-20 sm:py-28">
-        <div className="mx-auto w-full max-w-[1440px] px-5 sm:px-8 lg:px-14 xl:px-20">
-          <h2 className="hr-apple-headline mb-3 text-[clamp(2rem,4vw,3.5rem)] text-white">{t('hrProIntro.highlightsTitle')}</h2>
-          <p className="hr-apple-body mb-10 max-w-[42rem] text-left text-[#a1a1a6] lg:mb-12">{t('hrProIntro.highlightsLead')}</p>
-        </div>
-        <div className="hr-apple-scroll-rail snap-x snap-mandatory w-full overflow-x-auto overflow-y-hidden scroll-smooth overscroll-x-contain">
-          <div className="flex w-max gap-4 px-5 pb-4 pt-1 sm:gap-5 sm:px-8 lg:gap-6 lg:pl-14 lg:pr-14 xl:pl-20 xl:pr-20">
-            {(['hl1', 'hl2', 'hl3', 'hl4', 'hl5', 'hl6'] as const).map((key, i) => (
+        {/* —— Màn 2: Y-Core —— */}
+        <section
+          ref={coreRef}
+          id="hr-core"
+          className="relative flex min-h-[100dvh] flex-col items-center justify-center px-4 py-24 sm:px-8"
+        >
+          <div className="absolute inset-0 bg-gradient-to-b from-black via-zinc-950 to-black" />
+          <div className="relative z-10 mx-auto w-full max-w-3xl text-center">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-500/80">
+              {t('hrProIntro.secCore')}
+            </p>
+            <h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+              {t('hrProIntro.s2_h1')}
+            </h2>
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-zinc-400">
+              {t('hrProIntro.s2_p1')}
+            </p>
+          </div>
+
+          <div className="relative z-10 mt-20 flex h-64 w-full max-w-xl items-center justify-center">
+            <div
+              ref={coreGlowRef}
+              className="absolute h-40 w-40 rounded-full bg-gradient-to-br from-emerald-400/50 to-cyan-500/30 blur-3xl"
+              aria-hidden
+            />
+            {[
+              { key: 'orbProfile', labelKey: 'hrProIntro.orbProfile' as const },
+              { key: 'orbTime', labelKey: 'hrProIntro.orbTime' as const },
+              { key: 'orbPay', labelKey: 'hrProIntro.orbPay' as const },
+            ].map((item, i) => (
               <div
-                key={key}
+                key={item.key}
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+              >
+                <div
+                  ref={(el) => {
+                    orbRefs.current[i] = el;
+                  }}
+                  className="flex h-28 w-28 items-center justify-center rounded-full border border-white/20 bg-white/5 text-sm font-medium text-white shadow-lg backdrop-blur-md will-change-transform"
+                >
+                  {t(item.labelKey)}
+                </div>
+              </div>
+            ))}
+            <div className="pointer-events-none absolute text-xs font-semibold uppercase tracking-widest text-emerald-300/80">
+              {t('hrProIntro.coreEngine')}
+            </div>
+          </div>
+        </section>
+
+        {/* —— Màn 3: Performance —— */}
+        <section
+          ref={perfRef}
+          className="relative flex min-h-[100dvh] flex-col items-center justify-center px-4 py-24 sm:px-8"
+        >
+          <div className="absolute inset-0 bg-gradient-to-b from-black via-zinc-950 to-black" />
+          <div className="relative z-10 mx-auto w-full max-w-4xl text-center">
+            <p className="perf-reveal mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-500/80">
+              {t('hrProIntro.secPerf')}
+            </p>
+            <div className="perf-reveal mb-2">
+              <span
+                ref={perfNumRef}
+                className="block bg-gradient-to-b from-white via-emerald-200 to-emerald-600 bg-clip-text text-7xl font-bold tabular-nums tracking-tighter text-transparent sm:text-8xl md:text-9xl"
+              >
+                0+
+              </span>
+              <p className="mt-2 text-sm text-zinc-500">{t('hrProIntro.s3_statSub')}</p>
+            </div>
+            <h2 className="perf-reveal mt-10 text-3xl font-semibold text-white sm:text-4xl md:text-5xl">
+              {t('hrProIntro.s3_h1')}
+            </h2>
+            <p className="perf-reveal mt-2 text-xl text-emerald-400/90 sm:text-2xl">{t('hrProIntro.s3_h2')}</p>
+            <p className="perf-reveal mx-auto mt-6 max-w-2xl text-base text-zinc-400">
+              {t('hrProIntro.s3_p1')}
+            </p>
+          </div>
+        </section>
+
+        {/* —— Màn 4: XDR pearl —— */}
+        <section
+          ref={xdrRef}
+          className="relative min-h-[100dvh] overflow-hidden bg-[#f5f5f7] px-4 py-24 text-zinc-900 sm:px-8"
+        >
+          <div className="relative z-10 mx-auto max-w-3xl text-center">
+            <p className="xdr-fade mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700/80">
+              {t('hrProIntro.secXdr')}
+            </p>
+            <h2 className="xdr-fade text-3xl font-semibold tracking-tight sm:text-4xl">{t('hrProIntro.s4_h1')}</h2>
+            <p className="xdr-fade mx-auto mt-5 max-w-2xl text-base leading-relaxed text-zinc-600">
+              {t('hrProIntro.s4_p1')}
+            </p>
+          </div>
+
+          <div className="relative mx-auto mt-16 h-[420px] w-full max-w-4xl">
+            <div
+              ref={(el) => {
+                if (el) xdrWidgetsRef.current[0] = el;
+              }}
+              className="absolute left-[5%] top-8 w-56 rounded-2xl border border-zinc-200/80 bg-white p-4 shadow-xl will-change-transform"
+            >
+              <div className="h-3 w-20 rounded bg-zinc-200" />
+              <div className="mt-3 h-24 rounded-lg bg-gradient-to-br from-emerald-100 to-cyan-100" />
+            </div>
+            <div
+              ref={(el) => {
+                if (el) xdrWidgetsRef.current[1] = el;
+              }}
+              className="absolute left-1/2 top-24 w-64 -translate-x-1/2 rounded-2xl border border-zinc-200/80 bg-white p-4 shadow-xl will-change-transform"
+            >
+              <div className="flex gap-2">
+                <div className="h-16 flex-1 rounded-lg bg-zinc-100" />
+                <div className="h-16 flex-1 rounded-lg bg-emerald-100" />
+              </div>
+            </div>
+            <div
+              ref={(el) => {
+                if (el) xdrWidgetsRef.current[2] = el;
+              }}
+              className="absolute bottom-12 right-[8%] w-52 rounded-2xl border border-zinc-200/80 bg-white p-4 shadow-xl will-change-transform"
+            >
+              <div className="space-y-2">
+                <div className="h-2 w-full rounded bg-zinc-200" />
+                <div className="h-2 w-4/5 rounded bg-zinc-100" />
+                <div className="h-2 w-3/5 rounded bg-zinc-100" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* —— Màn 5: Connectivity —— */}
+        <section
+          ref={connectRef}
+          className="relative flex min-h-[85dvh] flex-col items-center justify-center px-4 py-24 sm:px-8"
+        >
+          <div className="absolute inset-0 bg-gradient-to-b from-[#f5f5f7] to-black" />
+          <div className="relative z-10 mx-auto w-full max-w-3xl text-center">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-500/80">
+              {t('hrProIntro.secConnect')}
+            </p>
+            <h2 className="text-3xl font-semibold text-white sm:text-4xl">{t('hrProIntro.s5_h1')}</h2>
+            <p className="mx-auto mt-5 max-w-2xl text-base text-zinc-400">{t('hrProIntro.s5_p1')}</p>
+          </div>
+          <div className="relative z-10 mt-14 flex flex-wrap items-center justify-center gap-10 sm:gap-16">
+            {[
+              { Icon: ScanFace, label: 'hrProIntro.connectFace' as const },
+              { Icon: Fingerprint, label: 'hrProIntro.connectFinger' as const },
+              { Icon: Radio, label: 'hrProIntro.connectDevice' as const },
+            ].map(({ Icon, label }) => (
+              <div key={label} className="conn-item flex flex-col items-center gap-3">
+                <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl border border-white/15 bg-white/5">
+                  <Icon className="h-9 w-9 text-emerald-400" strokeWidth={1.25} />
+                  <span className="absolute -right-1 -top-1 flex h-3 w-3">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-40" />
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-500" />
+                  </span>
+                </div>
+                <span className="max-w-[120px] text-center text-xs text-zinc-500">{t(label)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* —— Màn 6: Biometric —— */}
+        <section ref={bioRef} className="relative flex min-h-[100dvh] flex-col px-4 py-24 sm:px-8">
+          <div className="absolute inset-0 bg-black" />
+          <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col items-center gap-12 lg:flex-row lg:items-center lg:gap-16">
+            <div className="bio-fade max-w-xl flex-1 text-center lg:text-left">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-500/80">
+                {t('hrProIntro.secBio')}
+              </p>
+              <h2 className="text-3xl font-semibold text-white sm:text-4xl">{t('hrProIntro.s6_h1')}</h2>
+              <p className="mt-5 text-base leading-relaxed text-zinc-400">{t('hrProIntro.s6_p1')}</p>
+            </div>
+            <div className="bio-fade relative flex h-[min(420px,55vh)] w-full max-w-md flex-1 justify-center">
+              <ParticleShield sectionRef={bioRef} />
+            </div>
+          </div>
+        </section>
+
+        {/* —— Màn 7: Lineup —— */}
+        <section
+          ref={lineupRef}
+          className="relative flex min-h-[100dvh] flex-col items-center justify-center px-4 pb-32 pt-24 sm:px-8"
+        >
+          <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 to-black" />
+          <div className="relative z-10 mx-auto w-full max-w-4xl text-center">
+            <h2 className="text-3xl font-semibold text-white sm:text-4xl md:text-5xl">{t('hrProIntro.s7_h1')}</h2>
+            <p className="mt-3 text-xl text-emerald-400/90">{t('hrProIntro.s7_h2')}</p>
+          </div>
+          <div className="relative z-10 mt-16 flex w-full max-w-5xl flex-wrap items-end justify-center gap-6 sm:gap-10">
+            {[
+              { Icon: Monitor, w: 'w-40 sm:w-48' },
+              { Icon: Laptop, w: 'w-36 sm:w-44' },
+              { Icon: Smartphone, w: 'w-20 sm:w-24' },
+            ].map(({ Icon, w }, i) => (
+              <div
+                key={i}
+                ref={(el) => {
+                  if (el) lineupDevicesRef.current[i] = el;
+                }}
                 className={cn(
-                  'flex min-h-[160px] w-[min(78vw,340px)] shrink-0 snap-start flex-col justify-end rounded-[1.75rem] border border-white/[0.08] bg-[#1d1d1f] p-8 transition-colors duration-300 sm:w-[min(72vw,380px)] sm:min-h-[180px] lg:w-[min(42vw,480px)] lg:min-h-[200px] xl:w-[440px]',
-                  i === 5 && 'mr-5 sm:mr-8 lg:mr-14 xl:mr-20'
+                  'lineup-glow flex flex-col items-center justify-end rounded-2xl border border-white/10 bg-zinc-900/50 p-6 will-change-transform',
+                  w
                 )}
               >
-                <p className="text-[clamp(1.05rem,2.5vw,1.35rem)] font-semibold leading-snug tracking-tight text-white">{t(`hrProIntro.${key}`)}</p>
+                <Icon className="h-full w-full text-zinc-400" strokeWidth={0.75} />
               </div>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* Phân cảnh 2 — Kiến trúc / exploded — bố cục ngang desktop */}
-      <section ref={archRef} className="relative z-[5] bg-[#000000]">
-        <div className="mx-auto flex min-h-screen max-w-[1440px] flex-col items-center justify-center gap-14 px-5 py-16 sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:gap-8 lg:px-14 lg:py-12 xl:gap-12 xl:px-20">
-          <div className="arch-stage relative flex min-h-[300px] w-full max-w-xl shrink-0 items-center justify-center [perspective:1400px] lg:min-h-[360px] lg:w-[52%] lg:max-w-none xl:min-h-[400px] xl:w-[55%]">
-            <div className="arch-light pointer-events-none absolute inset-0 rounded-3xl opacity-50 [background:linear-gradient(110deg,transparent_0%,rgba(120,170,255,0.18)_42%,rgba(180,120,255,0.14)_58%,transparent_100%)] [background-size:200%_100%] [background-position:0%_50%]" />
-            <div className="relative h-[220px] w-full max-w-lg lg:h-[240px] lg:max-w-xl xl:h-[260px]">
-              {[t('hrProIntro.layerPay'), t('hrProIntro.layerAtt'), t('hrProIntro.layerHr'), t('hrProIntro.layerCore')].map((label, i) => (
-                <div
-                  key={label}
-                  className={cn(
-                    'arch-layer absolute inset-0 m-auto flex h-[178px] max-h-[88%] w-[92%] flex-col justify-center rounded-2xl border border-white/[0.1] bg-white/[0.05] px-6 py-8 shadow-2xl backdrop-blur-xl lg:h-[200px]',
-                    i === 3 && 'ring-1 ring-cyan-400/30'
-                  )}
-                  style={{ maxWidth: '32rem' }}
-                >
-                  <p className="text-center text-sm font-semibold tracking-wide text-white/88">{label}</p>
-                  <div className="mt-4 h-2 w-2/5 rounded-full bg-white/10" />
-                  <div className="mt-2 h-2 w-full rounded-full bg-white/[0.06]" />
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="relative z-20 w-full max-w-xl text-center lg:max-w-md lg:text-left xl:max-w-lg">
-            <p className="hr-apple-eyebrow mb-3 text-[#6e6e73]">{t('hrProIntro.secArch')}</p>
-            <h2 className="hr-apple-headline text-[clamp(2rem,4.5vw,4rem)] text-white">{t('hrProIntro.archH1')}</h2>
-            <h2 className="hr-apple-headline mt-1 text-[clamp(1.75rem,3.5vw,3rem)] text-indigo-200/95">{t('hrProIntro.archH2')}</h2>
-            <p className="hr-apple-body mt-8 text-left lg:mt-10">{t('hrProIntro.archP1')}</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Phân cảnh 3 — Hiệu năng / space gray */}
-      <section ref={perfRef} className="relative z-[6] bg-[#1d1d1f] text-white">
-        <div
-          ref={perfParallaxRef}
-          className="perf-bg-slow pointer-events-none absolute inset-0 opacity-[0.12]"
-          style={{
-            backgroundImage:
-              'linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)',
-            backgroundSize: '48px 48px',
-          }}
-        />
-        <div className="perf-parallax-fast pointer-events-none absolute inset-0 opacity-[0.07]" style={{ willChange: 'transform' }} />
-
-        <div className="relative mx-auto flex min-h-screen max-w-[1440px] flex-col justify-center overflow-hidden px-5 py-20 sm:px-8 lg:flex-row lg:items-center lg:gap-10 lg:px-14 lg:py-16 xl:gap-16 xl:px-20">
-          <div className="relative z-10 flex w-full flex-1 flex-col items-center lg:items-stretch">
-            {PERF_FLOATS.map((item) => (
-              <span
-                key={item.t}
-                className="perf-float pointer-events-none absolute font-mono text-[11px] font-medium text-white/50 sm:text-xs"
-                style={{ left: item.l, top: item.top }}
-              >
-                {item.t}
-              </span>
-            ))}
-
-            <div className="perf-chart relative z-10 mx-auto mt-4 w-full max-w-md lg:mx-0 lg:mt-0 lg:max-w-none xl:pr-4">
-              <div className="rounded-2xl border border-cyan-400/40 bg-gradient-to-b from-[#0c1220] to-[#060a12] p-6 shadow-[0_0_60px_-12px_rgba(34,211,238,0.35)] ring-1 ring-violet-500/20 lg:p-8">
-                <p className="text-center text-[10px] font-semibold uppercase tracking-[0.25em] text-cyan-300/80">Throughput</p>
-                <div className="mt-6 flex h-36 items-end justify-center gap-2 sm:h-40 sm:gap-3 lg:h-44">
-                  {[40, 65, 45, 88, 55, 92, 70].map((h, i) => (
-                    <div
-                      key={i}
-                      className="w-2 rounded-t-sm bg-gradient-to-t from-cyan-500/30 to-violet-400/90 sm:w-2.5 lg:w-3"
-                      style={{ height: `${h}%` }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="relative z-10 mt-12 grid w-full max-w-xl grid-cols-3 gap-4 sm:gap-6 lg:mt-14 lg:max-w-none">
-              {[
-                { v: t('hrProIntro.statBig1'), lab: t('hrProIntro.statBig1Lab') },
-                { v: t('hrProIntro.statBig2'), lab: t('hrProIntro.statBig2Lab') },
-                { v: t('hrProIntro.statBig3'), lab: t('hrProIntro.statBig3Lab') },
-              ].map((row) => (
-                <div key={row.lab} className="text-center lg:text-left">
-                  <p className="text-[clamp(1.65rem,4vw,2.75rem)] font-semibold leading-none tracking-tight text-white xl:text-[clamp(2rem,3vw,3.25rem)]">
-                    {row.v}
-                  </p>
-                  <p className="mt-2 text-[12px] leading-snug text-[#a1a1a6] sm:text-[14px] lg:max-w-[10rem]">{row.lab}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="relative z-10 mt-14 w-full max-w-xl shrink-0 text-center lg:mt-0 lg:max-w-md lg:text-left xl:max-w-lg">
-            <p className="hr-apple-eyebrow mb-3 text-[#86868b]">{t('hrProIntro.secPerf')}</p>
-            <h2 className="hr-apple-headline text-[clamp(2rem,4vw,3.5rem)] text-white">{t('hrProIntro.perfH1')}</h2>
-            <h2 className="hr-apple-headline mt-1 text-[clamp(1.5rem,2.8vw,2.25rem)] font-medium text-emerald-200/90">
-              {t('hrProIntro.perfH2')}
-            </h2>
-            <p className="mt-8 text-[17px] leading-[1.47] text-[#a1a1a6] sm:text-[19px]">{t('hrProIntro.perfP1')}</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Phân cảnh 4 — Pearl / điện thoại */}
-      <section ref={touchRef} className="hr-pro-apple-light relative z-[7] bg-[#fbfbfd] text-[#1d1d1f]">
-        <div className="mx-auto flex min-h-screen max-w-[1440px] flex-col items-center justify-center gap-14 px-5 py-20 sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:gap-12 lg:px-14 xl:gap-20 xl:px-20">
-          <div className="flex w-full justify-center [perspective:1200px] lg:w-auto lg:flex-1 lg:justify-center">
-            <div className="phone-3d w-full max-w-[260px] will-change-transform sm:max-w-[280px] lg:max-w-[300px]" style={{ transformStyle: 'preserve-3d' }}>
-              <div className="rounded-[2rem] border border-neutral-300/90 bg-gradient-to-b from-white to-neutral-100 p-2.5 shadow-[0_50px_100px_-30px_rgba(0,0,0,0.35)] ring-1 ring-black/[0.05]">
-                <div className="relative h-[420px] overflow-hidden rounded-[1.55rem] bg-neutral-950 sm:h-[460px]">
-                  <div className="phone-inner absolute left-0 right-0 top-0 px-4 pb-8 pt-5 will-change-transform" style={{ height: '160%' }}>
-                    <div className="h-2 w-1/3 rounded-full bg-white/15" />
-                    <p className="mt-6 text-sm font-semibold text-white">Payslip</p>
-                    <div className="mt-3 h-24 rounded-xl bg-white/10" />
-                    <p className="mt-6 text-sm font-semibold text-white">Leave</p>
-                    <div className="mt-3 h-20 rounded-xl bg-white/8" />
-                    <p className="mt-6 text-sm font-semibold text-white">Profile</p>
-                    <div className="mt-3 h-28 rounded-xl bg-white/8" />
-                  </div>
-                  <div className="phone-tick pointer-events-none absolute bottom-8 left-1/2 flex h-12 w-12 -translate-x-1/2 items-center justify-center rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/40">
-                    <Check className="h-6 w-6 text-white" strokeWidth={2.5} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="w-full max-w-[480px] shrink-0 lg:max-w-[min(40%,28rem)] xl:max-w-md">
-            <p className="hr-apple-eyebrow mb-3">{t('hrProIntro.secTouch')}</p>
-            <h2 className="hr-apple-headline text-[clamp(2rem,4.5vw,3.25rem)] text-[#1d1d1f]">{t('hrProIntro.touchH1')}</h2>
-            <h2 className="hr-apple-headline mt-1 text-[clamp(1.75rem,3.5vw,2.75rem)] text-[#6e6e73]">{t('hrProIntro.touchH2')}</h2>
-            <p className="hr-apple-body mt-8 text-left">{t('hrProIntro.touchP1')}</p>
-            <p className="mt-5 text-[15px] font-medium text-[#0071e3]">{t('hrProIntro.phoneOk')}</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Phân cảnh 5 — Khiên / particles */}
-      <section ref={shieldRef} className="relative z-[8] overflow-hidden bg-black py-24 sm:py-32">
-        <ParticleShield sectionRef={shieldRef} />
-        <div className="relative z-10 mx-auto max-w-[min(100%,920px)] px-5 text-center lg:px-14 xl:px-20">
-          <p className="hr-apple-eyebrow mb-4 text-[#6e6e73]">{t('hrProIntro.secShield')}</p>
-          <h2 className="hr-metallic-text hr-apple-headline text-[clamp(2rem,5vw,3.75rem)]">{t('hrProIntro.shieldH1')}</h2>
-          <h2 className="hr-apple-headline mt-2 text-[clamp(1.75rem,4vw,3rem)] text-white/50">{t('hrProIntro.shieldH2')}</h2>
-          <p className="mt-10 text-[17px] leading-[1.47] text-[#a1a1a6] sm:text-[19px]">{t('hrProIntro.shieldP1')}</p>
-        </div>
-      </section>
-
-      <section id="hr-pro-guide" className="border-t border-white/[0.06] bg-[#000] px-5 py-20 sm:px-8 lg:px-14 xl:px-20">
-        <div className="mx-auto max-w-[min(100%,800px)] text-center">
-          <p className="hr-apple-eyebrow mb-3 text-[#6e6e73]">{t('common.help')}</p>
-          <h3 className="hr-apple-headline text-[clamp(1.75rem,3.5vw,2.5rem)] text-white">{t('hrProIntro.guideTitle')}</h3>
-          <p className="mt-5 text-[17px] leading-[1.47] text-[#a1a1a6]">{t('hrProIntro.guideBody')}</p>
-        </div>
-      </section>
-
-      {/* Phân cảnh 6 — Horizon & CTA */}
-      <footer
-        ref={closingRef}
-        className="relative z-[9] overflow-hidden bg-gradient-to-b from-black via-[#030308] to-[#061520] px-5 py-28 sm:px-8 lg:px-14 xl:px-20"
-      >
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[55%] bg-gradient-to-t from-[#0a3d5c]/40 to-transparent" />
-        <div className="relative mx-auto max-w-[min(100%,1100px)] text-center">
-          <div className="closing-brand">
-            <p className="hr-apple-eyebrow text-[#6e6e73]">{t('hrProIntro.heroEyebrow')}</p>
-            <p className="mt-2 text-[clamp(1.75rem,4vw,2.5rem)] font-semibold tracking-tight text-white">HR Pro</p>
-          </div>
-          <h2 className="closing-fade hr-apple-headline mt-14 text-[clamp(1.75rem,4vw,2.75rem)] leading-tight text-white">
-            {t('hrProIntro.closingH1')}
-          </h2>
-          <p className="closing-fade mt-5 text-[19px] leading-snug text-[#a1a1a6]">{t('hrProIntro.closingH2')}</p>
-          <div className="closing-fade mt-14 flex flex-wrap items-center justify-center gap-5">
-            <MagneticButton variant="apple" onClick={() => navigate('/')}>
-              {t('hrProIntro.ctaDashboard')}
+          <div className="relative z-10 mt-14 flex flex-wrap justify-center gap-4">
+            <MagneticButton
+              className="rounded-full bg-white px-10 py-4 text-base font-semibold text-black hover:bg-zinc-200"
+              onClick={() => navigate('/')}
+            >
+              {t('hrProIntro.ctaStart')}
             </MagneticButton>
-            <MagneticButton variant="outline" onClick={scrollToGuide}>
+            <Button
+              variant="outline"
+              size="lg"
+              className="rounded-full border-white/20 bg-transparent text-white hover:bg-white/10"
+              onClick={() => navigate('/')}
+            >
               {t('hrProIntro.ctaGuide')}
-            </MagneticButton>
+            </Button>
           </div>
-          <p className="closing-fade mt-24 text-xs tracking-[0.2em] text-[#424245]">Copyright © {new Date().getFullYear()} Yousung Vina. HR Pro.</p>
-        </div>
-      </footer>
+        </section>
+      </main>
+
+      <aside className="fixed bottom-4 right-4 z-40 hidden max-w-[220px] rounded-xl border border-white/10 bg-black/80 p-3 text-[11px] text-zinc-500 backdrop-blur-md sm:block">
+        <p className="font-medium text-zinc-400">{t('hrProIntro.guideTitle')}</p>
+        <p className="mt-1 leading-snug">{t('hrProIntro.guideBody')}</p>
+      </aside>
     </div>
   );
 }

@@ -1,62 +1,64 @@
-/** Copy trang giới thiệu HR Pro — kịch bản 6 phân cảnh + layout kiểu apple.com/product */
+/** 7 màn giới thiệu HR Pro — ánh xạ kịch bản MacBook Pro → Yousung Vina */
 export const viHrProIntro = {
   navTitle: 'Giới thiệu HR Pro',
   navCenter: 'HR Pro',
   backAria: 'Quay lại',
-  exploreCta: 'Tiếp tục',
-  ctaDashboard: 'Vào làm việc',
+  scrollCue: 'Cuộn để tiếp tục',
+  ctaStart: 'Khởi động hệ thống',
   ctaGuide: 'Xem hướng dẫn',
-  scrollCue: 'Cuộn để xem thêm',
-  learnMore: 'Tìm hiểu thêm',
-  heroEyebrow: 'Yousung Vina',
-  heroMega: 'HR Pro',
-  heroBrand: 'Yousung HR Pro.',
-  heroLine1: 'Tuyệt tác quản trị.',
-  heroLine2: 'Dành riêng cho bạn.',
-  highlightsTitle: 'Những điểm nhấn.',
-  highlightsLead: 'Một vòng quay duy nhất cho dữ liệu nhân sự, chấm công và lương — được thiết kế cho quy mô sản xuất.',
-  hl1: 'Kiến trúc thống nhất',
-  hl2: 'Xử lý thời gian thực',
-  hl3: 'Chấm công & ca kíp',
-  hl4: 'Lương minh bạch',
-  hl5: 'Ứng dụng nhân viên',
-  hl6: 'Bảo mật doanh nghiệp',
-  secArch: 'Kiến trúc',
+
+  /* Màn 1 — Hero */
+  s1_line1: 'Yousung HR Pro.',
+  s1_line2: 'Đột phá tư duy. Quản trị vô cực.',
+  s1_cta: 'Trải nghiệm ngay',
+
+  /* Màn 2 — Y-Core */
+  secCore: 'Lõi kiến trúc',
+  s2_h1: 'Ba phân hệ. Một siêu sức mạnh.',
+  s2_p1:
+    'Giới thiệu lõi kiến trúc Y-Core. Được tinh chỉnh đặc biệt để gánh vác hệ sinh thái sản xuất khổng lồ của Yousung Vina. Hiệu suất vượt giới hạn. Sức mạnh chưa từng có.',
+  orbProfile: 'Hồ sơ',
+  orbTime: 'Chấm công',
+  orbPay: 'Lương',
+  coreEngine: 'Y-Core',
+
+  /* Màn 3 — Performance */
   secPerf: 'Hiệu năng',
-  secTouch: 'Trải nghiệm',
-  secShield: 'Bảo mật',
-  statBig1: '2.4K+',
-  statBig1Lab: 'nhân sự đồng bộ',
-  statBig2: '<100ms',
-  statBig2Lab: 'phản hồi giao diện',
-  statBig3: '99.2%',
-  statBig3Lab: 'độ chính xác chốt sổ',
-  archH1: 'Kiến trúc nguyên khối.',
-  archH2: 'Sức mạnh phân tầng.',
-  archP1:
-    'Một hệ sinh thái toàn diện, xử lý hàng triệu điểm dữ liệu mà vẫn mượt mà trong từng cú nhấp chuột.',
-  layerHr: 'Nhân sự',
-  layerAtt: 'Chấm công',
-  layerPay: 'Lương',
-  layerCore: 'Lõi xử lý',
-  perfH1: 'Hiệu năng bứt phá.',
-  perfH2: 'Thuật toán tối ưu hóa thời gian thực.',
-  perfP1:
-    'Từ dữ liệu thô đến bảng lương hoàn chỉnh, mọi thứ diễn ra trong chớp mắt. Không chờ đợi. Không sai sót.',
-  touchH1: 'Gần gũi.',
-  touchH2: 'Ngay trong túi bạn.',
-  touchP1:
-    'Mọi quyền lợi, mọi thông tin. HR Pro trao quyền cho từng cá nhân kiểm soát hành trình của mình tại Yousung Vina một cách dễ dàng và bảo mật nhất.',
-  phoneOk: 'Đã gửi',
-  shieldH1: 'Mã hóa đa tầng.',
-  shieldH2: 'Bảo mật tuyệt đối.',
-  shieldP1:
-    'Dữ liệu nhân sự không chỉ được lưu trữ. Nó được bảo vệ bởi tiêu chuẩn an ninh cấp doanh nghiệp. Vững chãi như một pháo đài.',
-  closingH1: 'Sẵn sàng để định hình lại cách bạn quản trị?',
-  closingH2: 'Khám phá ngay không gian làm việc của tương lai.',
-  guideTitle: 'Làm chỉ trong vài giây',
-  guideBody:
-    'Nhấn Ctrl+K (hoặc Cmd+K) để mở tìm kiếm nhanh. Mọi chức năng, một ô gõ. Không lạc đường.',
+  s3_stat: '10.000+',
+  s3_statSub: 'Nhân sự được quản lý trên một nền tảng.',
+  s3_h1: 'Tính lương toàn nhà máy.',
+  s3_h2: 'Từ vài ngày, nay chỉ còn vài phút.',
+  s3_p1:
+    'Thuật toán phân tích dữ liệu đa luồng. Xử lý ca kíp phức tạp, tăng ca, phụ cấp trong chớp mắt. 0 độ trễ. 0 sai sót.',
+
+  /* Màn 4 — XDR UI */
+  secXdr: 'Giao diện',
+  s4_h1: 'Sống động. Sắc nét. Trực quan.',
+  s4_p1:
+    'Bỏ lại phía sau những bảng tính Excel xám xịt. Yousung HR Pro biến dữ liệu khô khan thành một không gian nghệ thuật. Mọi biểu đồ, mọi thông số đều hiển thị tuyệt đẹp. Thấu hiểu nhân sự chưa bao giờ dễ dàng đến thế.',
+
+  /* Màn 5 — Kết nối */
+  secConnect: 'Kết nối',
+  s5_h1: 'Kết nối vạn vật. Đồng bộ tức thì.',
+  s5_p1:
+    'Dữ liệu từ nhà máy đổ về hệ thống trung tâm theo thời gian thực (Real-time). Tích hợp liền mạch với mọi thiết bị nhận diện khuôn mặt và vân tay tiên tiến nhất tại Yousung Vina.',
+  connectFace: 'Nhận diện khuôn mặt',
+  connectFinger: 'Vân tay',
+  connectDevice: 'Máy chấm công xưởng',
+
+  /* Màn 6 — Bảo mật */
+  secBio: 'Bảo mật sinh trắc',
+  s6_h1: 'Pháo đài dữ liệu. Bất khả xâm phạm.',
+  s6_p1:
+    'Bảo mật cấp doanh nghiệp. Mã hóa đầu cuối. Phân quyền truy cập đa lớp. Dữ liệu nhân sự là tài sản tối mật, và chúng tôi bảo vệ nó bằng những lớp khóa kiên cố nhất.',
+
+  /* Màn 7 — Lineup */
+  s7_h1: 'Tương lai của Yousung Vina.',
+  s7_h2: 'Bắt đầu từ đây.',
+
+  guideTitle: 'Phím tắt nhanh',
+  guideBody: 'Ctrl+K (hoặc Cmd+K) — tìm mọi chức năng trong một ô.',
+
   mockBadge: 'Tổng quan',
   mockTitle: 'Đi làm hôm nay',
   mockSub: 'Realtime · Yousung Vina',
@@ -66,59 +68,55 @@ export const koHrProIntro = {
   navTitle: 'HR Pro 소개',
   navCenter: 'HR Pro',
   backAria: '뒤로',
-  exploreCta: '계속',
-  ctaDashboard: '업무 시작',
+  scrollCue: '스크롤하여 계속',
+  ctaStart: '시스템 시작',
   ctaGuide: '가이드 보기',
-  scrollCue: '더 보기',
-  learnMore: '더 알아보기',
-  heroEyebrow: 'Yousung Vina',
-  heroMega: 'HR Pro',
-  heroBrand: 'Yousung HR Pro.',
-  heroLine1: '경영의 걸작.',
-  heroLine2: '당신만을 위해.',
-  highlightsTitle: '하이라이트.',
-  highlightsLead: '인사·근태·급여를 하나의 흐름으로. 생산 규모를 위한 설계입니다.',
-  hl1: '통합 아키텍처',
-  hl2: '실시간 처리',
-  hl3: '근태·교대',
-  hl4: '투명한 급여',
-  hl5: '직원 앱',
-  hl6: '엔터프라이즈 보안',
-  secArch: '아키텍처',
+
+  s1_line1: 'Yousung HR Pro.',
+  s1_line2: '사고의 전환. 무한한 경영.',
+  s1_cta: '지금 체험',
+
+  secCore: '아키텍처 코어',
+  s2_h1: '세 모듈. 하나의 초강력 힘.',
+  s2_p1:
+    'Y-Core 아키텍처 코어를 소개합니다. 유성 비나의 거대 생산 생태계를 짊어지도록 특별히 다듬었습니다. 한계를 넘는 성능. 전례 없는 힘.',
+  orbProfile: '인사 기록',
+  orbTime: '근태',
+  orbPay: '급여',
+  coreEngine: 'Y-Core',
+
   secPerf: '성능',
-  secTouch: '경험',
-  secShield: '보안',
-  statBig1: '2.4K+',
-  statBig1Lab: '동기화 인력',
-  statBig2: '<100ms',
-  statBig2Lab: 'UI 응답',
-  statBig3: '99.2%',
-  statBig3Lab: '마감 정확도',
-  archH1: '단일 아키텍처.',
-  archH2: '계층의 힘.',
-  archP1:
-    '수백만 데이터 포인트를 처리하는 완전한 생태계. 클릭 하나하나 매끄럽게.',
-  layerHr: '인사',
-  layerAtt: '근태',
-  layerPay: '급여',
-  layerCore: '처리 코어',
-  perfH1: '돌파적인 성능.',
-  perfH2: '실시간 최적화 알고리즘.',
-  perfP1:
-    '원시 데이터에서 완성된 급여표까지, 모든 것이 순식간에. 기다림 없음. 오류 없음.',
-  touchH1: '가깝게.',
-  touchH2: '주머니 안에서.',
-  touchP1:
-    '모든 혜택과 정보. HR Pro는 유성 비나의 각 구성원이 여정을 가장 쉽고 안전하게 통제하도록 합니다.',
-  phoneOk: '전송됨',
-  shieldH1: '다층 암호화.',
-  shieldH2: '절대적 보안.',
-  shieldP1:
-    '인사 데이터는 저장만 되는 것이 아닙니다. 엔터프라이즈급 보안으로 보호됩니다. 요새처럼 단단합니다.',
-  closingH1: '경영 방식을 다시 정의할 준비가 되셨나요?',
-  closingH2: '미래의 업무 공간을 지금 만나 보세요.',
-  guideTitle: '몇 초면 충분합니다',
-  guideBody: 'Ctrl+K(또는 Cmd+K)로 빠른 검색을 여세요. 모든 기능, 한 번의 입력.',
+  s3_stat: '10,000+',
+  s3_statSub: '한 플랫폼에서 관리되는 인력.',
+  s3_h1: '전 공장 급여 정산.',
+  s3_h2: '며칠에서 몇 분으로.',
+  s3_p1:
+    '다중 스레드 데이터 분석. 복잡한 교대, 연장, 수당을 순식간에 처리. 지연 0. 오류 0.',
+
+  secXdr: '인터페이스',
+  s4_h1: '생생하게. 선명하게. 직관적으로.',
+  s4_p1:
+    '칙칙한 Excel 시트는 이제 그만. Yousung HR Pro는 건조한 데이터를 예술적 공간으로 바꿉니다. 모든 차트와 지표가 아름답게. 인사 이해가 이렇게 쉬웠던 적 없습니다.',
+
+  secConnect: '연결',
+  s5_h1: '만물 연결. 즉시 동기화.',
+  s5_p1:
+    '공장 데이터가 실시간으로 중앙 시스템으로 흘러듭니다. 유성 비나의 최신 안면·지문 인식 장비와 매끄럽게 통합됩니다.',
+  connectFace: '안면 인식',
+  connectFinger: '지문',
+  connectDevice: '현장 근태 단말',
+
+  secBio: '생체 보안',
+  s6_h1: '데이터 요새. 불가침.',
+  s6_p1:
+    '엔터프라이즈급 보안. 종단 간 암호화. 다층 접근 통제. 인사 데이터는 최고 기밀 자산이며, 가장 견고한 잠금으로 보호합니다.',
+
+  s7_h1: '유성 비나의 미래.',
+  s7_h2: '여기서 시작합니다.',
+
+  guideTitle: '빠른 단축키',
+  guideBody: 'Ctrl+K(또는 Cmd+K) — 한 칸에 모든 기능.',
+
   mockBadge: '개요',
   mockTitle: '오늘 출근',
   mockSub: '실시간 · Yousung Vina',
