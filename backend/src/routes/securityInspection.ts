@@ -3,7 +3,15 @@ import { authenticateToken } from '../middleware/auth';
 import {
   attachSecurityScope,
   requireSecurityReportAccess,
+  requireSecurityAssetAdmin,
 } from '../middleware/securityPermission';
+import {
+  listSecurityAssets,
+  createSecurityAsset,
+  updateSecurityAsset,
+  regenerateAssetQr,
+  exportAssetLabelsPdf,
+} from '../controllers/securityAssets';
 import {
   getSecurityDepartments,
   getDepartmentTemplate,
@@ -33,5 +41,11 @@ router.post('/sync', syncInspections);
 router.get('/reports/summary', requireSecurityReportAccess, getSecurityReportSummary);
 router.get('/reports/dashboard', requireSecurityReportAccess, getSecurityManagementDashboard);
 router.get('/reports/export', requireSecurityReportAccess, exportSecurityReport);
+
+router.get('/assets/labels/pdf', requireSecurityAssetAdmin, exportAssetLabelsPdf);
+router.get('/assets', requireSecurityAssetAdmin, listSecurityAssets);
+router.post('/assets', requireSecurityAssetAdmin, createSecurityAsset);
+router.patch('/assets/:id', requireSecurityAssetAdmin, updateSecurityAsset);
+router.post('/assets/:id/regenerate-qr', requireSecurityAssetAdmin, regenerateAssetQr);
 
 export default router;

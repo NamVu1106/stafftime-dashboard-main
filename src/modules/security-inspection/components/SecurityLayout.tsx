@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, BarChart3, Shield } from 'lucide-react';
+import { ArrowLeft, BarChart3, QrCode, Shield } from 'lucide-react';
 import { useI18n } from '@/hooks/useI18n';
 import { useAuth } from '@/contexts/AuthContext';
 import { ConnectionStatus } from './ConnectionStatus';
@@ -11,10 +11,12 @@ export function SecurityLayout() {
   const { t } = useI18n();
   const { user } = useAuth();
   const { online, pending } = useSecuritySync();
-  const canViewReport =
+  const canManage =
     user?.role === 'admin' ||
     (user?.role === 'manager' && (user.departmentIds?.length ?? 0) > 0);
   const isReport = location.pathname.includes('/report');
+  const isAssetsAdmin = location.pathname.includes('/admin/assets');
+  const wideMain = isReport || isAssetsAdmin;
 
   return (
     <div className="sec-tablet-app min-h-[100dvh] bg-slate-100 text-slate-900">
@@ -36,17 +38,30 @@ export function SecurityLayout() {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {canViewReport && (
-              <button
-                type="button"
-                className="sec-touch-btn flex min-h-12 items-center gap-1 rounded-xl border-2 border-emerald-600 bg-emerald-50 px-3 text-xs font-bold text-emerald-800"
-                onClick={() => navigate(isReport ? '/security' : '/security/report')}
-              >
-                <BarChart3 className="h-5 w-5" />
-                <span className="hidden sm:inline">
-                  {isReport ? t('securityInspection.backToField') : t('securityInspection.openReport')}
-                </span>
-              </button>
+            {canManage && (
+              <>
+                <button
+                  type="button"
+                  className="sec-touch-btn flex min-h-12 items-center gap-1 rounded-xl border-2 border-slate-300 bg-white px-2 text-xs font-bold sm:px-3"
+                  onClick={() =>
+                    navigate(isAssetsAdmin ? '/security' : '/security/admin/assets')
+                  }
+                  title={t('securityInspection.assetsAdmin')}
+                >
+                  <QrCode className="h-5 w-5" />
+                  <span className="hidden md:inline">{t('securityInspection.assetsShort')}</span>
+                </button>
+                <button
+                  type="button"
+                  className="sec-touch-btn flex min-h-12 items-center gap-1 rounded-xl border-2 border-emerald-600 bg-emerald-50 px-2 text-xs font-bold text-emerald-800 sm:px-3"
+                  onClick={() => navigate(isReport ? '/security' : '/security/report')}
+                >
+                  <BarChart3 className="h-5 w-5" />
+                  <span className="hidden md:inline">
+                    {isReport ? t('securityInspection.backToField') : t('securityInspection.openReport')}
+                  </span>
+                </button>
+              </>
             )}
             <ConnectionStatus online={online} pending={pending} />
           </div>
@@ -54,8 +69,8 @@ export function SecurityLayout() {
       </header>
       <main
         className={
-          isReport
-            ? 'mx-auto max-w-5xl px-4 pb-8 pt-4'
+          wideMain
+            ? 'mx-auto max-w-6xl px-4 pb-8 pt-4'
             : 'mx-auto max-w-3xl px-4 pb-28 pt-4'
         }
       >

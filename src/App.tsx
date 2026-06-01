@@ -29,6 +29,7 @@ import SecurityDashboardPage from "@/modules/security-inspection/pages/SecurityD
 import SecurityScanPage from "@/modules/security-inspection/pages/SecurityScanPage";
 import SecurityChecklistPage from "@/modules/security-inspection/pages/SecurityChecklistPage";
 import SecurityReportPage from "@/modules/security-inspection/pages/SecurityReportPage";
+import SecurityAssetsAdminPage from "@/modules/security-inspection/pages/SecurityAssetsAdminPage";
 import { SecurityReportRoute } from "@/modules/security-inspection/components/SecurityReportRoute";
 import NotFound from "./pages/NotFound";
 
@@ -64,6 +65,14 @@ const App = () => (
                 element={
                   <SecurityReportRoute>
                     <SecurityReportPage />
+                  </SecurityReportRoute>
+                }
+              />
+              <Route
+                path="admin/assets"
+                element={
+                  <SecurityReportRoute>
+                    <SecurityAssetsAdminPage />
                   </SecurityReportRoute>
                 }
               />

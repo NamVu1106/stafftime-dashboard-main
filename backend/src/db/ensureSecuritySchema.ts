@@ -100,6 +100,21 @@ END
 `);
 
   await exec(`
+IF OBJECT_ID(N'dbo.sec_asset_qr_history', N'U') IS NULL
+BEGIN
+  CREATE TABLE [dbo].[sec_asset_qr_history] (
+    [id] INT NOT NULL IDENTITY(1,1),
+    [asset_id] INT NOT NULL,
+    [old_qr_code] NVARCHAR(200) NOT NULL,
+    [new_qr_code] NVARCHAR(200) NOT NULL,
+    [changed_at] NVARCHAR(50) NOT NULL,
+    [changed_by] NVARCHAR(200),
+    CONSTRAINT [sec_asset_qr_history_pkey] PRIMARY KEY CLUSTERED ([id])
+  );
+END
+`);
+
+  await exec(`
 IF OBJECT_ID(N'dbo.sec_user_departments', N'U') IS NULL
 BEGIN
   CREATE TABLE [dbo].[sec_user_departments] (

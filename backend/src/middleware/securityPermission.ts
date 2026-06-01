@@ -41,6 +41,23 @@ export async function attachSecurityScope(
 }
 
 /** Admin hoặc manager có ít nhất một bộ phận */
+/** Admin hoặc manager — quản lý tài sản / QR */
+export function requireSecurityAssetAdmin(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  const scope = req.securityScope;
+  if (!req.user || !scope) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (scope.isAdmin) return next();
+  if (req.user.role === 'manager' && scope.departmentIds && scope.departmentIds.length > 0) {
+    return next();
+  }
+  return res.status(403).json({ error: 'Forbidden - Asset admin required' });
+}
+
 export function requireSecurityReportAccess(
   req: AuthRequest,
   res: Response,

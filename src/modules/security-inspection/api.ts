@@ -66,6 +66,65 @@ export const securityInspectionAPI = {
       totals: { machines: number; checked: number; unchecked: number; failures: number };
     }>(`/reports/dashboard${qs ? `?${qs}` : ''}`);
   },
+  listAssets: (departmentId?: number) => {
+    const q = departmentId ? `?departmentId=${departmentId}` : '';
+    return secFetch<{
+      data: {
+        id: number;
+        departmentId: number;
+        departmentName: string;
+        departmentCode: string;
+        qrCode: string;
+        name: string;
+        assetType: string;
+        isActive: boolean;
+        inspectionsSubmittedToday: number;
+        qrStatus: string;
+      }[];
+    }>(`/assets${q}`);
+  },
+  createAsset: (body: {
+    departmentId: number;
+    name: string;
+    assetType?: string;
+    qrCode?: string;
+  }) =>
+    secFetch<{ ok: boolean; id: number; qrCode: string }>('/assets', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateAsset: (
+    id: number,
+    body: { name?: string; assetType?: string; isActive?: boolean }
+  ) =>
+    secFetch<{ ok: boolean }>(`/assets/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  regenerateAssetQr: (id: number) =>
+    secFetch<{ ok: boolean; qrCode: string; previousQrCode: string }>(
+      `/assets/${id}/regenerate-qr`,
+      { method: 'POST' }
+    ),
+  downloadLabelsPdf: async (ids: number[]) => {
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    const q = new URLSearchParams({ ids: ids.join(',') });
+    const res = await fetch(
+      `${API_URL}/security-inspection/assets/labels/pdf?${q}`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { error?: string }).error || res.statusText);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tem-qr-an-ninh_${new Date().toISOString().slice(0, 10)}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
   exportReport: async (from: string, to: string) => {
     const token = sessionStorage.getItem('token') || localStorage.getItem('token');
     const q = new URLSearchParams({ from, to });

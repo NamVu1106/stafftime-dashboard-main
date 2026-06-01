@@ -60,6 +60,7 @@ export function getQuickSearchRegistry(): QuickSearchRegistryEntry[] {
     { kind: 'route', path: '/introduction', titleKey: 'hrProIntro.navTitle', icon: Sparkles },
     { kind: 'route', path: '/security', titleKey: 'securityInspection.navTitle', icon: ShieldCheck },
     { kind: 'route', path: '/security/report', titleKey: 'securityInspection.reportTitle', icon: ShieldCheck },
+    { kind: 'route', path: '/security/admin/assets', titleKey: 'securityInspection.assetsTitle', icon: ShieldCheck },
     ...mapMenu('accounting', accountingMenu),
     ...mapMenu('administration', administrationMenu),
     ...mapMenu('hr', hrMenu),
