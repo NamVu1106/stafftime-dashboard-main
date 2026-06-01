@@ -1,5 +1,9 @@
 import express from 'express';
-import { authenticateToken, requireAdmin } from '../middleware/auth';
+import { authenticateToken } from '../middleware/auth';
+import {
+  attachSecurityScope,
+  requireSecurityReportAccess,
+} from '../middleware/securityPermission';
 import {
   getSecurityDepartments,
   getDepartmentTemplate,
@@ -9,17 +13,25 @@ import {
   syncInspections,
   getSecurityReportSummary,
   getSecurityManagementDashboard,
+  exportSecurityReport,
+  getMySecurityScope,
 } from '../controllers/securityInspection';
 
 const router = express.Router();
 
-router.get('/departments', authenticateToken, getSecurityDepartments);
-router.get('/departments/:id/template', authenticateToken, getDepartmentTemplate);
-router.get('/assets/resolve', authenticateToken, resolveAssetByQr);
-router.post('/inspections', authenticateToken, saveInspection);
-router.post('/inspections/submit', authenticateToken, submitInspection);
-router.post('/sync', authenticateToken, syncInspections);
-router.get('/reports/summary', authenticateToken, requireAdmin, getSecurityReportSummary);
-router.get('/reports/dashboard', authenticateToken, requireAdmin, getSecurityManagementDashboard);
+router.use(authenticateToken);
+router.use(attachSecurityScope);
+
+router.get('/me/scope', getMySecurityScope);
+router.get('/departments', getSecurityDepartments);
+router.get('/departments/:id/template', getDepartmentTemplate);
+router.get('/assets/resolve', resolveAssetByQr);
+router.post('/inspections', saveInspection);
+router.post('/inspections/submit', submitInspection);
+router.post('/sync', syncInspections);
+
+router.get('/reports/summary', requireSecurityReportAccess, getSecurityReportSummary);
+router.get('/reports/dashboard', requireSecurityReportAccess, getSecurityManagementDashboard);
+router.get('/reports/export', requireSecurityReportAccess, exportSecurityReport);
 
 export default router;

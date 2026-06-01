@@ -29,7 +29,7 @@ import SecurityDashboardPage from "@/modules/security-inspection/pages/SecurityD
 import SecurityScanPage from "@/modules/security-inspection/pages/SecurityScanPage";
 import SecurityChecklistPage from "@/modules/security-inspection/pages/SecurityChecklistPage";
 import SecurityReportPage from "@/modules/security-inspection/pages/SecurityReportPage";
-import { SecurityAdminRoute } from "@/modules/security-inspection/components/SecurityAdminRoute";
+import { SecurityReportRoute } from "@/modules/security-inspection/components/SecurityReportRoute";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -62,9 +62,9 @@ const App = () => (
               <Route
                 path="report"
                 element={
-                  <SecurityAdminRoute>
+                  <SecurityReportRoute>
                     <SecurityReportPage />
-                  </SecurityAdminRoute>
+                  </SecurityReportRoute>
                 }
               />
             </Route>

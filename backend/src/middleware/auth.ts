@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import type { SecurityScope } from './securityPermission';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -9,6 +10,7 @@ export interface AuthRequest extends Request {
     username: string;
     role: string;
   };
+  securityScope?: SecurityScope;
 }
 
 export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {

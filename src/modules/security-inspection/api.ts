@@ -43,9 +43,16 @@ export const securityInspectionAPI = {
       method: 'POST',
       body: JSON.stringify({ inspections }),
     }),
-  getManagementDashboard: () =>
-    secFetch<{
-      date: string;
+  getManagementDashboard: (params?: { from?: string; to?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.from) q.set('from', params.from);
+    if (params?.to) q.set('to', params.to);
+    const qs = q.toString();
+    return secFetch<{
+      from: string;
+      to: string;
+      scope: string;
+      departmentIds: number[];
       departments: {
         department_id: number;
         department_name: string;
@@ -57,5 +64,27 @@ export const securityInspectionAPI = {
       }[];
       statusPie: { name: string; value: number }[];
       totals: { machines: number; checked: number; unchecked: number; failures: number };
-    }>('/reports/dashboard'),
+    }>(`/reports/dashboard${qs ? `?${qs}` : ''}`);
+  },
+  exportReport: async (from: string, to: string) => {
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    const q = new URLSearchParams({ from, to });
+    const res = await fetch(
+      `${API_URL}/security-inspection/reports/export?${q}`,
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { error?: string }).error || res.statusText);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `bao-cao-an-ninh_${from}_${to}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };

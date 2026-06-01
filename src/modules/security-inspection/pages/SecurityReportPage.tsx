@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, BarChart3 } from 'lucide-react';
+import { Loader2, BarChart3, FileSpreadsheet } from 'lucide-react';
 import {
   PieChart,
   Pie,
@@ -10,8 +11,12 @@ import {
   Tooltip,
 } from 'recharts';
 import { useI18n } from '@/hooks/useI18n';
+import { useAuth } from '@/contexts/AuthContext';
 import { securityInspectionAPI } from '../api';
 import { cn } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 const PIE_COLORS: Record<string, string> = {
   pass: '#16a34a',
@@ -19,14 +24,43 @@ const PIE_COLORS: Record<string, string> = {
   skip: '#94a3b8',
 };
 
+function defaultRange() {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - 6);
+  return {
+    from: from.toISOString().slice(0, 10),
+    to: to.toISOString().slice(0, 10),
+  };
+}
+
 export default function SecurityReportPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [range, setRange] = useState(defaultRange);
+  const [exporting, setExporting] = useState(false);
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['security-report-dashboard'],
-    queryFn: () => securityInspectionAPI.getManagementDashboard(),
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: ['security-report-dashboard', range.from, range.to],
+    queryFn: () =>
+      securityInspectionAPI.getManagementDashboard({
+        from: range.from,
+        to: range.to,
+      }),
   });
+
+  const onExport = async () => {
+    setExporting(true);
+    try {
+      await securityInspectionAPI.exportReport(range.from, range.to);
+      toast.success(t('securityInspection.exportOk'));
+    } catch (e: unknown) {
+      toast.error((e as Error).message || t('securityInspection.exportFail'));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -61,6 +95,8 @@ export default function SecurityReportPage() {
           : t('securityInspection.skip'),
   }));
 
+  const isManagerScope = user?.role === 'manager' && data.scope === 'departments';
+
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -72,17 +108,66 @@ export default function SecurityReportPage() {
             </span>
           </div>
           <h1 className="text-2xl font-bold">{t('securityInspection.reportTitle')}</h1>
-          <p className="text-sm font-medium text-slate-600">
-            {t('securityInspection.reportDate')}: {data.date}
-          </p>
+          {isManagerScope && (
+            <p className="mt-1 text-sm font-semibold text-amber-800">
+              {t('securityInspection.managerScopeHint')}
+            </p>
+          )}
         </div>
-        <button
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="sec-touch-btn min-h-12 rounded-xl border-2 border-slate-300 px-4 font-semibold"
+            onClick={() => navigate('/security')}
+          >
+            {t('securityInspection.backToField')}
+          </button>
+          <Button
+            type="button"
+            className="sec-touch-btn min-h-12 gap-2 font-bold"
+            disabled={exporting}
+            onClick={onExport}
+          >
+            {exporting ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="h-5 w-5" />
+            )}
+            {t('securityInspection.exportExcel')}
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border-2 border-slate-200 bg-white p-4">
+        <div>
+          <label className="text-xs font-bold text-slate-600">{t('securityInspection.dateFrom')}</label>
+          <Input
+            type="date"
+            className="mt-1 min-h-11"
+            value={range.from}
+            onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
+          />
+        </div>
+        <div>
+          <label className="text-xs font-bold text-slate-600">{t('securityInspection.dateTo')}</label>
+          <Input
+            type="date"
+            className="mt-1 min-h-11"
+            value={range.to}
+            onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
+          />
+        </div>
+        <Button
           type="button"
-          className="sec-touch-btn min-h-12 rounded-xl border-2 border-slate-300 px-4 font-semibold"
-          onClick={() => navigate('/security')}
+          className="min-h-11 font-semibold"
+          disabled={isFetching}
+          onClick={() => refetch()}
         >
-          {t('securityInspection.backToField')}
-        </button>
+          {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : t('securityInspection.applyRange')}
+        </Button>
+        <p className="w-full text-xs text-slate-500">
+          {t('securityInspection.reportDate')}: {data.from} → {data.to}
+        </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-4">
@@ -162,10 +247,7 @@ export default function SecurityReportPage() {
                     }
                   >
                     {pieData.map((entry) => (
-                      <Cell
-                        key={entry.name}
-                        fill={PIE_COLORS[entry.name] ?? '#64748b'}
-                      />
+                      <Cell key={entry.name} fill={PIE_COLORS[entry.name] ?? '#64748b'} />
                     ))}
                   </Pie>
                   <Tooltip />

@@ -1,7 +1,21 @@
 import { Response } from 'express';
+import ExcelJS from 'exceljs';
 import { query, queryOne, exec } from '../db/sqlServer';
 import type { AuthRequest } from '../middleware/auth';
+import {
+  assertDeptAccess,
+  canAccessDepartment,
+  deptSqlFilter,
+  loadSecurityScope,
+} from '../middleware/securityPermission';
 import { persistInspectionPhoto } from '../utils/securityPhotos';
+
+function parseDateRange(req: AuthRequest): { from: string; to: string } {
+  const today = new Date().toISOString().slice(0, 10);
+  const from = String(req.query.from ?? today).slice(0, 10);
+  const to = String(req.query.to ?? from).slice(0, 10);
+  return from <= to ? { from, to } : { from: to, to: from };
+}
 
 type DeptRow = {
   id: number;
@@ -24,11 +38,33 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-/** GET /departments — dashboard cards + tiến độ ca */
-export async function getSecurityDepartments(_req: AuthRequest, res: Response) {
+/** GET /me/scope — phạm vi bộ phận của user */
+export async function getMySecurityScope(req: AuthRequest, res: Response) {
   try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const scope = req.securityScope ?? (await loadSecurityScope(req.user));
+    res.json({
+      isAdmin: scope.isAdmin,
+      departmentIds: scope.departmentIds ?? [],
+    });
+  } catch (e: unknown) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+}
+
+/** GET /departments — dashboard cards + tiến độ ca */
+export async function getSecurityDepartments(req: AuthRequest, res: Response) {
+  try {
+    const scope = req.securityScope!;
+    const { clause, params } = deptSqlFilter(scope, 'id');
     const depts = await query<DeptRow>(
-      'SELECT id, code, name, color, sort_order FROM dbo.sec_departments WHERE is_active = 1 ORDER BY sort_order'
+      `SELECT id, code, name, color, sort_order FROM dbo.sec_departments
+       WHERE is_active = 1 AND ${clause}
+       ORDER BY sort_order`,
+      params
     );
     const stats = await query<{ department_id: number; submitted: number; draft: number }>(`
       SELECT department_id,
@@ -64,6 +100,7 @@ export async function getSecurityDepartments(_req: AuthRequest, res: Response) {
 export async function getDepartmentTemplate(req: AuthRequest, res: Response) {
   try {
     const deptId = Number(req.params.id);
+    if (!assertDeptAccess(req, res, deptId)) return;
     const dept = await queryOne<DeptRow>(
       'SELECT id, code, name, color, sort_order FROM dbo.sec_departments WHERE id = @id AND is_active = 1',
       { id: deptId }
@@ -130,6 +167,7 @@ export async function resolveAssetByQr(req: AuthRequest, res: Response) {
       res.status(404).json({ error: 'QR not found' });
       return;
     }
+    if (!assertDeptAccess(req, res, asset.department_id)) return;
     const dept = await queryOne<DeptRow>(
       'SELECT id, code, name, color, sort_order FROM dbo.sec_departments WHERE id = @id',
       { id: asset.department_id }
@@ -160,7 +198,16 @@ type InspectionPayload = {
   results: ResultPayload[];
 };
 
-async function upsertInspection(body: InspectionPayload, username?: string) {
+async function upsertInspection(
+  body: InspectionPayload,
+  username?: string,
+  scope?: { departmentIds: number[] | null; isAdmin: boolean }
+) {
+  if (scope && !scope.isAdmin && scope.departmentIds !== null) {
+    if (!scope.departmentIds.includes(body.departmentId)) {
+      throw new Error('Forbidden department');
+    }
+  }
   const ts = nowIso();
   const existing = await queryOne<{ id: number }>(
     'SELECT id FROM dbo.sec_inspections WHERE client_id = @cid',
@@ -238,10 +285,12 @@ export async function saveInspection(req: AuthRequest, res: Response) {
       res.status(400).json({ error: 'Invalid payload' });
       return;
     }
-    const id = await upsertInspection(body, req.user?.username);
+    if (!assertDeptAccess(req, res, body.departmentId)) return;
+    const id = await upsertInspection(body, req.user?.username, req.securityScope);
     res.json({ ok: true, id, clientId: body.clientId });
   } catch (e: unknown) {
-    res.status(500).json({ error: (e as Error).message });
+    const msg = (e as Error).message;
+    res.status(msg.includes('Forbidden') ? 403 : 500).json({ error: msg });
   }
 }
 
@@ -265,10 +314,12 @@ export async function submitInspection(req: AuthRequest, res: Response) {
         return;
       }
     }
-    const id = await upsertInspection(body, req.user?.username);
+    if (!assertDeptAccess(req, res, body.departmentId)) return;
+    const id = await upsertInspection(body, req.user?.username, req.securityScope);
     res.json({ ok: true, id, clientId: body.clientId });
   } catch (e: unknown) {
-    res.status(500).json({ error: (e as Error).message });
+    const msg = (e as Error).message;
+    res.status(msg.includes('Forbidden') ? 403 : 500).json({ error: msg });
   }
 }
 
@@ -282,7 +333,14 @@ export async function syncInspections(req: AuthRequest, res: Response) {
     }
     const ids: number[] = [];
     for (const item of list) {
-      const id = await upsertInspection(item, req.user?.username);
+      if (
+        req.securityScope &&
+        !canAccessDepartment(req.securityScope, item.departmentId)
+      ) {
+        res.status(403).json({ error: `No access to department ${item.departmentId}` });
+        return;
+      }
+      const id = await upsertInspection(item, req.user?.username, req.securityScope);
       ids.push(id);
     }
     res.json({ ok: true, synced: ids.length, ids });
@@ -291,10 +349,12 @@ export async function syncInspections(req: AuthRequest, res: Response) {
   }
 }
 
-/** GET /reports/dashboard — báo cáo quản lý (hôm nay) */
-export async function getSecurityManagementDashboard(_req: AuthRequest, res: Response) {
+/** GET /reports/dashboard — báo cáo quản lý (lọc bộ phận + khoảng ngày) */
+export async function getSecurityManagementDashboard(req: AuthRequest, res: Response) {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const scope = req.securityScope!;
+    const { from, to } = parseDateRange(req);
+    const { clause, params: deptParams } = deptSqlFilter(scope, 'd.id');
     const departments = await query<{
       department_id: number;
       department_name: string;
@@ -315,35 +375,42 @@ export async function getSecurityManagementDashboard(_req: AuthRequest, res: Res
         SELECT department_id, COUNT(DISTINCT asset_id) AS checked_count
         FROM dbo.sec_inspections
         WHERE status = N'submitted'
-          AND created_at >= @today
+          AND created_at >= @from AND created_at < DATEADD(day, 1, CAST(@to AS DATE))
         GROUP BY department_id
       ) ch ON ch.department_id = d.id
       LEFT JOIN (
         SELECT i.department_id, SUM(CASE WHEN r.status = N'fail' THEN 1 ELSE 0 END) AS fail_count
         FROM dbo.sec_inspections i
         INNER JOIN dbo.sec_inspection_results r ON r.inspection_id = i.id
-        WHERE i.status = N'submitted' AND i.created_at >= @today
+        WHERE i.status = N'submitted'
+          AND i.created_at >= @from AND i.created_at < DATEADD(day, 1, CAST(@to AS DATE))
         GROUP BY i.department_id
       ) fl ON fl.department_id = d.id
-      WHERE d.is_active = 1
+      WHERE d.is_active = 1 AND ${clause}
       ORDER BY d.sort_order
-    `, { today });
+    `, { from, to, ...deptParams });
 
     const rows = departments.map((row) => ({
       ...row,
       unchecked_count: Math.max(0, row.total_machines - row.checked_count),
     }));
 
+    const pieDept = deptSqlFilter(scope, 'i.department_id');
     const statusPie = await query<{ status: string; count: number }>(`
       SELECT r.status, COUNT(1) AS count
       FROM dbo.sec_inspection_results r
       INNER JOIN dbo.sec_inspections i ON i.id = r.inspection_id
-      WHERE i.status = N'submitted' AND i.created_at >= @today
+      WHERE i.status = N'submitted'
+        AND i.created_at >= @from AND i.created_at < DATEADD(day, 1, CAST(@to AS DATE))
+        AND ${pieDept.clause}
       GROUP BY r.status
-    `, { today });
+    `, { from, to, ...pieDept.params });
 
     res.json({
-      date: today,
+      from,
+      to,
+      scope: scope.isAdmin ? 'all' : 'departments',
+      departmentIds: scope.departmentIds ?? [],
       departments: rows,
       statusPie: statusPie.map((s) => ({
         name: s.status,
@@ -362,6 +429,77 @@ export async function getSecurityManagementDashboard(_req: AuthRequest, res: Res
 }
 
 /** GET /reports/summary — tương thích cũ */
-export async function getSecurityReportSummary(_req: AuthRequest, res: Response) {
-  return getSecurityManagementDashboard(_req, res);
+export async function getSecurityReportSummary(req: AuthRequest, res: Response) {
+  return getSecurityManagementDashboard(req, res);
+}
+
+/** GET /reports/export — Excel lỗi phát hiện */
+export async function exportSecurityReport(req: AuthRequest, res: Response) {
+  try {
+    const scope = req.securityScope!;
+    const { from, to } = parseDateRange(req);
+    const { clause, params: deptParams } = deptSqlFilter(scope, 'd.id');
+
+    const rows = await query<{
+      inspection_date: string;
+      department_name: string;
+      qr_code: string;
+      asset_name: string;
+      item_label: string;
+      note: string;
+      photo_url: string;
+      inspector_username: string;
+      shift_label: string;
+    }>(`
+      SELECT
+        LEFT(i.created_at, 10) AS inspection_date,
+        d.name AS department_name,
+        a.qr_code,
+        a.name AS asset_name,
+        ci.label AS item_label,
+        r.note,
+        COALESCE(r.photo_url, r.photo_data) AS photo_url,
+        i.inspector_username,
+        i.shift_label
+      FROM dbo.sec_inspection_results r
+      INNER JOIN dbo.sec_inspections i ON i.id = r.inspection_id
+      INNER JOIN dbo.sec_departments d ON d.id = i.department_id
+      INNER JOIN dbo.sec_assets a ON a.id = i.asset_id
+      INNER JOIN dbo.sec_check_items ci ON ci.id = r.item_id
+      WHERE r.status = N'fail'
+        AND i.status = N'submitted'
+        AND i.created_at >= @from AND i.created_at < DATEADD(day, 1, CAST(@to AS DATE))
+        AND ${clause}
+      ORDER BY i.created_at DESC, d.name, a.qr_code
+    `, { from, to, ...deptParams });
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Loi phat hien');
+    ws.columns = [
+      { header: 'Ngày', key: 'inspection_date', width: 12 },
+      { header: 'Bộ phận', key: 'department_name', width: 22 },
+      { header: 'Mã QR', key: 'qr_code', width: 18 },
+      { header: 'Thiết bị', key: 'asset_name', width: 24 },
+      { header: 'Hạng mục lỗi', key: 'item_label', width: 28 },
+      { header: 'Mô tả', key: 'note', width: 32 },
+      { header: 'Ảnh (URL)', key: 'photo_url', width: 40 },
+      { header: 'Người kiểm tra', key: 'inspector_username', width: 16 },
+      { header: 'Ca', key: 'shift_label', width: 14 },
+    ];
+    ws.getRow(1).font = { bold: true };
+    for (const row of rows) {
+      ws.addRow(row);
+    }
+
+    const filename = `bao-cao-an-ninh_${from}_${to}.xlsx`;
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e: unknown) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 }

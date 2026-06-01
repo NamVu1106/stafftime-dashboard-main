@@ -4,6 +4,8 @@ interface User {
   id: number;
   username: string;
   role: string;
+  departmentIds?: number[];
+  securityScopeAll?: boolean;
 }
 
 interface AuthContextType {

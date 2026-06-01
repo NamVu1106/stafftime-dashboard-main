@@ -57,7 +57,14 @@ export const viSecurityInspection = {
   checked: 'Đã kiểm tra',
   unchecked: 'Chưa kiểm tra',
   failuresFound: 'Lỗi phát hiện',
-  pieTitle: 'Tỷ lệ kết quả hạng mục (hôm nay)',
+  pieTitle: 'Tỷ lệ kết quả hạng mục trong kỳ',
+  exportExcel: 'Xuất Excel',
+  exportOk: 'Đã tải file Excel',
+  exportFail: 'Xuất Excel thất bại',
+  dateFrom: 'Từ ngày',
+  dateTo: 'Đến ngày',
+  applyRange: 'Áp dụng',
+  managerScopeHint: 'Bạn chỉ xem báo cáo các bộ phận được phân quyền.',
 };
 
 export const koSecurityInspection = {
@@ -119,5 +126,12 @@ export const koSecurityInspection = {
   checked: '점검 완료',
   unchecked: '미점검',
   failuresFound: '발견된 불량',
-  pieTitle: '항목 결과 비율 (오늘)',
+  pieTitle: '기간 내 항목 결과 비율',
+  exportExcel: 'Excel보내기',
+  exportOk: 'Excel 다운로드 완료',
+  exportFail: 'Excel보내기 실패',
+  dateFrom: '시작일',
+  dateTo: '종료일',
+  applyRange: '적용',
+  managerScopeHint: '권한이 있는 부서의 보고서만 표시됩니다.',
 };

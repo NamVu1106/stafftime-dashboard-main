@@ -1,5 +1,6 @@
 import { exec } from './sqlServer';
 import { seedSecurityInspectionIfEmpty } from './seedSecurityInspection';
+import { seedSecurityDemoManagers } from './seedSecurityManagers';
 
 /** Bảng kiểm tra an ninh — phân cấp Department > Category > Item */
 export async function ensureSecurityInspectionSchema(): Promise<void> {
@@ -99,6 +100,17 @@ END
 `);
 
   await exec(`
+IF OBJECT_ID(N'dbo.sec_user_departments', N'U') IS NULL
+BEGIN
+  CREATE TABLE [dbo].[sec_user_departments] (
+    [user_id] INT NOT NULL,
+    [department_id] INT NOT NULL,
+    CONSTRAINT [sec_user_departments_pkey] PRIMARY KEY CLUSTERED ([user_id], [department_id])
+  );
+END
+`);
+
+  await exec(`
 IF COL_LENGTH('dbo.sec_inspection_results', 'photo_url') IS NULL
   ALTER TABLE [dbo].[sec_inspection_results] ADD [photo_url] NVARCHAR(1000) NULL;
 `);
@@ -114,4 +126,5 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'sec_inspections_dept_sta
 `);
 
   await seedSecurityInspectionIfEmpty();
+  await seedSecurityDemoManagers();
 }

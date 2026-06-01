@@ -11,7 +11,9 @@ export function SecurityLayout() {
   const { t } = useI18n();
   const { user } = useAuth();
   const { online, pending } = useSecuritySync();
-  const isAdmin = user?.role === 'admin';
+  const canViewReport =
+    user?.role === 'admin' ||
+    (user?.role === 'manager' && (user.departmentIds?.length ?? 0) > 0);
   const isReport = location.pathname.includes('/report');
 
   return (
@@ -34,7 +36,7 @@ export function SecurityLayout() {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {isAdmin && (
+            {canViewReport && (
               <button
                 type="button"
                 className="sec-touch-btn flex min-h-12 items-center gap-1 rounded-xl border-2 border-emerald-600 bg-emerald-50 px-3 text-xs font-bold text-emerald-800"

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
 import { query, queryOne, exec } from '../db/sqlServer';
+import { loadSecurityScope } from '../middleware/securityPermission';
 
 /** Tạo bảng dbo.users nếu chưa có (tránh lỗi "Invalid object name 'users'"). */
 export async function ensureUsersTable(): Promise<void> {
@@ -62,6 +63,7 @@ export const login = async (req: Request, res: Response) => {
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+    const scope = await loadSecurityScope({ userId: user.id, role: user.role });
     const token = jwt.sign(
       { userId: user.id, username: user.username, role: user.role },
       JWT_SECRET,
@@ -69,7 +71,13 @@ export const login = async (req: Request, res: Response) => {
     );
     res.json({
       token,
-      user: { id: user.id, username: user.username, role: user.role },
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        departmentIds: scope.departmentIds ?? [],
+        securityScopeAll: scope.isAdmin,
+      },
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
