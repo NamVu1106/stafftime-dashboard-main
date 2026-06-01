@@ -18,3 +18,7 @@ Thumbs.db
 
 # Local dev logs
 **/_dev-*.txt
+
+# Uploaded files (security photos, Excel, …)
+uploads/
+backend/uploads/

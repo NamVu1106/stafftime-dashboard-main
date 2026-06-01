@@ -640,3 +640,22 @@
 .hr-pro-apple-light .hr-apple-body {
   color: #86868b;
 }
+
+/* Tablet — Kiểm tra an ninh */
+.sec-tablet-app {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.sec-touch-btn,
+.sec-touch-card {
+  min-height: 48px;
+  min-width: 48px;
+}
+.sec-footer {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+@media (min-width: 768px) {
+  .sec-tablet-app main {
+    font-size: 1.05rem;
+  }
+}

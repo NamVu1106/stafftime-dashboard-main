@@ -7,7 +7,8 @@ import {
   ChevronDown,
   Activity,
   TrendingUp,
-  ScrollText
+  ScrollText,
+  ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TimeFilter } from '@/components/shared/TimeFilter';
@@ -34,6 +35,7 @@ interface MenuItem {
 /** Sidebar tinh gọn: chỉ Trang chủ, Lịch sử sửa đổi, Tổng quan. Các chức năng Nhân viên, Báo cáo, Nhân sự, Phòng ban, Upload, Lịch sử đã chuyển vào Tổng quan (tabs Kế toán, Hành chính, Nhân sự). */
 const getMenuItems = (t: (key: string) => string): MenuItem[] => [
   { path: '/', icon: LayoutDashboard, label: t('sidebar.home') },
+  { path: '/security', icon: ShieldCheck, label: t('sidebar.securityInspection') },
   { path: '/revision-history', icon: ScrollText, label: t('sidebar.revisionHistory') },
   {
     icon: TrendingUp,

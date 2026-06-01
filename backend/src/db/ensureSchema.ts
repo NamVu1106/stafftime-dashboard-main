@@ -3,6 +3,7 @@
  * khi chưa chạy migration.sql trong SSMS.
  */
 import { exec } from './sqlServer';
+import { ensureSecurityInspectionSchema } from './ensureSecuritySchema';
 
 export async function ensureDatabaseSchema(): Promise<void> {
   await exec(`
@@ -186,4 +187,6 @@ END
       console.warn('[ensureSchema] Bỏ qua FK (có thể đã tồn tại hoặc dữ liệu cũ):', (e as Error).message);
     }
   }
+
+  await ensureSecurityInspectionSchema();
 }

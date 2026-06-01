@@ -1,4 +1,5 @@
 import { koHrProIntro } from './hrProIntroContent';
+import { koSecurityInspection } from './securityInspectionContent';
 
 export default {
   common: {
@@ -53,6 +54,7 @@ export default {
     deleteAllConfirmDesc: '이 작업은 되돌릴 수 없습니다.',
   },
   hrProIntro: koHrProIntro,
+  securityInspection: koSecurityInspection,
   dashboard: {
     title: '개요',
     welcome: '다시 오신 것을 환영합니다! 오늘의 활동 개요입니다',
@@ -346,6 +348,7 @@ export default {
   },
   sidebar: {
     home: '홈',
+    securityInspection: '보안 점검 (태블릿)',
     revisionHistory: '재·개정 이력',
     overview: '개요',
     dashboard: '대시보드',

@@ -1,4 +1,5 @@
 import { viHrProIntro } from './hrProIntroContent';
+import { viSecurityInspection } from './securityInspectionContent';
 
 export default {
   common: {
@@ -53,6 +54,7 @@ export default {
     deleteAllConfirmDesc: 'Hành động này không thể hoàn tác.',
   },
   hrProIntro: viHrProIntro,
+  securityInspection: viSecurityInspection,
   dashboard: {
     title: 'Tổng quan',
     welcome: 'Chào mừng bạn quay trở lại! Đây là tổng quan hoạt động',
@@ -346,6 +348,7 @@ export default {
   },
   sidebar: {
     home: 'Trang chủ',
+    securityInspection: 'Kiểm tra an ninh (Tablet)',
     revisionHistory: 'Lịch sử sửa đổi',
     overview: 'Tổng quan',
     dashboard: 'Dashboard',

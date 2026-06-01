@@ -24,6 +24,12 @@ import HrReportPage from "./pages/HrReportPage";
 import HrSummaryPage from "./pages/HrSummaryPage";
 import RevisionHistoryPage from "./pages/RevisionHistoryPage";
 import HRProIntroductionPage from "./pages/HRProIntroductionPage";
+import { SecurityLayout } from "@/modules/security-inspection/components/SecurityLayout";
+import SecurityDashboardPage from "@/modules/security-inspection/pages/SecurityDashboardPage";
+import SecurityScanPage from "@/modules/security-inspection/pages/SecurityScanPage";
+import SecurityChecklistPage from "@/modules/security-inspection/pages/SecurityChecklistPage";
+import SecurityReportPage from "@/modules/security-inspection/pages/SecurityReportPage";
+import { SecurityAdminRoute } from "@/modules/security-inspection/components/SecurityAdminRoute";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -49,6 +55,19 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route element={<ProtectedRoute />}>
             <Route path="/introduction" element={<HRProIntroductionPage />} />
+            <Route path="/security" element={<SecurityLayout />}>
+              <Route index element={<SecurityDashboardPage />} />
+              <Route path="scan/:deptId" element={<SecurityScanPage />} />
+              <Route path="checklist" element={<SecurityChecklistPage />} />
+              <Route
+                path="report"
+                element={
+                  <SecurityAdminRoute>
+                    <SecurityReportPage />
+                  </SecurityAdminRoute>
+                }
+              />
+            </Route>
           <Route element={<AdminLayout />}>
             <Route path="/" element={<Index />} />
             <Route path="/realtime" element={<RealtimePage />} />

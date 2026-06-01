@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Activity, Home, ListTree, Sparkles, Upload } from 'lucide-react';
+import { Activity, Home, ListTree, ShieldCheck, Sparkles, Upload } from 'lucide-react';
 import {
   accountingMenu,
   administrationMenu,
@@ -58,6 +58,8 @@ export function getQuickSearchRegistry(): QuickSearchRegistryEntry[] {
     { kind: 'route', path: '/revision-history', titleKey: 'sidebar.revisionHistory', icon: ListTree },
     { kind: 'route', path: '/upload', titleKey: 'sidebar.uploadData', icon: Upload },
     { kind: 'route', path: '/introduction', titleKey: 'hrProIntro.navTitle', icon: Sparkles },
+    { kind: 'route', path: '/security', titleKey: 'securityInspection.navTitle', icon: ShieldCheck },
+    { kind: 'route', path: '/security/report', titleKey: 'securityInspection.reportTitle', icon: ShieldCheck },
     ...mapMenu('accounting', accountingMenu),
     ...mapMenu('administration', administrationMenu),
     ...mapMenu('hr', hrMenu),

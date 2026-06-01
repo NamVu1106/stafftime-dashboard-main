@@ -160,6 +160,7 @@ import departmentsRoutes from './routes/departments';
 import hrExcelRoutes from './routes/hrExcel';
 import hrTemplatesRoutes from './routes/hrTemplates';
 import vendorAssignmentsRoutes from './routes/vendorAssignments';
+import securityInspectionRoutes from './routes/securityInspection';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/employees', employeesRoutes);
@@ -178,6 +179,7 @@ app.use('/api/departments', departmentsRoutes);
 app.use('/api/hr-excel', hrExcelRoutes);
 app.use('/api/hr-templates', hrTemplatesRoutes);
 app.use('/api/vendor-assignments', vendorAssignmentsRoutes);
+app.use('/api/security-inspection', securityInspectionRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({
