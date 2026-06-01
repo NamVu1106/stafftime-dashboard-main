@@ -33,6 +33,18 @@ export type DepartmentTemplate = {
   categories: ChecklistCategory[];
 };
 
+export type ChecklistEditorCategory = {
+  id: number;
+  name: string;
+  sortOrder: number;
+  items: ChecklistItemDef[];
+};
+
+export type ChecklistEditorTemplate = {
+  department: { id: number; code: string; name: string; color: string };
+  categories: ChecklistEditorCategory[];
+};
+
 export type LastInspectionSummary = {
   date: string;
   inspector: string;

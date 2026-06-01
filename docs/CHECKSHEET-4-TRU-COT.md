@@ -28,3 +28,11 @@
 API: `POST /api/security-inspection/reports/results/:id/resolve`
 
 Cột DB: `sec_inspection_results.resolved_at`, `resolved_by`
+
+**Đã xử lý:** chỉ khi có ảnh minh chứng tại hiện trường.
+
+## 5. Self-service checklist
+
+- Màn: `/security/admin/checklist-editor`
+- Mẫu JSON: `docs/checklist-editor-schema.json`
+- Ảnh NOT OK: tối thiểu ~50KB, ưu tiên camera sau

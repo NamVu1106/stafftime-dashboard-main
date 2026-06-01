@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, BarChart3, QrCode, Shield } from 'lucide-react';
+import { ArrowLeft, BarChart3, ListChecks, QrCode, Shield } from 'lucide-react';
 import { useI18n } from '@/hooks/useI18n';
 import { useAuth } from '@/contexts/AuthContext';
 import { ConnectionStatus } from './ConnectionStatus';
@@ -16,7 +16,8 @@ export function SecurityLayout() {
     (user?.role === 'manager' && (user.departmentIds?.length ?? 0) > 0);
   const isReport = location.pathname.includes('/report');
   const isAssetsAdmin = location.pathname.includes('/admin/assets');
-  const wideMain = isReport || isAssetsAdmin;
+  const isChecklistEditor = location.pathname.includes('/admin/checklist-editor');
+  const wideMain = isReport || isAssetsAdmin || isChecklistEditor;
 
   return (
     <div className="sec-tablet-app min-h-[100dvh] bg-slate-100 text-slate-900">
@@ -40,6 +41,19 @@ export function SecurityLayout() {
           <div className="flex shrink-0 items-center gap-2">
             {canManage && (
               <>
+                <button
+                  type="button"
+                  className="sec-touch-btn flex min-h-12 items-center gap-1 rounded-xl border-2 border-slate-300 bg-white px-2 text-xs font-bold sm:px-3"
+                  onClick={() =>
+                    navigate(
+                      isChecklistEditor ? '/security' : '/security/admin/checklist-editor'
+                    )
+                  }
+                  title={t('securityInspection.checklistEditor')}
+                >
+                  <ListChecks className="h-5 w-5" />
+                  <span className="hidden lg:inline">{t('securityInspection.checklistEditorShort')}</span>
+                </button>
                 <button
                   type="button"
                   className="sec-touch-btn flex min-h-12 items-center gap-1 rounded-xl border-2 border-slate-300 bg-white px-2 text-xs font-bold sm:px-3"

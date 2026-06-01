@@ -86,18 +86,24 @@ export function ReportCriticalAlerts({ from, to }: { from: string; to: string })
               </a>
             )}
           </div>
-          <Button
-            type="button"
-            className="sec-touch-btn mt-3 min-h-12 w-full font-bold sm:w-auto"
-            disabled={resolveMut.isPending}
-            onClick={() => resolveMut.mutate(row.id)}
-          >
-            {resolveMut.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              t('securityInspection.markResolved')
-            )}
-          </Button>
+          {!row.photo_url ? (
+            <p className="mt-3 rounded-lg bg-amber-100 px-3 py-2 text-sm font-bold text-amber-950">
+              {t('securityInspection.resolveNeedsPhoto')}
+            </p>
+          ) : (
+            <Button
+              type="button"
+              className="sec-touch-btn mt-3 min-h-12 w-full font-bold sm:w-auto"
+              disabled={resolveMut.isPending}
+              onClick={() => resolveMut.mutate(row.id)}
+            >
+              {resolveMut.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                t('securityInspection.markResolved')
+              )}
+            </Button>
+          )}
         </li>
       ))}
     </ul>

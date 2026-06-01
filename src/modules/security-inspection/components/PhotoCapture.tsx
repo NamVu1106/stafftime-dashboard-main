@@ -1,7 +1,12 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Camera, ImagePlus, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { useI18n } from '@/hooks/useI18n';
-import { compressImageFile, type PhotoWatermarkMeta } from '../lib/compressImage';
+import {
+  captureFromEnvironmentCamera,
+  compressImageFile,
+  type PhotoWatermarkMeta,
+} from '../lib/compressImage';
 
 export function PhotoCapture({
   value,
@@ -16,8 +21,9 @@ export function PhotoCapture({
 }) {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [capturing, setCapturing] = useState(false);
 
-  const captureWithMeta = async (file: File) => {
+  const withGps = async (): Promise<PhotoWatermarkMeta> => {
     let meta = { ...watermarkMeta };
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -30,8 +36,51 @@ export function PhotoCapture({
     } catch {
       /* GPS optional */
     }
-    const data = await compressImageFile(file, 1280, 0.72, meta);
+    return meta;
+  };
+
+  const applyPhoto = async (data: string) => {
     onChange(data);
+  };
+
+  const handlePhotoError = (e: unknown) => {
+    const code = (e as Error & { code?: string }).code ?? (e as Error).message;
+    if (code === 'PHOTO_TOO_SMALL') {
+      toast.error(t('securityInspection.photoTooSmall'));
+      return;
+    }
+    toast.error((e as Error).message || t('securityInspection.cameraError'));
+  };
+
+  const captureWithMeta = async (file: File) => {
+    try {
+      const meta = await withGps();
+      const data = await compressImageFile(file, 1280, 0.72, meta);
+      await applyPhoto(data);
+    } catch (e) {
+      handlePhotoError(e);
+    }
+  };
+
+  const openEnvironmentCamera = async () => {
+    setCapturing(true);
+    try {
+      const meta = await withGps();
+      const data = await captureFromEnvironmentCamera(1280, 0.72, meta);
+      await applyPhoto(data);
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (msg === 'CAMERA_UNAVAILABLE' || msg.includes('Permission')) {
+        if (inputRef.current) {
+          inputRef.current.setAttribute('capture', 'environment');
+          inputRef.current.click();
+        }
+      } else {
+        handlePhotoError(e);
+      }
+    } finally {
+      setCapturing(false);
+    }
   };
 
   return (
@@ -40,6 +89,7 @@ export function PhotoCapture({
         {t('securityInspection.photoProof')}
         {required ? ' *' : ''}
       </p>
+      <p className="text-xs text-red-700">{t('securityInspection.photoQualityHint')}</p>
       {value ? (
         <div className="relative">
           <img src={value} alt="" className="max-h-40 w-full rounded-lg object-cover" />
@@ -56,17 +106,12 @@ export function PhotoCapture({
         <div className="flex gap-2">
           <button
             type="button"
-            className="sec-touch-btn flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 font-semibold text-white"
-            onClick={() => {
-              if (inputRef.current) {
-                inputRef.current.accept = 'image/*';
-                inputRef.current.setAttribute('capture', 'environment');
-                inputRef.current.click();
-              }
-            }}
+            disabled={capturing}
+            className="sec-touch-btn flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-red-600 font-semibold text-white disabled:opacity-60"
+            onClick={openEnvironmentCamera}
           >
             <Camera className="h-5 w-5" />
-            {t('securityInspection.openCamera')}
+            {capturing ? '...' : t('securityInspection.openCamera')}
           </button>
           <button
             type="button"
@@ -88,6 +133,7 @@ export function PhotoCapture({
         type="file"
         className="hidden"
         accept="image/*"
+        capture="environment"
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) captureWithMeta(f);

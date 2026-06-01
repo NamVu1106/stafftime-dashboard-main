@@ -6,6 +6,16 @@ import {
   requireSecurityAssetAdmin,
 } from '../middleware/securityPermission';
 import {
+  getChecklistEditorTemplate,
+  createChecklistCategory,
+  updateChecklistCategory,
+  deleteChecklistCategory,
+  createChecklistItem,
+  updateChecklistItem,
+  deleteChecklistItem,
+  reorderChecklist,
+} from '../controllers/securityChecklistAdmin';
+import {
   listSecurityAssets,
   createSecurityAsset,
   updateSecurityAsset,
@@ -47,6 +57,15 @@ router.get('/reports/critical-alerts', requireSecurityReportAccess, getCriticalA
 router.get('/reports/failure-history', requireSecurityReportAccess, getFailureHistory);
 router.post('/reports/results/:id/resolve', requireSecurityReportAccess, resolveInspectionResult);
 router.get('/reports/export', requireSecurityReportAccess, exportSecurityReport);
+
+router.get('/admin/checklist-editor/:deptId', requireSecurityAssetAdmin, getChecklistEditorTemplate);
+router.post('/admin/checklist-editor/:deptId/categories', requireSecurityAssetAdmin, createChecklistCategory);
+router.post('/admin/checklist-editor/:deptId/reorder', requireSecurityAssetAdmin, reorderChecklist);
+router.patch('/admin/checklist-editor/categories/:catId', requireSecurityAssetAdmin, updateChecklistCategory);
+router.delete('/admin/checklist-editor/categories/:catId', requireSecurityAssetAdmin, deleteChecklistCategory);
+router.post('/admin/checklist-editor/categories/:catId/items', requireSecurityAssetAdmin, createChecklistItem);
+router.patch('/admin/checklist-editor/items/:itemId', requireSecurityAssetAdmin, updateChecklistItem);
+router.delete('/admin/checklist-editor/items/:itemId', requireSecurityAssetAdmin, deleteChecklistItem);
 
 router.get('/assets/labels/pdf', requireSecurityAssetAdmin, exportAssetLabelsPdf);
 router.get('/assets', requireSecurityAssetAdmin, listSecurityAssets);

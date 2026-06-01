@@ -30,6 +30,7 @@ import SecurityScanPage from "@/modules/security-inspection/pages/SecurityScanPa
 import SecurityChecklistPage from "@/modules/security-inspection/pages/SecurityChecklistPage";
 import SecurityReportPage from "@/modules/security-inspection/pages/SecurityReportPage";
 import SecurityAssetsAdminPage from "@/modules/security-inspection/pages/SecurityAssetsAdminPage";
+import SecurityChecklistEditorPage from "@/modules/security-inspection/pages/SecurityChecklistEditorPage";
 import { SecurityReportRoute } from "@/modules/security-inspection/components/SecurityReportRoute";
 import NotFound from "./pages/NotFound";
 
@@ -73,6 +74,14 @@ const App = () => (
                 element={
                   <SecurityReportRoute>
                     <SecurityAssetsAdminPage />
+                  </SecurityReportRoute>
+                }
+              />
+              <Route
+                path="admin/checklist-editor"
+                element={
+                  <SecurityReportRoute>
+                    <SecurityChecklistEditorPage />
                   </SecurityReportRoute>
                 }
               />

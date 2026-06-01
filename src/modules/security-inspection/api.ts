@@ -21,6 +21,7 @@ async function secFetch<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 import type {
+  ChecklistEditorTemplate,
   DepartmentTemplate,
   ResolvedAsset,
   SecurityDepartment,
@@ -95,6 +96,64 @@ export const securityInspectionAPI = {
   },
   resolveFailure: (resultId: number) =>
     secFetch<{ ok: boolean }>(`/reports/results/${resultId}/resolve`, { method: 'POST' }),
+
+  getChecklistEditor: (departmentId: number) =>
+    secFetch<ChecklistEditorTemplate>(`/admin/checklist-editor/${departmentId}`),
+  createChecklistCategory: (departmentId: number, name: string) =>
+    secFetch<{ ok: boolean; id: number }>(`/admin/checklist-editor/${departmentId}/categories`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  updateChecklistCategory: (catId: number, name: string) =>
+    secFetch<{ ok: boolean }>(`/admin/checklist-editor/categories/${catId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
+  deleteChecklistCategory: (catId: number) =>
+    secFetch<{ ok: boolean }>(`/admin/checklist-editor/categories/${catId}`, { method: 'DELETE' }),
+  createChecklistItem: (
+    catId: number,
+    body: {
+      label: string;
+      inputType: 'boolean' | 'number';
+      requiresPhotoOnFail?: boolean;
+      minValue?: number | null;
+      maxValue?: number | null;
+      unit?: string | null;
+    }
+  ) =>
+    secFetch<{ ok: boolean; id: number }>(`/admin/checklist-editor/categories/${catId}/items`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateChecklistItem: (
+    itemId: number,
+    body: {
+      label: string;
+      inputType: 'boolean' | 'number';
+      requiresPhotoOnFail?: boolean;
+      minValue?: number | null;
+      maxValue?: number | null;
+      unit?: string | null;
+    }
+  ) =>
+    secFetch<{ ok: boolean }>(`/admin/checklist-editor/items/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  deleteChecklistItem: (itemId: number) =>
+    secFetch<{ ok: boolean }>(`/admin/checklist-editor/items/${itemId}`, { method: 'DELETE' }),
+  reorderChecklist: (
+    departmentId: number,
+    body: {
+      categories: { id: number; sortOrder: number }[];
+      items: { id: number; categoryId: number; sortOrder: number }[];
+    }
+  ) =>
+    secFetch<{ ok: boolean }>(`/admin/checklist-editor/${departmentId}/reorder`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   listAssets: (departmentId?: number) => {
     const q = departmentId ? `?departmentId=${departmentId}` : '';
     return secFetch<{

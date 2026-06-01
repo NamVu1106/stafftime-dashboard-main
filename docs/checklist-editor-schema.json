@@ -1,0 +1,42 @@
+{
+  "$schema": "Mẫu JSON checklist theo bộ phận — xuất từ /security/admin/checklist-editor",
+  "version": 1,
+  "department": {
+    "id": 1,
+    "code": "AN",
+    "name": "An ninh vật lý",
+    "color": "#2563eb"
+  },
+  "categories": [
+    {
+      "id": 1,
+      "name": "Thiết bị an ninh",
+      "sortOrder": 0,
+      "items": [
+        {
+          "id": 10,
+          "label": "Camera hoạt động bình thường",
+          "requiresPhotoOnFail": true,
+          "inputType": "boolean",
+          "minValue": null,
+          "maxValue": null,
+          "unit": null
+        },
+        {
+          "id": 12,
+          "label": "Nhiệt độ bề mặt tủ điện",
+          "requiresPhotoOnFail": true,
+          "inputType": "number",
+          "minValue": 0,
+          "maxValue": 80,
+          "unit": "°C"
+        }
+      ]
+    }
+  ],
+  "notes": {
+    "tablet_fetch": "GET /api/security-inspection/departments/:id/template trả cùng cấu trúc items",
+    "persistence": "Editor ghi vào sec_categories + sec_check_items (giữ lịch sử inspection theo item id)",
+    "self_service": "Admin/Manager bộ phận chỉnh tại /security/admin/checklist-editor"
+  }
+}

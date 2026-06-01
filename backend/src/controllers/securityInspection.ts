@@ -38,7 +38,7 @@ type ItemRow = {
   unit: string | null;
 };
 
-function mapCheckItem(i: ItemRow) {
+export function mapCheckItem(i: ItemRow) {
   const inputType = (i.input_type || 'boolean').toLowerCase();
   return {
     id: i.id,
@@ -660,6 +660,16 @@ export async function resolveInspectionResult(req: AuthRequest, res: Response) {
     `, { id: resultId });
     if (!row || row.status !== 'fail') {
       res.status(404).json({ error: 'Failure not found' });
+      return;
+    }
+    const evidence = await queryOne<{ photo_url: string | null; photo_data: string | null }>(
+      'SELECT photo_url, photo_data FROM dbo.sec_inspection_results WHERE id = @id',
+      { id: resultId }
+    );
+    if (!evidence?.photo_url && !evidence?.photo_data) {
+      res.status(400).json({
+        error: 'Cannot resolve without field photo evidence — request re-inspection from field staff',
+      });
       return;
     }
     if (!assertDeptAccess(req, res, row.department_id)) return;
