@@ -7,15 +7,23 @@ export function SecurityFooter({
   onSubmit,
   saving,
   submitting,
+  submitDisabled,
 }: {
   onSaveDraft: () => void;
   onSubmit: () => void;
   saving?: boolean;
   submitting?: boolean;
+  /** Chưa đồng bộ xong — chặn kết thúc ca */
+  submitDisabled?: boolean;
 }) {
   const { t } = useI18n();
   return (
     <footer className="sec-footer fixed bottom-0 left-0 right-0 z-40 border-t-2 border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-md safe-area-pb">
+      {submitDisabled && (
+        <p className="mx-auto mb-2 max-w-3xl text-center text-xs font-bold text-amber-800">
+          {t('securityInspection.submitWaitSync')}
+        </p>
+      )}
       <div className="mx-auto flex max-w-3xl gap-3">
         <button
           type="button"
@@ -30,11 +38,11 @@ export function SecurityFooter({
         </button>
         <button
           type="button"
-          disabled={saving || submitting}
+          disabled={saving || submitting || submitDisabled}
           onClick={onSubmit}
           className={cn(
             'sec-touch-btn min-h-[52px] flex-[1.2] rounded-xl bg-emerald-600 text-base font-bold text-white shadow-lg',
-            submitting && 'opacity-60'
+            (submitting || submitDisabled) && 'opacity-60'
           )}
         >
           {submitting ? (

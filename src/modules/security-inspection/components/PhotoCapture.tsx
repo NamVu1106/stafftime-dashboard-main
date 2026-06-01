@@ -1,23 +1,36 @@
 import { useRef } from 'react';
 import { Camera, ImagePlus, X } from 'lucide-react';
 import { useI18n } from '@/hooks/useI18n';
-import { compressImageFile } from '../lib/compressImage';
+import { compressImageFile, type PhotoWatermarkMeta } from '../lib/compressImage';
 
 export function PhotoCapture({
   value,
   onChange,
   required,
+  watermarkMeta,
 }: {
   value?: string;
   onChange: (dataUrl: string | undefined) => void;
   required?: boolean;
+  watermarkMeta?: PhotoWatermarkMeta;
 }) {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const onFile = async (file: File | undefined) => {
-    if (!file) return;
-    const data = await compressImageFile(file);
+  const captureWithMeta = async (file: File) => {
+    let meta = { ...watermarkMeta };
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          timeout: 4000,
+          maximumAge: 60_000,
+        });
+      });
+      meta = { ...meta, lat: pos.coords.latitude, lng: pos.coords.longitude };
+    } catch {
+      /* GPS optional */
+    }
+    const data = await compressImageFile(file, 1280, 0.72, meta);
     onChange(data);
   };
 
@@ -47,7 +60,7 @@ export function PhotoCapture({
             onClick={() => {
               if (inputRef.current) {
                 inputRef.current.accept = 'image/*';
-                inputRef.current.capture = 'environment';
+                inputRef.current.setAttribute('capture', 'environment');
                 inputRef.current.click();
               }
             }}
@@ -75,7 +88,11 @@ export function PhotoCapture({
         type="file"
         className="hidden"
         accept="image/*"
-        onChange={(e) => onFile(e.target.files?.[0])}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) captureWithMeta(f);
+          e.target.value = '';
+        }}
       />
     </div>
   );

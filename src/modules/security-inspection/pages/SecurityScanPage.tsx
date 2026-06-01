@@ -26,6 +26,7 @@ export default function SecurityScanPage() {
           assetId: data.asset.id,
           assetName: data.asset.name,
           qrCode: data.asset.qr_code,
+          lastInspection: data.lastInspection ?? null,
         },
       });
     },

@@ -8,7 +8,7 @@ export type SecurityScope = {
   departmentIds: number[] | null;
 };
 
-/** Tải danh sách bộ phận được phép — admin: null (tất cả) */
+/** Tải danh sách bộ phận được phép — admin/field: null (tất cả); manager: chỉ bộ phận gán */
 export async function loadSecurityScope(user: {
   userId: number;
   role: string;
@@ -16,12 +16,15 @@ export async function loadSecurityScope(user: {
   if (user.role === 'admin') {
     return { isAdmin: true, departmentIds: null };
   }
-  const rows = await query<{ department_id: number }>(
-    `SELECT department_id FROM dbo.sec_user_departments WHERE user_id = @uid`,
-    { uid: user.userId }
-  );
-  const departmentIds = rows.map((r) => r.department_id);
-  return { isAdmin: false, departmentIds };
+  if (user.role === 'manager') {
+    const rows = await query<{ department_id: number }>(
+      `SELECT department_id FROM dbo.sec_user_departments WHERE user_id = @uid`,
+      { uid: user.userId }
+    );
+    return { isAdmin: false, departmentIds: rows.map((r) => r.department_id) };
+  }
+  /** Nhân viên hiện trường (tablet checklist) — toàn bộ bộ phận để quét/kiểm tra */
+  return { isAdmin: false, departmentIds: null };
 }
 
 export async function attachSecurityScope(

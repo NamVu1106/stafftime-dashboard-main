@@ -50,6 +50,17 @@ export async function getDraft(clientId: string): Promise<InspectionDraft | unde
   return v ?? undefined;
 }
 
+/** Khôi phục phiên checklist đang dở cho cùng QR/tài sản */
+export async function getDraftByAsset(
+  assetId: number,
+  qrCode: string
+): Promise<InspectionDraft | undefined> {
+  const all = await listDrafts();
+  return all
+    .filter((d) => d.assetId === assetId && d.qrCode === qrCode)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+}
+
 export async function listDrafts(): Promise<InspectionDraft[]> {
   const db = await openDb();
   return new Promise((resolve, reject) => {

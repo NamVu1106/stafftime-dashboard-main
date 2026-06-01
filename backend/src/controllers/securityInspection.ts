@@ -172,7 +172,39 @@ export async function resolveAssetByQr(req: AuthRequest, res: Response) {
       'SELECT id, code, name, color, sort_order FROM dbo.sec_departments WHERE id = @id',
       { id: asset.department_id }
     );
-    res.json({ asset, department: dept });
+
+    const lastInsp = await queryOne<{
+      id: number;
+      created_at: string;
+      inspector_username: string;
+    }>(`
+      SELECT TOP 1 id, created_at, inspector_username
+      FROM dbo.sec_inspections
+      WHERE asset_id = @aid AND status = N'submitted'
+      ORDER BY created_at DESC
+    `, { aid: asset.id });
+
+    let lastInspection: {
+      date: string;
+      inspector: string;
+      failItems: { label: string; note: string | null }[];
+    } | null = null;
+
+    if (lastInsp?.id) {
+      const failItems = await query<{ label: string; note: string | null }>(`
+        SELECT ci.label, r.note
+        FROM dbo.sec_inspection_results r
+        INNER JOIN dbo.sec_check_items ci ON ci.id = r.item_id
+        WHERE r.inspection_id = @iid AND r.status = N'fail'
+      `, { iid: lastInsp.id });
+      lastInspection = {
+        date: lastInsp.created_at.slice(0, 10),
+        inspector: lastInsp.inspector_username,
+        failItems,
+      };
+    }
+
+    res.json({ asset, department: dept, lastInspection });
   } catch (e: unknown) {
     res.status(500).json({ error: (e as Error).message });
   }

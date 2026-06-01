@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useI18n } from '@/hooks/useI18n';
+import { useAuth } from '@/contexts/AuthContext';
 import { securityInspectionAPI } from '../api';
 import { DeptCard } from '../components/DeptCard';
 import { getCachedTemplate, cacheTemplate } from '../offline/idb';
@@ -15,6 +16,7 @@ const FALLBACK_DEPTS = [
 
 export default function SecurityDashboardPage() {
   const { t } = useI18n();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const online = useOnlineStatus();
   const [offlineDepts, setOfflineDepts] = useState(FALLBACK_DEPTS);
@@ -45,7 +47,11 @@ export default function SecurityDashboardPage() {
     })();
   }, [online]);
 
-  const depts = online && data?.data?.length ? data.data : offlineDepts;
+  const rawDepts = online && data?.data?.length ? data.data : offlineDepts;
+  const depts =
+    user?.role === 'manager' && user.departmentIds?.length
+      ? rawDepts.filter((d) => user.departmentIds!.includes(d.id))
+      : rawDepts;
 
   return (
     <div className="space-y-6">

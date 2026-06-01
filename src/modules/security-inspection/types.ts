@@ -27,9 +27,16 @@ export type DepartmentTemplate = {
   categories: ChecklistCategory[];
 };
 
+export type LastInspectionSummary = {
+  date: string;
+  inspector: string;
+  failItems: { label: string; note: string | null }[];
+};
+
 export type ResolvedAsset = {
   asset: { id: number; department_id: number; qr_code: string; name: string; asset_type: string };
   department: { id: number; code: string; name: string; color: string };
+  lastInspection?: LastInspectionSummary | null;
 };
 
 export type ItemResult = {
@@ -49,6 +56,8 @@ export type InspectionDraft = {
   results: ItemResult[];
   signatureData?: string;
   updatedAt: string;
+  paused?: boolean;
+  pauseReason?: string;
 };
 
 export type SyncQueueEntry = {
