@@ -10,6 +10,7 @@ import {
 } from '../middleware/securityPermission';
 import { persistInspectionPhoto } from '../utils/securityPhotos';
 import { toFlatChecklistJson } from '../utils/checklistTemplateJson';
+import { toDbStatus, phienTrangThaiGui, phienTrangThaiNhap } from '../security/statusCodec';
 
 function parseDateRange(req: AuthRequest): { from: string; to: string } {
   const today = new Date().toISOString().slice(0, 10);
@@ -26,29 +27,29 @@ type DeptRow = {
   sort_order: number;
 };
 
-type CatRow = { id: number; department_id: number; name: string; sort_order: number };
-type ItemRow = {
+type CatRow = { id: number; bo_phan_id: number; ten_nhom: string; thu_tu: number };
+export type ItemRow = {
   id: number;
-  category_id: number;
-  label: string;
-  requires_photo_on_fail: number;
-  sort_order: number;
-  input_type: string;
-  min_value: number | null;
-  max_value: number | null;
-  unit: string | null;
+  nhom_id: number;
+  noi_dung: string;
+  yeu_cau_an_loi: number;
+  thu_tu: number;
+  kieu_du_lieu: string;
+  nguong_min: number | null;
+  nguong_max: number | null;
+  don_vi: string | null;
 };
 
 export function mapCheckItem(i: ItemRow) {
-  const inputType = (i.input_type || 'boolean').toLowerCase();
+  const inputType = (i.kieu_du_lieu || 'boolean').toLowerCase();
   return {
     id: i.id,
-    label: i.label,
-    requiresPhotoOnFail: !!i.requires_photo_on_fail,
+    label: i.noi_dung,
+    requiresPhotoOnFail: !!i.yeu_cau_an_loi,
     inputType: inputType === 'number' ? 'number' : 'boolean',
-    minValue: i.min_value,
-    maxValue: i.max_value,
-    unit: i.unit,
+    minValue: i.nguong_min,
+    maxValue: i.nguong_max,
+    unit: i.don_vi,
   };
 }
 
@@ -89,18 +90,19 @@ export async function getSecurityDepartments(req: AuthRequest, res: Response) {
     const scope = req.securityScope!;
     const { clause, params } = deptSqlFilter(scope, 'id');
     const depts = await query<DeptRow>(
-      `SELECT id, code, name, color, sort_order FROM dbo.sec_departments
-       WHERE is_active = 1 AND ${clause}
-       ORDER BY sort_order`,
+      `SELECT id, ma_bo_phan AS code, ten_bo_phan AS name, mau_sac AS color, thu_tu AS sort_order
+       FROM dbo.BoPhan
+       WHERE dang_hoat_dong = 1 AND ${clause}
+       ORDER BY thu_tu`,
       params
     );
     const stats = await query<{ department_id: number; submitted: number; draft: number }>(`
-      SELECT department_id,
-        SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) AS submitted,
-        SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) AS draft
-      FROM dbo.sec_inspections
-      WHERE created_at >= CONVERT(NVARCHAR(10), GETDATE(), 23)
-      GROUP BY department_id
+      SELECT bo_phan_id AS department_id,
+        SUM(CASE WHEN trang_thai_phien = N'da_gui' THEN 1 ELSE 0 END) AS submitted,
+        SUM(CASE WHEN trang_thai_phien = N'nhap' THEN 1 ELSE 0 END) AS draft
+      FROM dbo.PhienKiemTra
+      WHERE tao_luc >= CONVERT(NVARCHAR(10), GETDATE(), 23)
+      GROUP BY bo_phan_id
     `);
     const map = new Map(stats.map((s) => [s.department_id, s]));
     const data = depts.map((d) => {
@@ -130,7 +132,8 @@ export async function getDepartmentTemplate(req: AuthRequest, res: Response) {
     const deptId = Number(req.params.id);
     if (!assertDeptAccess(req, res, deptId)) return;
     const dept = await queryOne<DeptRow>(
-      'SELECT id, code, name, color, sort_order FROM dbo.sec_departments WHERE id = @id AND is_active = 1',
+      `SELECT id, ma_bo_phan AS code, ten_bo_phan AS name, mau_sac AS color, thu_tu AS sort_order
+       FROM dbo.BoPhan WHERE id = @id AND dang_hoat_dong = 1`,
       { id: deptId }
     );
     if (!dept) {
@@ -138,27 +141,27 @@ export async function getDepartmentTemplate(req: AuthRequest, res: Response) {
       return;
     }
     const categories = await query<CatRow>(
-      'SELECT id, department_id, name, sort_order FROM dbo.sec_categories WHERE department_id = @dept ORDER BY sort_order',
+      'SELECT id, bo_phan_id, ten_nhom, thu_tu FROM dbo.NhomHangMuc WHERE bo_phan_id = @dept ORDER BY thu_tu',
       { dept: deptId }
     );
     const items = await query<ItemRow>(`
-      SELECT i.id, i.category_id, i.label, i.requires_photo_on_fail, i.sort_order,
-        ISNULL(i.input_type, N'boolean') AS input_type,
-        i.min_value, i.max_value, i.unit
-      FROM dbo.sec_check_items i
-      INNER JOIN dbo.sec_categories c ON c.id = i.category_id
-      WHERE c.department_id = @dept
-      ORDER BY c.sort_order, i.sort_order
+      SELECT i.id, i.nhom_id, i.noi_dung, i.yeu_cau_an_loi, i.thu_tu,
+        ISNULL(i.kieu_du_lieu, N'boolean') AS kieu_du_lieu,
+        i.nguong_min, i.nguong_max, i.don_vi
+      FROM dbo.HangMucKiemTra i
+      INNER JOIN dbo.NhomHangMuc c ON c.id = i.nhom_id
+      WHERE c.bo_phan_id = @dept
+      ORDER BY c.thu_tu, i.thu_tu
     `, { dept: deptId });
     const itemsByCat = new Map<number, ItemRow[]>();
     for (const item of items) {
-      const list = itemsByCat.get(item.category_id) ?? [];
+      const list = itemsByCat.get(item.nhom_id) ?? [];
       list.push(item);
-      itemsByCat.set(item.category_id, list);
+      itemsByCat.set(item.nhom_id, list);
     }
     const categoryPayload = categories.map((c) => ({
       id: c.id,
-      name: c.name,
+      name: c.ten_nhom,
       items: (itemsByCat.get(c.id) ?? []).map(mapCheckItem),
     }));
 
@@ -191,9 +194,9 @@ export async function resolveAssetByQr(req: AuthRequest, res: Response) {
       name: string;
       asset_type: string;
     }>(
-      `SELECT a.id, a.department_id, a.qr_code, a.name, a.asset_type
-       FROM dbo.sec_assets a
-       WHERE a.qr_code = @qr AND a.is_active = 1`,
+      `SELECT a.id, a.bo_phan_id AS department_id, a.ma_qr AS qr_code, a.ten_thiet_bi AS name, a.loai_thiet_bi AS asset_type
+       FROM dbo.ThietBi a
+       WHERE a.ma_qr = @qr AND a.dang_hoat_dong = 1`,
       { qr }
     );
     if (!asset) {
@@ -202,7 +205,8 @@ export async function resolveAssetByQr(req: AuthRequest, res: Response) {
     }
     if (!assertDeptAccess(req, res, asset.department_id)) return;
     const dept = await queryOne<DeptRow>(
-      'SELECT id, code, name, color, sort_order FROM dbo.sec_departments WHERE id = @id',
+      `SELECT id, ma_bo_phan AS code, ten_bo_phan AS name, mau_sac AS color, thu_tu AS sort_order
+       FROM dbo.BoPhan WHERE id = @id`,
       { id: asset.department_id }
     );
 
@@ -211,10 +215,10 @@ export async function resolveAssetByQr(req: AuthRequest, res: Response) {
       created_at: string;
       inspector_username: string;
     }>(`
-      SELECT TOP 1 id, created_at, inspector_username
-      FROM dbo.sec_inspections
-      WHERE asset_id = @aid AND status = N'submitted'
-      ORDER BY created_at DESC
+      SELECT TOP 1 id, tao_luc AS created_at, nguoi_kiem_tra AS inspector_username
+      FROM dbo.PhienKiemTra
+      WHERE thiet_bi_id = @aid AND trang_thai_phien = N'da_gui'
+      ORDER BY tao_luc DESC
     `, { aid: asset.id });
 
     let lastInspection: {
@@ -225,10 +229,10 @@ export async function resolveAssetByQr(req: AuthRequest, res: Response) {
 
     if (lastInsp?.id) {
       const failItems = await query<{ label: string; note: string | null }>(`
-        SELECT ci.label, r.note
-        FROM dbo.sec_inspection_results r
-        INNER JOIN dbo.sec_check_items ci ON ci.id = r.item_id
-        WHERE r.inspection_id = @iid AND r.status = N'fail'
+        SELECT h.noi_dung AS label, r.ghi_chu AS note
+        FROM dbo.KetQuaKiemTra r
+        INNER JOIN dbo.HangMucKiemTra h ON h.id = r.hang_muc_id
+        WHERE r.phien_kiem_tra_id = @iid AND r.trang_thai = N'NOT_OK'
       `, { iid: lastInsp.id });
       lastInspection = {
         date: lastInsp.created_at.slice(0, 10),
@@ -254,33 +258,33 @@ type ResultPayload = {
 };
 
 type ItemRuleRow = {
-  input_type: string;
-  min_value: number | null;
-  max_value: number | null;
-  requires_photo_on_fail: number;
+  kieu_du_lieu: string;
+  nguong_min: number | null;
+  nguong_max: number | null;
+  yeu_cau_an_loi: number;
 };
 
 async function validateInspectionResults(results: ResultPayload[]): Promise<string | null> {
   for (const r of results) {
     const item = await queryOne<ItemRuleRow>(
-      `SELECT ISNULL(input_type, N'boolean') AS input_type, min_value, max_value, requires_photo_on_fail
-       FROM dbo.sec_check_items WHERE id = @id`,
+      `SELECT ISNULL(kieu_du_lieu, N'boolean') AS kieu_du_lieu, nguong_min, nguong_max, yeu_cau_an_loi
+       FROM dbo.HangMucKiemTra WHERE id = @id`,
       { id: r.itemId }
     );
     if (!item) return `Unknown item ${r.itemId}`;
 
-    const inputType = (item.input_type || 'boolean').toLowerCase();
+    const inputType = (item.kieu_du_lieu || 'boolean').toLowerCase();
     if (inputType === 'number' && r.status !== 'skip') {
       if (r.numericValue == null || Number.isNaN(Number(r.numericValue))) {
         return `Numeric value required for item ${r.itemId}`;
       }
       const num = Number(r.numericValue);
-      const inRange = isWithinThreshold(num, item.min_value, item.max_value);
+      const inRange = isWithinThreshold(num, item.nguong_min, item.nguong_max);
       const expectedStatus = inRange ? 'pass' : 'fail';
       if (r.status !== expectedStatus) {
         return `Item ${r.itemId} status must be ${expectedStatus} for value ${num}`;
       }
-      if (r.status === 'fail' && item.requires_photo_on_fail && !r.photoData && !r.photoUrl) {
+      if (r.status === 'fail' && item.yeu_cau_an_loi && !r.photoData && !r.photoUrl) {
         return `Photo required for out-of-range item ${r.itemId}`;
       }
     }
@@ -313,8 +317,10 @@ async function upsertInspection(
     }
   }
   const ts = nowIso();
+  const phienStatus =
+    body.status === 'submitted' ? phienTrangThaiGui() : phienTrangThaiNhap();
   const existing = await queryOne<{ id: number }>(
-    'SELECT id FROM dbo.sec_inspections WHERE client_id = @cid',
+    'SELECT id FROM dbo.PhienKiemTra WHERE client_id = @cid',
     { cid: body.clientId }
   );
 
@@ -322,39 +328,39 @@ async function upsertInspection(
   if (existing?.id) {
     inspectionId = existing.id;
     await exec(
-      `UPDATE dbo.sec_inspections SET
-        department_id = @dept, asset_id = @asset, shift_label = @shift,
-        status = @status, signature_data = @sig, notes = @notes, updated_at = @ts,
-        submitted_at = CASE WHEN @status = 'submitted' THEN @ts ELSE submitted_at END
+      `UPDATE dbo.PhienKiemTra SET
+        bo_phan_id = @dept, thiet_bi_id = @asset, ca_truc = @shift,
+        trang_thai_phien = @st, chu_ky = @sig, ghi_chu_phien = @notes, cap_nhat_luc = @ts,
+        gui_luc = CASE WHEN @st = N'da_gui' THEN @ts ELSE gui_luc END
        WHERE id = @id`,
       {
         id: inspectionId,
         dept: body.departmentId,
         asset: body.assetId,
         shift: body.shiftLabel ?? '',
-        status: body.status ?? 'draft',
+        st: phienStatus,
         sig: body.signatureData ?? null,
         notes: body.notes ?? null,
         ts,
       }
     );
-    await exec('DELETE FROM dbo.sec_inspection_results WHERE inspection_id = @id', {
+    await exec('DELETE FROM dbo.KetQuaKiemTra WHERE phien_kiem_tra_id = @id', {
       id: inspectionId,
     });
   } else {
     const inserted = await queryOne<{ id: number }>(
-      `INSERT INTO dbo.sec_inspections
-        (client_id, department_id, asset_id, inspector_username, shift_label, status, signature_data, notes, created_at, updated_at, submitted_at)
+      `INSERT INTO dbo.PhienKiemTra
+        (client_id, bo_phan_id, thiet_bi_id, nguoi_kiem_tra, ca_truc, trang_thai_phien, chu_ky, ghi_chu_phien, tao_luc, cap_nhat_luc, gui_luc)
        OUTPUT INSERTED.id
-       VALUES (@cid, @dept, @asset, @user, @shift, @status, @sig, @notes, @ts, @ts,
-         CASE WHEN @status = 'submitted' THEN @ts ELSE NULL END)`,
+       VALUES (@cid, @dept, @asset, @user, @shift, @st, @sig, @notes, @ts, @ts,
+         CASE WHEN @st = N'da_gui' THEN @ts ELSE NULL END)`,
       {
         cid: body.clientId,
         dept: body.departmentId,
         asset: body.assetId,
         user: username ?? '',
         shift: body.shiftLabel ?? '',
-        status: body.status ?? 'draft',
+        st: phienStatus,
         sig: body.signatureData ?? null,
         notes: body.notes ?? null,
         ts,
@@ -364,15 +370,16 @@ async function upsertInspection(
   }
 
   for (const r of body.results) {
-    const photoUrl =
-      r.photoUrl ?? persistInspectionPhoto(r.photoData) ?? null;
+    const photoUrl = r.photoUrl ?? persistInspectionPhoto(r.photoData) ?? null;
     await exec(
-      `INSERT INTO dbo.sec_inspection_results (inspection_id, item_id, status, note, photo_data, photo_url, numeric_value)
-       VALUES (@insp, @item, @st, @note, NULL, @photoUrl, @num)`,
+      `INSERT INTO dbo.KetQuaKiemTra
+        (phien_kiem_tra_id, thiet_bi_id, hang_muc_id, trang_thai, ghi_chu, url_anh, gia_tri_do)
+       VALUES (@insp, @asset, @item, @st, @note, @photoUrl, @num)`,
       {
         insp: inspectionId,
+        asset: body.assetId,
         item: r.itemId,
-        st: r.status,
+        st: toDbStatus(r.status),
         note: r.note ?? null,
         photoUrl,
         num: r.numericValue ?? null,
@@ -419,11 +426,11 @@ export async function submitInspection(req: AuthRequest, res: Response) {
         res.status(400).json({ error: `Note required for NOT OK item ${f.itemId}` });
         return;
       }
-      const item = await queryOne<{ requires_photo_on_fail: number; input_type: string }>(
-        "SELECT requires_photo_on_fail, ISNULL(input_type, N'boolean') AS input_type FROM dbo.sec_check_items WHERE id = @id",
+      const item = await queryOne<{ yeu_cau_an_loi: number; kieu_du_lieu: string }>(
+        "SELECT yeu_cau_an_loi, ISNULL(kieu_du_lieu, N'boolean') AS kieu_du_lieu FROM dbo.HangMucKiemTra WHERE id = @id",
         { id: f.itemId }
       );
-      if (item?.requires_photo_on_fail && !f.photoData && !f.photoUrl) {
+      if (item?.yeu_cau_an_loi && !f.photoData && !f.photoUrl) {
         res.status(400).json({ error: `Photo required for NOT OK item ${f.itemId}` });
         return;
       }
@@ -479,29 +486,29 @@ export async function getSecurityManagementDashboard(req: AuthRequest, res: Resp
     }>(`
       SELECT
         d.id AS department_id,
-        d.name AS department_name,
-        d.color,
-        (SELECT COUNT(1) FROM dbo.sec_assets a WHERE a.department_id = d.id AND a.is_active = 1) AS total_machines,
+        d.ten_bo_phan AS department_name,
+        d.mau_sac AS color,
+        (SELECT COUNT(1) FROM dbo.ThietBi a WHERE a.bo_phan_id = d.id AND a.dang_hoat_dong = 1) AS total_machines,
         ISNULL(ch.checked_count, 0) AS checked_count,
         ISNULL(fl.fail_count, 0) AS fail_count
-      FROM dbo.sec_departments d
+      FROM dbo.BoPhan d
       LEFT JOIN (
-        SELECT department_id, COUNT(DISTINCT asset_id) AS checked_count
-        FROM dbo.sec_inspections
-        WHERE status = N'submitted'
-          AND created_at >= @from AND created_at < DATEADD(day, 1, CAST(@to AS DATE))
-        GROUP BY department_id
+        SELECT bo_phan_id AS department_id, COUNT(DISTINCT thiet_bi_id) AS checked_count
+        FROM dbo.PhienKiemTra
+        WHERE trang_thai_phien = N'da_gui'
+          AND tao_luc >= @from AND tao_luc < DATEADD(day, 1, CAST(@to AS DATE))
+        GROUP BY bo_phan_id
       ) ch ON ch.department_id = d.id
       LEFT JOIN (
-        SELECT i.department_id, SUM(CASE WHEN r.status = N'fail' THEN 1 ELSE 0 END) AS fail_count
-        FROM dbo.sec_inspections i
-        INNER JOIN dbo.sec_inspection_results r ON r.inspection_id = i.id
-        WHERE i.status = N'submitted'
-          AND i.created_at >= @from AND i.created_at < DATEADD(day, 1, CAST(@to AS DATE))
-        GROUP BY i.department_id
+        SELECT i.bo_phan_id AS department_id, SUM(CASE WHEN r.trang_thai = N'NOT_OK' THEN 1 ELSE 0 END) AS fail_count
+        FROM dbo.PhienKiemTra i
+        INNER JOIN dbo.KetQuaKiemTra r ON r.phien_kiem_tra_id = i.id
+        WHERE i.trang_thai_phien = N'da_gui'
+          AND i.tao_luc >= @from AND i.tao_luc < DATEADD(day, 1, CAST(@to AS DATE))
+        GROUP BY i.bo_phan_id
       ) fl ON fl.department_id = d.id
-      WHERE d.is_active = 1 AND ${clause}
-      ORDER BY d.sort_order
+      WHERE d.dang_hoat_dong = 1 AND ${clause}
+      ORDER BY d.thu_tu
     `, { from, to, ...deptParams });
 
     const rows = departments.map((row) => ({
@@ -509,15 +516,15 @@ export async function getSecurityManagementDashboard(req: AuthRequest, res: Resp
       unchecked_count: Math.max(0, row.total_machines - row.checked_count),
     }));
 
-    const pieDept = deptSqlFilter(scope, 'i.department_id');
+    const pieDept = deptSqlFilter(scope, 'i.bo_phan_id');
     const statusPie = await query<{ status: string; count: number }>(`
-      SELECT r.status, COUNT(1) AS count
-      FROM dbo.sec_inspection_results r
-      INNER JOIN dbo.sec_inspections i ON i.id = r.inspection_id
-      WHERE i.status = N'submitted'
-        AND i.created_at >= @from AND i.created_at < DATEADD(day, 1, CAST(@to AS DATE))
+      SELECT r.trang_thai AS status, COUNT(1) AS count
+      FROM dbo.KetQuaKiemTra r
+      INNER JOIN dbo.PhienKiemTra i ON i.id = r.phien_kiem_tra_id
+      WHERE i.trang_thai_phien = N'da_gui'
+        AND i.tao_luc >= @from AND i.tao_luc < DATEADD(day, 1, CAST(@to AS DATE))
         AND ${pieDept.clause}
-      GROUP BY r.status
+      GROUP BY r.trang_thai
     `, { from, to, ...pieDept.params });
 
     const totals = {
@@ -529,12 +536,12 @@ export async function getSecurityManagementDashboard(req: AuthRequest, res: Resp
     const progressPercent =
       totals.machines > 0 ? Math.round((totals.checked / totals.machines) * 100) : 0;
 
-    const alertDept = deptSqlFilter(scope, 'i.department_id');
+    const alertDept = deptSqlFilter(scope, 'i.bo_phan_id');
     const openAlerts = await queryOne<{ n: number }>(`
       SELECT COUNT(1) AS n
-      FROM dbo.sec_inspection_results r
-      INNER JOIN dbo.sec_inspections i ON i.id = r.inspection_id
-      WHERE r.status = N'fail' AND i.status = N'submitted' AND r.resolved_at IS NULL
+      FROM dbo.KetQuaKiemTra r
+      INNER JOIN dbo.PhienKiemTra i ON i.id = r.phien_kiem_tra_id
+      WHERE r.trang_thai = N'NOT_OK' AND i.trang_thai_phien = N'da_gui' AND r.thoi_gian_xu_ly IS NULL
         AND ${alertDept.clause}
     `, alertDept.params);
 
@@ -587,38 +594,38 @@ type FailureRow = {
 function failureListSql(scope: ReturnType<typeof deptSqlFilter>, resolvedOnly?: boolean) {
   const resolvedClause =
     resolvedOnly === true
-      ? 'AND r.resolved_at IS NOT NULL'
+      ? 'AND r.thoi_gian_xu_ly IS NOT NULL'
       : resolvedOnly === false
-        ? 'AND r.resolved_at IS NULL'
+        ? 'AND r.thoi_gian_xu_ly IS NULL'
         : '';
   return {
     sql: `
       SELECT
         r.id,
-        r.inspection_id,
-        i.created_at,
-        d.name AS department_name,
-        d.color AS department_color,
-        a.qr_code,
-        a.name AS asset_name,
-        ci.label AS item_label,
-        r.note,
-        r.numeric_value,
-        COALESCE(r.photo_url, r.photo_data) AS photo_url,
-        i.inspector_username,
-        i.shift_label,
-        r.resolved_at,
-        r.resolved_by
-      FROM dbo.sec_inspection_results r
-      INNER JOIN dbo.sec_inspections i ON i.id = r.inspection_id
-      INNER JOIN dbo.sec_departments d ON d.id = i.department_id
-      INNER JOIN dbo.sec_assets a ON a.id = i.asset_id
-      INNER JOIN dbo.sec_check_items ci ON ci.id = r.item_id
-      WHERE r.status = N'fail' AND i.status = N'submitted'
+        r.phien_kiem_tra_id AS inspection_id,
+        i.tao_luc AS created_at,
+        d.ten_bo_phan AS department_name,
+        d.mau_sac AS department_color,
+        a.ma_qr AS qr_code,
+        a.ten_thiet_bi AS asset_name,
+        h.noi_dung AS item_label,
+        r.ghi_chu AS note,
+        r.gia_tri_do AS numeric_value,
+        r.url_anh AS photo_url,
+        i.nguoi_kiem_tra AS inspector_username,
+        i.ca_truc AS shift_label,
+        r.thoi_gian_xu_ly AS resolved_at,
+        r.nguoi_xu_ly AS resolved_by
+      FROM dbo.KetQuaKiemTra r
+      INNER JOIN dbo.PhienKiemTra i ON i.id = r.phien_kiem_tra_id
+      INNER JOIN dbo.BoPhan d ON d.id = i.bo_phan_id
+      INNER JOIN dbo.ThietBi a ON a.id = i.thiet_bi_id
+      INNER JOIN dbo.HangMucKiemTra h ON h.id = r.hang_muc_id
+      WHERE r.trang_thai = N'NOT_OK' AND i.trang_thai_phien = N'da_gui'
         ${resolvedClause}
-        AND i.created_at >= @from AND i.created_at < DATEADD(day, 1, CAST(@to AS DATE))
+        AND i.tao_luc >= @from AND i.tao_luc < DATEADD(day, 1, CAST(@to AS DATE))
         AND ${scope.clause}
-      ORDER BY i.created_at DESC, r.id DESC
+      ORDER BY i.tao_luc DESC, r.id DESC
     `,
     params: scope.params,
   };
@@ -629,7 +636,7 @@ export async function getCriticalAlerts(req: AuthRequest, res: Response) {
   try {
     const scope = req.securityScope!;
     const { from, to } = parseDateRange(req);
-    const deptFilter = deptSqlFilter(scope, 'i.department_id');
+    const deptFilter = deptSqlFilter(scope, 'i.bo_phan_id');
     const { sql, params } = failureListSql(deptFilter, false);
     const data = await query<FailureRow>(sql, { from, to, ...params });
     res.json({ from, to, data });
@@ -643,7 +650,7 @@ export async function getFailureHistory(req: AuthRequest, res: Response) {
   try {
     const scope = req.securityScope!;
     const { from, to } = parseDateRange(req);
-    const deptFilter = deptSqlFilter(scope, 'i.department_id');
+    const deptFilter = deptSqlFilter(scope, 'i.bo_phan_id');
     const { sql, params } = failureListSql(deptFilter);
     const data = await query<FailureRow>(sql, { from, to, ...params });
     res.json({ from, to, data });
@@ -661,20 +668,20 @@ export async function resolveInspectionResult(req: AuthRequest, res: Response) {
       return;
     }
     const row = await queryOne<{ department_id: number; status: string }>(`
-      SELECT i.department_id, r.status
-      FROM dbo.sec_inspection_results r
-      INNER JOIN dbo.sec_inspections i ON i.id = r.inspection_id
+      SELECT i.bo_phan_id AS department_id, r.trang_thai AS status
+      FROM dbo.KetQuaKiemTra r
+      INNER JOIN dbo.PhienKiemTra i ON i.id = r.phien_kiem_tra_id
       WHERE r.id = @id
     `, { id: resultId });
-    if (!row || row.status !== 'fail') {
+    if (!row || row.status !== 'NOT_OK') {
       res.status(404).json({ error: 'Failure not found' });
       return;
     }
-    const evidence = await queryOne<{ photo_url: string | null; photo_data: string | null }>(
-      'SELECT photo_url, photo_data FROM dbo.sec_inspection_results WHERE id = @id',
+    const evidence = await queryOne<{ url_anh: string | null }>(
+      'SELECT url_anh FROM dbo.KetQuaKiemTra WHERE id = @id',
       { id: resultId }
     );
-    if (!evidence?.photo_url && !evidence?.photo_data) {
+    if (!evidence?.url_anh) {
       res.status(400).json({
         error: 'Cannot resolve without field photo evidence — request re-inspection from field staff',
       });
@@ -683,7 +690,7 @@ export async function resolveInspectionResult(req: AuthRequest, res: Response) {
     if (!assertDeptAccess(req, res, row.department_id)) return;
     const ts = nowIso();
     await exec(
-      `UPDATE dbo.sec_inspection_results SET resolved_at = @ts, resolved_by = @user WHERE id = @id`,
+      `UPDATE dbo.KetQuaKiemTra SET thoi_gian_xu_ly = @ts, nguoi_xu_ly = @user WHERE id = @id`,
       { id: resultId, ts, user: req.user?.username ?? '' }
     );
     res.json({ ok: true, resolvedAt: ts, resolvedBy: req.user?.username });
@@ -712,26 +719,26 @@ export async function exportSecurityReport(req: AuthRequest, res: Response) {
       shift_label: string;
     }>(`
       SELECT
-        LEFT(i.created_at, 10) AS inspection_date,
-        d.name AS department_name,
-        a.qr_code,
-        a.name AS asset_name,
-        ci.label AS item_label,
-        r.note,
-        r.numeric_value,
-        COALESCE(r.photo_url, r.photo_data) AS photo_url,
-        i.inspector_username,
-        i.shift_label
-      FROM dbo.sec_inspection_results r
-      INNER JOIN dbo.sec_inspections i ON i.id = r.inspection_id
-      INNER JOIN dbo.sec_departments d ON d.id = i.department_id
-      INNER JOIN dbo.sec_assets a ON a.id = i.asset_id
-      INNER JOIN dbo.sec_check_items ci ON ci.id = r.item_id
-      WHERE r.status = N'fail'
-        AND i.status = N'submitted'
-        AND i.created_at >= @from AND i.created_at < DATEADD(day, 1, CAST(@to AS DATE))
+        LEFT(i.tao_luc, 10) AS inspection_date,
+        d.ten_bo_phan AS department_name,
+        a.ma_qr AS qr_code,
+        a.ten_thiet_bi AS asset_name,
+        h.noi_dung AS item_label,
+        r.ghi_chu AS note,
+        r.gia_tri_do AS numeric_value,
+        r.url_anh AS photo_url,
+        i.nguoi_kiem_tra AS inspector_username,
+        i.ca_truc AS shift_label
+      FROM dbo.KetQuaKiemTra r
+      INNER JOIN dbo.PhienKiemTra i ON i.id = r.phien_kiem_tra_id
+      INNER JOIN dbo.BoPhan d ON d.id = i.bo_phan_id
+      INNER JOIN dbo.ThietBi a ON a.id = i.thiet_bi_id
+      INNER JOIN dbo.HangMucKiemTra h ON h.id = r.hang_muc_id
+      WHERE r.trang_thai = N'NOT_OK'
+        AND i.trang_thai_phien = N'da_gui'
+        AND i.tao_luc >= @from AND i.tao_luc < DATEADD(day, 1, CAST(@to AS DATE))
         AND ${clause}
-      ORDER BY i.created_at DESC, d.name, a.qr_code
+      ORDER BY i.tao_luc DESC, d.ten_bo_phan, a.ma_qr
     `, { from, to, ...deptParams });
 
     const wb = new ExcelJS.Workbook();

@@ -23,6 +23,9 @@ import { ReportCriticalAlerts } from '../components/ReportCriticalAlerts';
 import { ReportFailureHistory } from '../components/ReportFailureHistory';
 
 const PIE_COLORS: Record<string, string> = {
+  OK: '#16a34a',
+  NOT_OK: '#dc2626',
+  NA: '#94a3b8',
   pass: '#16a34a',
   fail: '#dc2626',
   skip: '#94a3b8',
@@ -92,9 +95,9 @@ export default function SecurityReportPage() {
   const pieData = data.statusPie.map((s) => ({
     ...s,
     label:
-      s.name === 'pass'
+      s.name === 'OK' || s.name === 'pass'
         ? t('securityInspection.pass')
-        : s.name === 'fail'
+        : s.name === 'NOT_OK' || s.name === 'fail'
           ? t('securityInspection.fail')
           : t('securityInspection.skip'),
   }));

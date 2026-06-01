@@ -4,17 +4,17 @@ import type { AuthRequest } from '../middleware/auth';
 import { assertDeptAccess } from '../middleware/securityPermission';
 import { mapCheckItem } from './securityInspection';
 
-type CatRow = { id: number; department_id: number; name: string; sort_order: number };
+type CatRow = { id: number; bo_phan_id: number; ten_nhom: string; thu_tu: number };
 type ItemRow = {
   id: number;
-  category_id: number;
-  label: string;
-  requires_photo_on_fail: number;
-  sort_order: number;
-  input_type: string;
-  min_value: number | null;
-  max_value: number | null;
-  unit: string | null;
+  nhom_id: number;
+  noi_dung: string;
+  yeu_cau_an_loi: number;
+  thu_tu: number;
+  kieu_du_lieu: string;
+  nguong_min: number | null;
+  nguong_max: number | null;
+  don_vi: string | null;
 };
 
 /** GET /admin/checklist-editor/:deptId */
@@ -24,7 +24,8 @@ export async function getChecklistEditorTemplate(req: AuthRequest, res: Response
     if (!assertDeptAccess(req, res, deptId)) return;
 
     const dept = await queryOne<{ id: number; code: string; name: string; color: string }>(
-      'SELECT id, code, name, color FROM dbo.sec_departments WHERE id = @id AND is_active = 1',
+      `SELECT id, ma_bo_phan AS code, ten_bo_phan AS name, mau_sac AS color
+       FROM dbo.BoPhan WHERE id = @id AND dang_hoat_dong = 1`,
       { id: deptId }
     );
     if (!dept) {
@@ -33,31 +34,31 @@ export async function getChecklistEditorTemplate(req: AuthRequest, res: Response
     }
 
     const categories = await query<CatRow>(
-      'SELECT id, department_id, name, sort_order FROM dbo.sec_categories WHERE department_id = @dept ORDER BY sort_order',
+      'SELECT id, bo_phan_id, ten_nhom, thu_tu FROM dbo.NhomHangMuc WHERE bo_phan_id = @dept ORDER BY thu_tu',
       { dept: deptId }
     );
     const items = await query<ItemRow>(`
-      SELECT i.id, i.category_id, i.label, i.requires_photo_on_fail, i.sort_order,
-        ISNULL(i.input_type, N'boolean') AS input_type, i.min_value, i.max_value, i.unit
-      FROM dbo.sec_check_items i
-      INNER JOIN dbo.sec_categories c ON c.id = i.category_id
-      WHERE c.department_id = @dept
-      ORDER BY c.sort_order, i.sort_order
+      SELECT i.id, i.nhom_id, i.noi_dung, i.yeu_cau_an_loi, i.thu_tu,
+        ISNULL(i.kieu_du_lieu, N'boolean') AS kieu_du_lieu, i.nguong_min, i.nguong_max, i.don_vi
+      FROM dbo.HangMucKiemTra i
+      INNER JOIN dbo.NhomHangMuc c ON c.id = i.nhom_id
+      WHERE c.bo_phan_id = @dept
+      ORDER BY c.thu_tu, i.thu_tu
     `, { dept: deptId });
 
     const itemsByCat = new Map<number, ItemRow[]>();
     for (const item of items) {
-      const list = itemsByCat.get(item.category_id) ?? [];
+      const list = itemsByCat.get(item.nhom_id) ?? [];
       list.push(item);
-      itemsByCat.set(item.category_id, list);
+      itemsByCat.set(item.nhom_id, list);
     }
 
     res.json({
       department: dept,
       categories: categories.map((c) => ({
         id: c.id,
-        name: c.name,
-        sortOrder: c.sort_order,
+        name: c.ten_nhom,
+        sortOrder: c.thu_tu,
         items: (itemsByCat.get(c.id) ?? []).map(mapCheckItem),
       })),
     });
@@ -66,7 +67,6 @@ export async function getChecklistEditorTemplate(req: AuthRequest, res: Response
   }
 }
 
-/** POST /admin/checklist-editor/:deptId/categories */
 export async function createChecklistCategory(req: AuthRequest, res: Response) {
   try {
     const deptId = Number(req.params.deptId);
@@ -77,12 +77,12 @@ export async function createChecklistCategory(req: AuthRequest, res: Response) {
       return;
     }
     const maxRow = await queryOne<{ m: number }>(
-      'SELECT ISNULL(MAX(sort_order), -1) AS m FROM dbo.sec_categories WHERE department_id = @dept',
+      'SELECT ISNULL(MAX(thu_tu), -1) AS m FROM dbo.NhomHangMuc WHERE bo_phan_id = @dept',
       { dept: deptId }
     );
     const sortOrder = (maxRow?.m ?? -1) + 1;
     const row = await queryOne<{ id: number }>(
-      `INSERT INTO dbo.sec_categories (department_id, name, sort_order)
+      `INSERT INTO dbo.NhomHangMuc (bo_phan_id, ten_nhom, thu_tu)
        OUTPUT INSERTED.id VALUES (@dept, @name, @sort)`,
       { dept: deptId, name, sort: sortOrder }
     );
@@ -92,49 +92,47 @@ export async function createChecklistCategory(req: AuthRequest, res: Response) {
   }
 }
 
-/** PATCH /admin/checklist-editor/categories/:catId */
 export async function updateChecklistCategory(req: AuthRequest, res: Response) {
   try {
     const catId = Number(req.params.catId);
     const cat = await queryOne<CatRow>(
-      'SELECT id, department_id, name, sort_order FROM dbo.sec_categories WHERE id = @id',
+      'SELECT id, bo_phan_id, ten_nhom, thu_tu FROM dbo.NhomHangMuc WHERE id = @id',
       { id: catId }
     );
-    if (!cat || !assertDeptAccess(req, res, cat.department_id)) return;
+    if (!cat || !assertDeptAccess(req, res, cat.bo_phan_id)) return;
 
-    const name = req.body?.name != null ? String(req.body.name).trim() : cat.name;
+    const name = req.body?.name != null ? String(req.body.name).trim() : cat.ten_nhom;
     if (!name) {
       res.status(400).json({ error: 'name required' });
       return;
     }
-    await exec('UPDATE dbo.sec_categories SET name = @name WHERE id = @id', { id: catId, name });
+    await exec('UPDATE dbo.NhomHangMuc SET ten_nhom = @name WHERE id = @id', { id: catId, name });
     res.json({ ok: true });
   } catch (e: unknown) {
     res.status(500).json({ error: (e as Error).message });
   }
 }
 
-/** DELETE /admin/checklist-editor/categories/:catId */
 export async function deleteChecklistCategory(req: AuthRequest, res: Response) {
   try {
     const catId = Number(req.params.catId);
-    const cat = await queryOne<CatRow>(
-      'SELECT id, department_id FROM dbo.sec_categories WHERE id = @id',
+    const cat = await queryOne<{ bo_phan_id: number }>(
+      'SELECT bo_phan_id FROM dbo.NhomHangMuc WHERE id = @id',
       { id: catId }
     );
-    if (!cat || !assertDeptAccess(req, res, cat.department_id)) return;
+    if (!cat || !assertDeptAccess(req, res, cat.bo_phan_id)) return;
 
     const used = await queryOne<{ n: number }>(
-      `SELECT COUNT(1) AS n FROM dbo.sec_inspection_results r
-       INNER JOIN dbo.sec_check_items i ON i.id = r.item_id WHERE i.category_id = @cat`,
+      `SELECT COUNT(1) AS n FROM dbo.KetQuaKiemTra r
+       INNER JOIN dbo.HangMucKiemTra i ON i.id = r.hang_muc_id WHERE i.nhom_id = @cat`,
       { cat: catId }
     );
     if (used && used.n > 0) {
-      res.status(400).json({ error: 'Category has inspection history — delete items first or contact IT' });
+      res.status(400).json({ error: 'Category has inspection history — delete items first' });
       return;
     }
-    await exec('DELETE FROM dbo.sec_check_items WHERE category_id = @cat', { cat: catId });
-    await exec('DELETE FROM dbo.sec_categories WHERE id = @cat', { cat: catId });
+    await exec('DELETE FROM dbo.HangMucKiemTra WHERE nhom_id = @cat', { cat: catId });
+    await exec('DELETE FROM dbo.NhomHangMuc WHERE id = @cat', { cat: catId });
     res.json({ ok: true });
   } catch (e: unknown) {
     res.status(500).json({ error: (e as Error).message });
@@ -162,15 +160,14 @@ function normalizeItemBody(body: ItemBody) {
   };
 }
 
-/** POST /admin/checklist-editor/categories/:catId/items */
 export async function createChecklistItem(req: AuthRequest, res: Response) {
   try {
     const catId = Number(req.params.catId);
-    const cat = await queryOne<CatRow>(
-      'SELECT id, department_id FROM dbo.sec_categories WHERE id = @id',
+    const cat = await queryOne<{ bo_phan_id: number }>(
+      'SELECT bo_phan_id FROM dbo.NhomHangMuc WHERE id = @id',
       { id: catId }
     );
-    if (!cat || !assertDeptAccess(req, res, cat.department_id)) return;
+    if (!cat || !assertDeptAccess(req, res, cat.bo_phan_id)) return;
 
     const norm = normalizeItemBody(req.body as ItemBody);
     if (!norm.label) {
@@ -178,15 +175,15 @@ export async function createChecklistItem(req: AuthRequest, res: Response) {
       return;
     }
     const maxRow = await queryOne<{ m: number }>(
-      'SELECT ISNULL(MAX(sort_order), -1) AS m FROM dbo.sec_check_items WHERE category_id = @cat',
+      'SELECT ISNULL(MAX(thu_tu), -1) AS m FROM dbo.HangMucKiemTra WHERE nhom_id = @cat',
       { cat: catId }
     );
     const sortOrder = (maxRow?.m ?? -1) + 1;
     const row = await queryOne<{ id: number }>(
-      `INSERT INTO dbo.sec_check_items
-        (category_id, label, requires_photo_on_fail, sort_order, input_type, min_value, max_value, unit)
+      `INSERT INTO dbo.HangMucKiemTra
+        (nhom_id, noi_dung, yeu_cau_an_loi, thu_tu, kieu_du_lieu, nguong_min, nguong_max, don_vi, bat_buoc)
        OUTPUT INSERTED.id
-       VALUES (@cat, @label, @photo, @sort, @type, @min, @max, @unit)`,
+       VALUES (@cat, @label, @photo, @sort, @type, @min, @max, @unit, 1)`,
       {
         cat: catId,
         label: norm.label,
@@ -204,27 +201,26 @@ export async function createChecklistItem(req: AuthRequest, res: Response) {
   }
 }
 
-/** PATCH /admin/checklist-editor/items/:itemId */
 export async function updateChecklistItem(req: AuthRequest, res: Response) {
   try {
     const itemId = Number(req.params.itemId);
-    const item = await queryOne<ItemRow & { department_id: number }>(`
-      SELECT i.*, c.department_id
-      FROM dbo.sec_check_items i
-      INNER JOIN dbo.sec_categories c ON c.id = i.category_id
+    const item = await queryOne<ItemRow & { bo_phan_id: number }>(`
+      SELECT i.id, i.nhom_id, i.noi_dung, i.yeu_cau_an_loi, i.thu_tu, i.kieu_du_lieu, i.nguong_min, i.nguong_max, i.don_vi, c.bo_phan_id
+      FROM dbo.HangMucKiemTra i
+      INNER JOIN dbo.NhomHangMuc c ON c.id = i.nhom_id
       WHERE i.id = @id
     `, { id: itemId });
-    if (!item || !assertDeptAccess(req, res, item.department_id)) return;
+    if (!item || !assertDeptAccess(req, res, item.bo_phan_id)) return;
 
-    const norm = normalizeItemBody({ ...req.body, label: req.body?.label ?? item.label } as ItemBody);
+    const norm = normalizeItemBody({ ...req.body, label: req.body?.label ?? item.noi_dung } as ItemBody);
     if (!norm.label) {
       res.status(400).json({ error: 'label required' });
       return;
     }
     await exec(
-      `UPDATE dbo.sec_check_items SET
-        label = @label, requires_photo_on_fail = @photo, input_type = @type,
-        min_value = @min, max_value = @max, unit = @unit
+      `UPDATE dbo.HangMucKiemTra SET
+        noi_dung = @label, yeu_cau_an_loi = @photo, kieu_du_lieu = @type,
+        nguong_min = @min, nguong_max = @max, don_vi = @unit
        WHERE id = @id`,
       {
         id: itemId,
@@ -242,32 +238,30 @@ export async function updateChecklistItem(req: AuthRequest, res: Response) {
   }
 }
 
-/** DELETE /admin/checklist-editor/items/:itemId */
 export async function deleteChecklistItem(req: AuthRequest, res: Response) {
   try {
     const itemId = Number(req.params.itemId);
-    const item = await queryOne<{ department_id: number }>(`
-      SELECT c.department_id FROM dbo.sec_check_items i
-      INNER JOIN dbo.sec_categories c ON c.id = i.category_id WHERE i.id = @id
+    const item = await queryOne<{ bo_phan_id: number }>(`
+      SELECT c.bo_phan_id FROM dbo.HangMucKiemTra i
+      INNER JOIN dbo.NhomHangMuc c ON c.id = i.nhom_id WHERE i.id = @id
     `, { id: itemId });
-    if (!item || !assertDeptAccess(req, res, item.department_id)) return;
+    if (!item || !assertDeptAccess(req, res, item.bo_phan_id)) return;
 
     const used = await queryOne<{ n: number }>(
-      'SELECT COUNT(1) AS n FROM dbo.sec_inspection_results WHERE item_id = @id',
+      'SELECT COUNT(1) AS n FROM dbo.KetQuaKiemTra WHERE hang_muc_id = @id',
       { id: itemId }
     );
     if (used && used.n > 0) {
       res.status(400).json({ error: 'Item has inspection history — cannot delete' });
       return;
     }
-    await exec('DELETE FROM dbo.sec_check_items WHERE id = @id', { id: itemId });
+    await exec('DELETE FROM dbo.HangMucKiemTra WHERE id = @id', { id: itemId });
     res.json({ ok: true });
   } catch (e: unknown) {
     res.status(500).json({ error: (e as Error).message });
   }
 }
 
-/** POST /admin/checklist-editor/:deptId/reorder */
 export async function reorderChecklist(req: AuthRequest, res: Response) {
   try {
     const deptId = Number(req.params.deptId);
@@ -282,18 +276,18 @@ export async function reorderChecklist(req: AuthRequest, res: Response) {
 
     for (const c of categories) {
       await exec(
-        'UPDATE dbo.sec_categories SET sort_order = @sort WHERE id = @id AND department_id = @dept',
+        'UPDATE dbo.NhomHangMuc SET thu_tu = @sort WHERE id = @id AND bo_phan_id = @dept',
         { id: c.id, sort: c.sortOrder, dept: deptId }
       );
     }
     for (const i of items) {
-      const cat = await queryOne<{ department_id: number }>(
-        'SELECT department_id FROM dbo.sec_categories WHERE id = @cat',
+      const cat = await queryOne<{ bo_phan_id: number }>(
+        'SELECT bo_phan_id FROM dbo.NhomHangMuc WHERE id = @cat',
         { cat: i.categoryId }
       );
-      if (!cat || cat.department_id !== deptId) continue;
+      if (!cat || cat.bo_phan_id !== deptId) continue;
       await exec(
-        'UPDATE dbo.sec_check_items SET sort_order = @sort, category_id = @cat WHERE id = @id',
+        'UPDATE dbo.HangMucKiemTra SET thu_tu = @sort, nhom_id = @cat WHERE id = @id',
         { id: i.id, sort: i.sortOrder, cat: i.categoryId }
       );
     }

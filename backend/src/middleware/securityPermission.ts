@@ -18,7 +18,7 @@ export async function loadSecurityScope(user: {
   }
   if (user.role === 'manager') {
     const rows = await query<{ department_id: number }>(
-      `SELECT department_id FROM dbo.sec_user_departments WHERE user_id = @uid`,
+      `SELECT bo_phan_id AS department_id FROM dbo.NguoiDungBoPhan WHERE user_id = @uid`,
       { uid: user.userId }
     );
     return { isAdmin: false, departmentIds: rows.map((r) => r.department_id) };

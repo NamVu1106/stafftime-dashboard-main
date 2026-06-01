@@ -17,7 +17,7 @@ function nowIso() {
 export async function listSecurityAssets(req: AuthRequest, res: Response) {
   try {
     const scope = req.securityScope!;
-    const { clause, params } = deptSqlFilter(scope, 'a.department_id');
+    const { clause, params } = deptSqlFilter(scope, 'a.bo_phan_id');
     const departmentId = req.query.departmentId
       ? Number(req.query.departmentId)
       : undefined;
@@ -26,7 +26,7 @@ export async function listSecurityAssets(req: AuthRequest, res: Response) {
     let extra = '';
     const extraParams: Record<string, unknown> = { ...params };
     if (departmentId) {
-      extra = ' AND a.department_id = @filterDept';
+      extra = ' AND a.bo_phan_id = @filterDept';
       extraParams.filterDept = departmentId;
     }
 
@@ -43,20 +43,20 @@ export async function listSecurityAssets(req: AuthRequest, res: Response) {
     }>(`
       SELECT
         a.id,
-        a.department_id,
-        d.name AS department_name,
-        d.code AS department_code,
-        a.qr_code,
-        a.name,
-        a.asset_type,
-        a.is_active,
-        (SELECT COUNT(1) FROM dbo.sec_inspections i
-         WHERE i.asset_id = a.id AND i.status = N'submitted'
-           AND i.created_at >= CONVERT(NVARCHAR(10), GETDATE(), 23)) AS inspections_submitted
-      FROM dbo.sec_assets a
-      INNER JOIN dbo.sec_departments d ON d.id = a.department_id
+        a.bo_phan_id AS department_id,
+        d.ten_bo_phan AS department_name,
+        d.ma_bo_phan AS department_code,
+        a.ma_qr AS qr_code,
+        a.ten_thiet_bi AS name,
+        a.loai_thiet_bi AS asset_type,
+        a.dang_hoat_dong AS is_active,
+        (SELECT COUNT(1) FROM dbo.PhienKiemTra i
+         WHERE i.thiet_bi_id = a.id AND i.trang_thai_phien = N'da_gui'
+           AND i.tao_luc >= CONVERT(NVARCHAR(10), GETDATE(), 23)) AS inspections_submitted
+      FROM dbo.ThietBi a
+      INNER JOIN dbo.BoPhan d ON d.id = a.bo_phan_id
       WHERE ${clause}${extra}
-      ORDER BY d.sort_order, a.name
+      ORDER BY d.thu_tu, a.ten_thiet_bi
     `, extraParams);
 
     res.json({
@@ -94,7 +94,7 @@ export async function createSecurityAsset(req: AuthRequest, res: Response) {
     if (!assertDeptAccess(req, res, departmentId)) return;
 
     const dept = await queryOne<{ code: string }>(
-      'SELECT code FROM dbo.sec_departments WHERE id = @id',
+      'SELECT ma_bo_phan AS code FROM dbo.BoPhan WHERE id = @id',
       { id: departmentId }
     );
     if (!dept) {
@@ -106,7 +106,7 @@ export async function createSecurityAsset(req: AuthRequest, res: Response) {
     if (!qr) qr = generateQrCode(dept.code);
 
     const dup = await queryOne<{ id: number }>(
-      'SELECT id FROM dbo.sec_assets WHERE qr_code = @qr',
+      'SELECT id FROM dbo.ThietBi WHERE ma_qr = @qr',
       { qr }
     );
     if (dup) {
@@ -115,7 +115,7 @@ export async function createSecurityAsset(req: AuthRequest, res: Response) {
     }
 
     const row = await queryOne<{ id: number }>(
-      `INSERT INTO dbo.sec_assets (department_id, qr_code, name, asset_type, is_active)
+      `INSERT INTO dbo.ThietBi (bo_phan_id, ma_qr, ten_thiet_bi, loai_thiet_bi, dang_hoat_dong)
        OUTPUT INSERTED.id
        VALUES (@dept, @qr, @name, @type, 1)`,
       { dept: departmentId, qr, name: name.trim(), type: assetType }
@@ -136,7 +136,7 @@ export async function updateSecurityAsset(req: AuthRequest, res: Response) {
   try {
     const id = Number(req.params.id);
     const asset = await queryOne<{ department_id: number }>(
-      'SELECT department_id FROM dbo.sec_assets WHERE id = @id',
+      'SELECT bo_phan_id AS department_id FROM dbo.ThietBi WHERE id = @id',
       { id }
     );
     if (!asset) {
@@ -152,10 +152,10 @@ export async function updateSecurityAsset(req: AuthRequest, res: Response) {
     };
 
     await exec(
-      `UPDATE dbo.sec_assets SET
-        name = COALESCE(@name, name),
-        asset_type = COALESCE(@type, asset_type),
-        is_active = COALESCE(@active, is_active)
+      `UPDATE dbo.ThietBi SET
+        ten_thiet_bi = COALESCE(@name, ten_thiet_bi),
+        loai_thiet_bi = COALESCE(@type, loai_thiet_bi),
+        dang_hoat_dong = COALESCE(@active, dang_hoat_dong)
        WHERE id = @id`,
       {
         id,
@@ -177,7 +177,7 @@ export async function regenerateAssetQr(req: AuthRequest, res: Response) {
     const asset = await queryOne<{
       department_id: number;
       qr_code: string;
-    }>('SELECT department_id, qr_code FROM dbo.sec_assets WHERE id = @id', { id });
+    }>('SELECT bo_phan_id AS department_id, ma_qr AS qr_code FROM dbo.ThietBi WHERE id = @id', { id });
     if (!asset) {
       res.status(404).json({ error: 'Asset not found' });
       return;
@@ -185,7 +185,7 @@ export async function regenerateAssetQr(req: AuthRequest, res: Response) {
     if (!assertDeptAccess(req, res, asset.department_id)) return;
 
     const dept = await queryOne<{ code: string }>(
-      'SELECT code FROM dbo.sec_departments WHERE id = @id',
+      'SELECT ma_bo_phan AS code FROM dbo.BoPhan WHERE id = @id',
       { id: asset.department_id }
     );
     if (!dept) {
@@ -196,7 +196,7 @@ export async function regenerateAssetQr(req: AuthRequest, res: Response) {
     let newQr = generateQrCode(dept.code);
     for (let attempt = 0; attempt < 5; attempt++) {
       const dup = await queryOne<{ id: number }>(
-        'SELECT id FROM dbo.sec_assets WHERE qr_code = @qr',
+        'SELECT id FROM dbo.ThietBi WHERE ma_qr = @qr',
         { qr: newQr }
       );
       if (!dup) break;
@@ -205,7 +205,7 @@ export async function regenerateAssetQr(req: AuthRequest, res: Response) {
 
     const ts = nowIso();
     await exec(
-      `INSERT INTO dbo.sec_asset_qr_history (asset_id, old_qr_code, new_qr_code, changed_at, changed_by)
+      `INSERT INTO dbo.LichSuMaQrThietBi (thiet_bi_id, ma_qr_cu, ma_qr_moi, thoi_diem, nguoi_doi)
        VALUES (@aid, @old, @new, @ts, @user)`,
       {
         aid: id,
@@ -215,7 +215,7 @@ export async function regenerateAssetQr(req: AuthRequest, res: Response) {
         user: req.user?.username ?? '',
       }
     );
-    await exec('UPDATE dbo.sec_assets SET qr_code = @qr WHERE id = @id', {
+    await exec('UPDATE dbo.ThietBi SET ma_qr = @qr WHERE id = @id', {
       id,
       qr: newQr,
     });
@@ -262,10 +262,10 @@ export async function exportAssetLabelsPdf(req: AuthRequest, res: Response) {
       name: string;
       department_name: string;
     }>(`
-      SELECT a.id, a.department_id, a.qr_code, a.name, d.name AS department_name
-      FROM dbo.sec_assets a
-      INNER JOIN dbo.sec_departments d ON d.id = a.department_id
-      WHERE a.id IN (${placeholders}) AND a.is_active = 1
+      SELECT a.id, a.bo_phan_id AS department_id, a.ma_qr AS qr_code, a.ten_thiet_bi AS name, d.ten_bo_phan AS department_name
+      FROM dbo.ThietBi a
+      INNER JOIN dbo.BoPhan d ON d.id = a.bo_phan_id
+      WHERE a.id IN (${placeholders}) AND a.dang_hoat_dong = 1
     `, params);
 
     const allowed = assets.filter((a) => canAccessDepartment(scope, a.department_id));

@@ -1,6 +1,8 @@
 # Ánh xạ SQL Server ↔ Node.js API ↔ Tablet JSON
 
-Tài liệu này đối chiếu **schema đề xuất 4 trụ cột** với **schema đang chạy** trong repo `stafftime-dashboard-main` và các API tương ứng.
+**CSDL hiện tại dùng tên bảng tiếng Việt:** `BoPhan`, `NhomHangMuc`, `HangMucKiemTra`, `ThietBi`, `PhienKiemTra`, `KetQuaKiemTra` (+ `NguoiDungBoPhan`, `LichSuMaQrThietBi`). API JSON vẫn camelCase cho tablet.
+
+Tài liệu đối chiếu schema nghiệp vụ với implementation.
 
 ---
 
