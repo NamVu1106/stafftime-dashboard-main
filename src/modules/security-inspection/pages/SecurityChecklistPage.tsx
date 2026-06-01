@@ -25,7 +25,9 @@ import type {
   ItemResult,
   InspectionItemStatus,
   LastInspectionSummary,
+  ChecklistItemDef,
 } from '../types';
+import { isNumberItem } from '../utils/numberThreshold';
 import { Loader2, History, PauseCircle } from 'lucide-react';
 
 type LocState = {
@@ -132,6 +134,7 @@ export default function SecurityChecklistPage() {
           itemId: r.itemId,
           status: r.status as 'pass' | 'fail' | 'skip',
           note: r.note,
+          numericValue: r.numericValue,
           photoData: r.photoData,
         })),
     [results]
@@ -147,11 +150,27 @@ export default function SecurityChecklistPage() {
     });
   };
 
+  const allItems = useMemo(
+    () => template?.categories.flatMap((c) => c.items) ?? [],
+    [template]
+  );
+
+  const findItem = (itemId: number): ChecklistItemDef | undefined =>
+    allItems.find((i) => i.id === itemId);
+
+  const isItemComplete = (item: ChecklistItemDef, r?: ItemResult) => {
+    if (!r || r.status === 'unset') return false;
+    if (isNumberItem(item)) {
+      return r.numericValue !== undefined && !Number.isNaN(r.numericValue);
+    }
+    return true;
+  };
+
   const hasOpenFailWithoutPhoto = () => {
     if (!template) return false;
     for (const r of results) {
       if (r.status !== 'fail') continue;
-      const item = template.categories.flatMap((c) => c.items).find((i) => i.id === r.itemId);
+      const item = findItem(r.itemId);
       if (item?.requiresPhotoOnFail && !r.photoData) return true;
     }
     return false;
@@ -163,11 +182,12 @@ export default function SecurityChecklistPage() {
       return false;
     }
     if (!template) return false;
-    const total = template.categories.reduce((n, c) => n + c.items.length, 0);
-    const done = results.filter((r) => r.status !== 'unset').length;
-    if (done < total) {
-      toast.error(t('securityInspection.allItemsRequired'));
-      return false;
+    for (const item of allItems) {
+      const r = results.find((x) => x.itemId === item.id);
+      if (!isItemComplete(item, r)) {
+        toast.error(t('securityInspection.allItemsRequired'));
+        return false;
+      }
     }
     if (hasOpenFailWithoutPhoto()) {
       toast.error(t('securityInspection.photoRequiredBlock'));

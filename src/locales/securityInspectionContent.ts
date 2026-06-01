@@ -114,6 +114,9 @@ export const viSecurityInspection = {
   pausedBanner: 'Đang tạm hoãn',
   pauseActive: 'Đang tạm hoãn — hủy tạm hoãn trước khi gửi',
   viewOnly: 'Chỉ xem (đang tạm hoãn)',
+  thresholdHint: 'Ngưỡng cho phép',
+  thresholdExceeded: 'VƯỢT NGƯỠNG — bắt buộc chụp ảnh minh chứng',
+  numericPlaceholder: 'Nhập giá trị đo',
 };
 
 export const koSecurityInspection = {
@@ -230,4 +233,7 @@ export const koSecurityInspection = {
   pausedBanner: '일시 중지 중',
   pauseActive: '중지 중 — 제출 전 해제',
   viewOnly: '보기 전용(중지 중)',
+  thresholdHint: '허용 범위',
+  thresholdExceeded: '기준 초과 — 증빙 사진 필수',
+  numericPlaceholder: '측정값 입력',
 };

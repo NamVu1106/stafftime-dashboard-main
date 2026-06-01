@@ -32,7 +32,34 @@ type ItemRow = {
   label: string;
   requires_photo_on_fail: number;
   sort_order: number;
+  input_type: string;
+  min_value: number | null;
+  max_value: number | null;
+  unit: string | null;
 };
+
+function mapCheckItem(i: ItemRow) {
+  const inputType = (i.input_type || 'boolean').toLowerCase();
+  return {
+    id: i.id,
+    label: i.label,
+    requiresPhotoOnFail: !!i.requires_photo_on_fail,
+    inputType: inputType === 'number' ? 'number' : 'boolean',
+    minValue: i.min_value,
+    maxValue: i.max_value,
+    unit: i.unit,
+  };
+}
+
+function isWithinThreshold(
+  value: number,
+  min: number | null,
+  max: number | null
+): boolean {
+  if (min != null && value < min) return false;
+  if (max != null && value > max) return false;
+  return true;
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -114,7 +141,9 @@ export async function getDepartmentTemplate(req: AuthRequest, res: Response) {
       { dept: deptId }
     );
     const items = await query<ItemRow>(`
-      SELECT i.id, i.category_id, i.label, i.requires_photo_on_fail, i.sort_order
+      SELECT i.id, i.category_id, i.label, i.requires_photo_on_fail, i.sort_order,
+        ISNULL(i.input_type, N'boolean') AS input_type,
+        i.min_value, i.max_value, i.unit
       FROM dbo.sec_check_items i
       INNER JOIN dbo.sec_categories c ON c.id = i.category_id
       WHERE c.department_id = @dept
@@ -131,11 +160,7 @@ export async function getDepartmentTemplate(req: AuthRequest, res: Response) {
       categories: categories.map((c) => ({
         id: c.id,
         name: c.name,
-        items: (itemsByCat.get(c.id) ?? []).map((i) => ({
-          id: i.id,
-          label: i.label,
-          requiresPhotoOnFail: !!i.requires_photo_on_fail,
-        })),
+        items: (itemsByCat.get(c.id) ?? []).map(mapCheckItem),
       })),
     });
   } catch (e: unknown) {
@@ -214,10 +239,46 @@ type ResultPayload = {
   itemId: number;
   status: 'pass' | 'fail' | 'skip';
   note?: string;
+  numericValue?: number;
   /** data URL (offline) hoặc /uploads/... — server chuyển thành file + photo_url */
   photoData?: string;
   photoUrl?: string;
 };
+
+type ItemRuleRow = {
+  input_type: string;
+  min_value: number | null;
+  max_value: number | null;
+  requires_photo_on_fail: number;
+};
+
+async function validateInspectionResults(results: ResultPayload[]): Promise<string | null> {
+  for (const r of results) {
+    const item = await queryOne<ItemRuleRow>(
+      `SELECT ISNULL(input_type, N'boolean') AS input_type, min_value, max_value, requires_photo_on_fail
+       FROM dbo.sec_check_items WHERE id = @id`,
+      { id: r.itemId }
+    );
+    if (!item) return `Unknown item ${r.itemId}`;
+
+    const inputType = (item.input_type || 'boolean').toLowerCase();
+    if (inputType === 'number' && r.status !== 'skip') {
+      if (r.numericValue == null || Number.isNaN(Number(r.numericValue))) {
+        return `Numeric value required for item ${r.itemId}`;
+      }
+      const num = Number(r.numericValue);
+      const inRange = isWithinThreshold(num, item.min_value, item.max_value);
+      const expectedStatus = inRange ? 'pass' : 'fail';
+      if (r.status !== expectedStatus) {
+        return `Item ${r.itemId} status must be ${expectedStatus} for value ${num}`;
+      }
+      if (r.status === 'fail' && item.requires_photo_on_fail && !r.photoData && !r.photoUrl) {
+        return `Photo required for out-of-range item ${r.itemId}`;
+      }
+    }
+  }
+  return null;
+}
 
 type InspectionPayload = {
   clientId: string;
@@ -295,14 +356,15 @@ async function upsertInspection(
     const photoUrl =
       r.photoUrl ?? persistInspectionPhoto(r.photoData) ?? null;
     await exec(
-      `INSERT INTO dbo.sec_inspection_results (inspection_id, item_id, status, note, photo_data, photo_url)
-       VALUES (@insp, @item, @st, @note, NULL, @photoUrl)`,
+      `INSERT INTO dbo.sec_inspection_results (inspection_id, item_id, status, note, photo_data, photo_url, numeric_value)
+       VALUES (@insp, @item, @st, @note, NULL, @photoUrl, @num)`,
       {
         insp: inspectionId,
         item: r.itemId,
         st: r.status,
         note: r.note ?? null,
         photoUrl,
+        num: r.numericValue ?? null,
       }
     );
   }
@@ -335,10 +397,15 @@ export async function submitInspection(req: AuthRequest, res: Response) {
       res.status(400).json({ error: 'signature required' });
       return;
     }
+    const validationError = await validateInspectionResults(body.results);
+    if (validationError) {
+      res.status(400).json({ error: validationError });
+      return;
+    }
     const fails = body.results.filter((r) => r.status === 'fail');
     for (const f of fails) {
-      const item = await queryOne<{ requires_photo_on_fail: number }>(
-        'SELECT requires_photo_on_fail FROM dbo.sec_check_items WHERE id = @id',
+      const item = await queryOne<{ requires_photo_on_fail: number; input_type: string }>(
+        "SELECT requires_photo_on_fail, ISNULL(input_type, N'boolean') AS input_type FROM dbo.sec_check_items WHERE id = @id",
         { id: f.itemId }
       );
       if (item?.requires_photo_on_fail && !f.photoData && !f.photoUrl) {
@@ -479,6 +546,7 @@ export async function exportSecurityReport(req: AuthRequest, res: Response) {
       asset_name: string;
       item_label: string;
       note: string;
+      numeric_value: number | null;
       photo_url: string;
       inspector_username: string;
       shift_label: string;
@@ -490,6 +558,7 @@ export async function exportSecurityReport(req: AuthRequest, res: Response) {
         a.name AS asset_name,
         ci.label AS item_label,
         r.note,
+        r.numeric_value,
         COALESCE(r.photo_url, r.photo_data) AS photo_url,
         i.inspector_username,
         i.shift_label
@@ -513,6 +582,7 @@ export async function exportSecurityReport(req: AuthRequest, res: Response) {
       { header: 'Mã QR', key: 'qr_code', width: 18 },
       { header: 'Thiết bị', key: 'asset_name', width: 24 },
       { header: 'Hạng mục lỗi', key: 'item_label', width: 28 },
+      { header: 'Giá trị đo', key: 'numeric_value', width: 12 },
       { header: 'Mô tả', key: 'note', width: 32 },
       { header: 'Ảnh (URL)', key: 'photo_url', width: 40 },
       { header: 'Người kiểm tra', key: 'inspector_username', width: 16 },

@@ -5,7 +5,7 @@
 ## Quy trình 3 bước
 
 1. **Mở app** → Chọn **bộ phận** → **Quét QR** trên máy/hàng (hoặc nhập mã).
-2. **Checklist** → Chạm **ĐẠT** / **LỖI** / **BỎ QUA** từng mục.
+2. **Checklist** → Chạm **ĐẠT** / **LỖI** / **BỎ QUA** (hoặc **nhập số** nếu là nhiệt độ/áp suất).
 3. **Ký tên** → **Gửi báo cáo** khi đám mây **màu xanh** (đã đồng bộ).
 
 ## Quy tắc vàng
@@ -13,6 +13,7 @@
 | Tình huống | Việc cần làm |
 |------------|----------------|
 | Báo **LỖI** | **Bắt buộc chụp ảnh** (có giờ + GPS nếu máy cho phép) trước khi sang mục khác |
+| **Nhập số** vượt ngưỡng | Ô **đỏ** + **bắt buộc chụp ảnh** (coi như lỗi an toàn) |
 | Mất mạng | Vẫn làm bình thường — app **tự lưu**; khi có sóng đám mây xanh rồi mới **kết thúc ca** |
 | Nhiều mục Đạt | Dùng **Chọn tất cả ĐẠT** → vẫn phải ký & gửi |
 | Máy đang chạy | **Tạm hoãn** + ghi lý do |

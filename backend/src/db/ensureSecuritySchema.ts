@@ -1,6 +1,7 @@
 import { exec } from './sqlServer';
 import { seedSecurityInspectionIfEmpty } from './seedSecurityInspection';
 import { seedSecurityDemoManagers } from './seedSecurityManagers';
+import { seedSecurityNumericItemsIfMissing } from './seedSecurityNumericItems';
 
 /** Bảng kiểm tra an ninh — phân cấp Department > Category > Item */
 export async function ensureSecurityInspectionSchema(): Promise<void> {
@@ -140,6 +141,29 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'sec_inspections_dept_sta
   CREATE NONCLUSTERED INDEX [sec_inspections_dept_status_idx] ON [dbo].[sec_inspections]([department_id], [status]);
 `);
 
+  await exec(`
+IF COL_LENGTH('dbo.sec_check_items', 'input_type') IS NULL
+  ALTER TABLE [dbo].[sec_check_items] ADD [input_type] NVARCHAR(20) NOT NULL
+    CONSTRAINT [sec_check_items_input_type_df] DEFAULT N'boolean';
+`);
+  await exec(`
+IF COL_LENGTH('dbo.sec_check_items', 'min_value') IS NULL
+  ALTER TABLE [dbo].[sec_check_items] ADD [min_value] FLOAT NULL;
+`);
+  await exec(`
+IF COL_LENGTH('dbo.sec_check_items', 'max_value') IS NULL
+  ALTER TABLE [dbo].[sec_check_items] ADD [max_value] FLOAT NULL;
+`);
+  await exec(`
+IF COL_LENGTH('dbo.sec_check_items', 'unit') IS NULL
+  ALTER TABLE [dbo].[sec_check_items] ADD [unit] NVARCHAR(50) NULL;
+`);
+  await exec(`
+IF COL_LENGTH('dbo.sec_inspection_results', 'numeric_value') IS NULL
+  ALTER TABLE [dbo].[sec_inspection_results] ADD [numeric_value] FLOAT NULL;
+`);
+
   await seedSecurityInspectionIfEmpty();
+  await seedSecurityNumericItemsIfMissing();
   await seedSecurityDemoManagers();
 }

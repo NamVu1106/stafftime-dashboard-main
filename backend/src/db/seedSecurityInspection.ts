@@ -45,10 +45,12 @@ INSERT INTO dbo.sec_categories (department_id, name, sort_order) VALUES
   if (!cat1?.id) return;
 
   await exec(`
-INSERT INTO dbo.sec_check_items (category_id, label, requires_photo_on_fail, sort_order) VALUES
-(${cat1.id}, N'Camera hoạt động bình thường', 1, 1),
-(${cat1.id}, N'Đèn báo động / còi', 1, 2),
-(${cat1.id}, N'Tủ điện khóa an toàn', 1, 3);
+INSERT INTO dbo.sec_check_items (category_id, label, requires_photo_on_fail, sort_order, input_type, min_value, max_value, unit) VALUES
+(${cat1.id}, N'Camera hoạt động bình thường', 1, 1, N'boolean', NULL, NULL, NULL),
+(${cat1.id}, N'Đèn báo động / còi', 1, 2, N'boolean', NULL, NULL, NULL),
+(${cat1.id}, N'Tủ điện khóa an toàn', 1, 3, N'boolean', NULL, NULL, NULL),
+(${cat1.id}, N'Nhiệt độ bề mặt tủ điện', 1, 4, N'number', 0, 80, N'°C'),
+(${cat1.id}, N'Áp suất khí nén (đường ống)', 1, 5, N'number', 0.5, 8, N'bar');
 `);
 
   if (cat2?.id) {

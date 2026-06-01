@@ -10,10 +10,16 @@ export type SecurityDepartment = {
   draftToday: number;
 };
 
+export type ChecklistInputType = 'boolean' | 'number';
+
 export type ChecklistItemDef = {
   id: number;
   label: string;
   requiresPhotoOnFail: boolean;
+  inputType?: ChecklistInputType;
+  minValue?: number | null;
+  maxValue?: number | null;
+  unit?: string | null;
 };
 
 export type ChecklistCategory = {
@@ -43,6 +49,7 @@ export type ItemResult = {
   itemId: number;
   status: InspectionItemStatus;
   note?: string;
+  numericValue?: number;
   photoData?: string;
 };
 
@@ -69,7 +76,13 @@ export type SyncQueueEntry = {
     shiftLabel?: string;
     status: 'draft' | 'submitted';
     signatureData?: string;
-    results: { itemId: number; status: 'pass' | 'fail' | 'skip'; note?: string; photoData?: string }[];
+    results: {
+      itemId: number;
+      status: 'pass' | 'fail' | 'skip';
+      note?: string;
+      numericValue?: number;
+      photoData?: string;
+    }[];
   };
   createdAt: string;
 };

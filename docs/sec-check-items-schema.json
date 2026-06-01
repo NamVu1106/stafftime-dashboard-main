@@ -1,0 +1,49 @@
+{
+  "$schema": "Mẫu cấu trúc hạng mục checklist — sec_check_items",
+  "description": "Dùng khi import/seed hoặc Admin CRUD. input_type: boolean | number",
+  "examples": [
+    {
+      "category_id": 1,
+      "label": "Camera hoạt động bình thường",
+      "input_type": "boolean",
+      "requires_photo_on_fail": true,
+      "sort_order": 1,
+      "min_value": null,
+      "max_value": null,
+      "unit": null
+    },
+    {
+      "category_id": 1,
+      "label": "Nhiệt độ bề mặt tủ điện",
+      "input_type": "number",
+      "requires_photo_on_fail": true,
+      "sort_order": 4,
+      "min_value": 0,
+      "max_value": 80,
+      "unit": "°C"
+    },
+    {
+      "category_id": 1,
+      "label": "Áp suất khí nén (đường ống)",
+      "input_type": "number",
+      "requires_photo_on_fail": true,
+      "sort_order": 5,
+      "min_value": 0.5,
+      "max_value": 8,
+      "unit": "bar"
+    }
+  ],
+  "inspection_result_payload": {
+    "itemId": 12,
+    "status": "fail",
+    "numericValue": 92,
+    "note": "92 °C",
+    "photoData": "data:image/jpeg;base64,..."
+  },
+  "rules": {
+    "boolean": "UI nút Đạt / Lỗi / Bỏ qua",
+    "number_in_range": "status = pass, không bắt buộc ảnh",
+    "number_out_of_range": "status = fail, bắt buộc ảnh nếu requires_photo_on_fail",
+    "server_validation": "API submit/sync tái kiểm tra min/max và status"
+  }
+}

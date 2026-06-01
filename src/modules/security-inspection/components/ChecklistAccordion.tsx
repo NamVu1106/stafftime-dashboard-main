@@ -18,7 +18,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { PassFailButtons } from './PassFailButtons';
 import { PhotoCapture } from './PhotoCapture';
+import { NumberThresholdInput } from './NumberThresholdInput';
 import type { ChecklistCategory, ItemResult, InspectionItemStatus } from '../types';
+import { isNumberItem } from '../utils/numberThreshold';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/hooks/useI18n';
@@ -42,10 +44,12 @@ export function ChecklistAccordion({
 
   const get = (itemId: number) => results.find((r) => r.itemId === itemId);
 
-  const allItemIds = categories.flatMap((c) => c.items.map((i) => i.id));
+  const allItems = categories.flatMap((c) => c.items);
 
   const applyMarkAllPass = () => {
-    for (const id of allItemIds) {
+    for (const item of allItems) {
+      if (isNumberItem(item)) continue;
+      const id = item.id;
       const cur = get(id);
       if (cur?.status === 'fail' && cur.photoData) continue;
       onChange(id, { itemId: id, status: 'pass', note: undefined, photoData: undefined });
@@ -123,14 +127,30 @@ export function ChecklistAccordion({
                     key={item.id}
                     className="space-y-3 border-t border-slate-100 pt-3 first:border-0 first:pt-0"
                   >
-                    <p className="font-semibold text-slate-900">{item.label}</p>
+                    <p className="font-semibold text-slate-900">
+                      {item.label}
+                      {isNumberItem(item) && item.unit ? (
+                        <span className="ml-1 text-sm font-normal text-slate-500">({item.unit})</span>
+                      ) : null}
+                    </p>
                     {!readOnly ? (
                       <>
-                        <PassFailButtons
-                          value={status}
-                          onChange={(v) => handleStatusChange(item.id, v, item.requiresPhotoOnFail)}
-                        />
-                        {showFail && (
+                        {isNumberItem(item) ? (
+                          <NumberThresholdInput
+                            item={item}
+                            result={r}
+                            photoMeta={photoMeta}
+                            onChange={(patch) => onChange(item.id, patch)}
+                          />
+                        ) : (
+                          <PassFailButtons
+                            value={status}
+                            onChange={(v) =>
+                              handleStatusChange(item.id, v, item.requiresPhotoOnFail)
+                            }
+                          />
+                        )}
+                        {!isNumberItem(item) && showFail && (
                           <>
                             <Input
                               className="min-h-12 text-base"
