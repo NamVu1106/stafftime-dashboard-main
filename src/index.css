@@ -648,8 +648,11 @@
 }
 .sec-touch-btn,
 .sec-touch-card {
-  min-height: 48px;
-  min-width: 48px;
+  min-height: 52px;
+  min-width: 52px;
+}
+.sec-tablet-app {
+  font-size: 1.0625rem;
 }
 .sec-footer {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));

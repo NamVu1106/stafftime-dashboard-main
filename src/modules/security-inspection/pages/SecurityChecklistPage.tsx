@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ChecklistAccordion } from '../components/ChecklistAccordion';
+import { ChecksheetWorkflowStepper } from '../components/ChecksheetWorkflowStepper';
 import { SecurityFooter } from '../components/SecurityFooter';
 import { SignaturePad } from '../components/SignaturePad';
 import { SyncGateBanner } from '../components/SyncGateBanner';
@@ -193,6 +194,13 @@ export default function SecurityChecklistPage() {
       toast.error(t('securityInspection.photoRequiredBlock'));
       return false;
     }
+    for (const r of results) {
+      if (r.status !== 'fail') continue;
+      if (!r.note?.trim()) {
+        toast.error(t('securityInspection.noteRequiredBlock'));
+        return false;
+      }
+    }
     return true;
   };
 
@@ -300,10 +308,12 @@ export default function SecurityChecklistPage() {
   return (
     <>
       <div className="space-y-5 pb-4">
+        <ChecksheetWorkflowStepper current={signature ? 4 : 3} />
         <SyncGateBanner online={online} pending={pending} syncing={syncing} />
 
         <div>
           <h1 className="text-2xl font-bold">{t('securityInspection.checklistTitle')}</h1>
+          <p className="mt-1 text-sm text-slate-600">{t('securityInspection.tickEvidenceHint')}</p>
           <p className="mt-1 text-sm font-semibold text-slate-600">
             {t('securityInspection.asset')}: {state.assetName} ({state.qrCode})
           </p>

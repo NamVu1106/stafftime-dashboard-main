@@ -67,6 +67,24 @@ export type InspectionDraft = {
   pauseReason?: string;
 };
 
+export type SecurityFailureRecord = {
+  id: number;
+  inspection_id: number;
+  created_at: string;
+  department_name: string;
+  department_color: string;
+  qr_code: string;
+  asset_name: string;
+  item_label: string;
+  note: string | null;
+  numeric_value: number | null;
+  photo_url: string | null;
+  inspector_username: string;
+  shift_label: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+};
+
 export type SyncQueueEntry = {
   id: string;
   payload: {

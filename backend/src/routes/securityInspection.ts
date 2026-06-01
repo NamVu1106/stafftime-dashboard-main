@@ -23,6 +23,9 @@ import {
   getSecurityManagementDashboard,
   exportSecurityReport,
   getMySecurityScope,
+  getCriticalAlerts,
+  getFailureHistory,
+  resolveInspectionResult,
 } from '../controllers/securityInspection';
 
 const router = express.Router();
@@ -40,6 +43,9 @@ router.post('/sync', syncInspections);
 
 router.get('/reports/summary', requireSecurityReportAccess, getSecurityReportSummary);
 router.get('/reports/dashboard', requireSecurityReportAccess, getSecurityManagementDashboard);
+router.get('/reports/critical-alerts', requireSecurityReportAccess, getCriticalAlerts);
+router.get('/reports/failure-history', requireSecurityReportAccess, getFailureHistory);
+router.post('/reports/results/:id/resolve', requireSecurityReportAccess, resolveInspectionResult);
 router.get('/reports/export', requireSecurityReportAccess, exportSecurityReport);
 
 router.get('/assets/labels/pdf', requireSecurityAssetAdmin, exportAssetLabelsPdf);

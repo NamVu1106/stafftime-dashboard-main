@@ -276,6 +276,9 @@ async function validateInspectionResults(results: ResultPayload[]): Promise<stri
         return `Photo required for out-of-range item ${r.itemId}`;
       }
     }
+    if (r.status === 'fail' && !String(r.note ?? '').trim()) {
+      return `Note required for NOT OK item ${r.itemId}`;
+    }
   }
   return null;
 }
@@ -404,12 +407,16 @@ export async function submitInspection(req: AuthRequest, res: Response) {
     }
     const fails = body.results.filter((r) => r.status === 'fail');
     for (const f of fails) {
+      if (!String(f.note ?? '').trim()) {
+        res.status(400).json({ error: `Note required for NOT OK item ${f.itemId}` });
+        return;
+      }
       const item = await queryOne<{ requires_photo_on_fail: number; input_type: string }>(
         "SELECT requires_photo_on_fail, ISNULL(input_type, N'boolean') AS input_type FROM dbo.sec_check_items WHERE id = @id",
         { id: f.itemId }
       );
       if (item?.requires_photo_on_fail && !f.photoData && !f.photoUrl) {
-        res.status(400).json({ error: `Photo required for failed item ${f.itemId}` });
+        res.status(400).json({ error: `Photo required for NOT OK item ${f.itemId}` });
         return;
       }
     }
@@ -505,22 +512,41 @@ export async function getSecurityManagementDashboard(req: AuthRequest, res: Resp
       GROUP BY r.status
     `, { from, to, ...pieDept.params });
 
+    const totals = {
+      machines: rows.reduce((n, r) => n + r.total_machines, 0),
+      checked: rows.reduce((n, r) => n + r.checked_count, 0),
+      unchecked: rows.reduce((n, r) => n + r.unchecked_count, 0),
+      failures: rows.reduce((n, r) => n + r.fail_count, 0),
+    };
+    const progressPercent =
+      totals.machines > 0 ? Math.round((totals.checked / totals.machines) * 100) : 0;
+
+    const alertDept = deptSqlFilter(scope, 'i.department_id');
+    const openAlerts = await queryOne<{ n: number }>(`
+      SELECT COUNT(1) AS n
+      FROM dbo.sec_inspection_results r
+      INNER JOIN dbo.sec_inspections i ON i.id = r.inspection_id
+      WHERE r.status = N'fail' AND i.status = N'submitted' AND r.resolved_at IS NULL
+        AND ${alertDept.clause}
+    `, alertDept.params);
+
     res.json({
       from,
       to,
       scope: scope.isAdmin ? 'all' : 'departments',
       departmentIds: scope.departmentIds ?? [],
-      departments: rows,
+      departments: rows.map((row) => ({
+        ...row,
+        progress_percent:
+          row.total_machines > 0
+            ? Math.round((row.checked_count / row.total_machines) * 100)
+            : 0,
+      })),
       statusPie: statusPie.map((s) => ({
         name: s.status,
         value: s.count,
       })),
-      totals: {
-        machines: rows.reduce((n, r) => n + r.total_machines, 0),
-        checked: rows.reduce((n, r) => n + r.checked_count, 0),
-        unchecked: rows.reduce((n, r) => n + r.unchecked_count, 0),
-        failures: rows.reduce((n, r) => n + r.fail_count, 0),
-      },
+      totals: { ...totals, progressPercent, openAlerts: openAlerts?.n ?? 0 },
     });
   } catch (e: unknown) {
     res.status(500).json({ error: (e as Error).message });
@@ -530,6 +556,122 @@ export async function getSecurityManagementDashboard(req: AuthRequest, res: Resp
 /** GET /reports/summary — tương thích cũ */
 export async function getSecurityReportSummary(req: AuthRequest, res: Response) {
   return getSecurityManagementDashboard(req, res);
+}
+
+type FailureRow = {
+  id: number;
+  inspection_id: number;
+  created_at: string;
+  department_name: string;
+  department_color: string;
+  qr_code: string;
+  asset_name: string;
+  item_label: string;
+  note: string | null;
+  numeric_value: number | null;
+  photo_url: string | null;
+  inspector_username: string;
+  shift_label: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+};
+
+function failureListSql(scope: ReturnType<typeof deptSqlFilter>, resolvedOnly?: boolean) {
+  const resolvedClause =
+    resolvedOnly === true
+      ? 'AND r.resolved_at IS NOT NULL'
+      : resolvedOnly === false
+        ? 'AND r.resolved_at IS NULL'
+        : '';
+  return {
+    sql: `
+      SELECT
+        r.id,
+        r.inspection_id,
+        i.created_at,
+        d.name AS department_name,
+        d.color AS department_color,
+        a.qr_code,
+        a.name AS asset_name,
+        ci.label AS item_label,
+        r.note,
+        r.numeric_value,
+        COALESCE(r.photo_url, r.photo_data) AS photo_url,
+        i.inspector_username,
+        i.shift_label,
+        r.resolved_at,
+        r.resolved_by
+      FROM dbo.sec_inspection_results r
+      INNER JOIN dbo.sec_inspections i ON i.id = r.inspection_id
+      INNER JOIN dbo.sec_departments d ON d.id = i.department_id
+      INNER JOIN dbo.sec_assets a ON a.id = i.asset_id
+      INNER JOIN dbo.sec_check_items ci ON ci.id = r.item_id
+      WHERE r.status = N'fail' AND i.status = N'submitted'
+        ${resolvedClause}
+        AND i.created_at >= @from AND i.created_at < DATEADD(day, 1, CAST(@to AS DATE))
+        AND ${scope.clause}
+      ORDER BY i.created_at DESC, r.id DESC
+    `,
+    params: scope.params,
+  };
+}
+
+/** GET /reports/critical-alerts — NOT OK chưa xử lý */
+export async function getCriticalAlerts(req: AuthRequest, res: Response) {
+  try {
+    const scope = req.securityScope!;
+    const { from, to } = parseDateRange(req);
+    const deptFilter = deptSqlFilter(scope, 'i.department_id');
+    const { sql, params } = failureListSql(deptFilter, false);
+    const data = await query<FailureRow>(sql, { from, to, ...params });
+    res.json({ from, to, data });
+  } catch (e: unknown) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+}
+
+/** GET /reports/failure-history — lịch sử lỗi kèm ảnh */
+export async function getFailureHistory(req: AuthRequest, res: Response) {
+  try {
+    const scope = req.securityScope!;
+    const { from, to } = parseDateRange(req);
+    const deptFilter = deptSqlFilter(scope, 'i.department_id');
+    const { sql, params } = failureListSql(deptFilter);
+    const data = await query<FailureRow>(sql, { from, to, ...params });
+    res.json({ from, to, data });
+  } catch (e: unknown) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+}
+
+/** POST /reports/results/:id/resolve — đóng lỗi (feedback loop) */
+export async function resolveInspectionResult(req: AuthRequest, res: Response) {
+  try {
+    const resultId = Number(req.params.id);
+    if (!resultId) {
+      res.status(400).json({ error: 'Invalid result id' });
+      return;
+    }
+    const row = await queryOne<{ department_id: number; status: string }>(`
+      SELECT i.department_id, r.status
+      FROM dbo.sec_inspection_results r
+      INNER JOIN dbo.sec_inspections i ON i.id = r.inspection_id
+      WHERE r.id = @id
+    `, { id: resultId });
+    if (!row || row.status !== 'fail') {
+      res.status(404).json({ error: 'Failure not found' });
+      return;
+    }
+    if (!assertDeptAccess(req, res, row.department_id)) return;
+    const ts = nowIso();
+    await exec(
+      `UPDATE dbo.sec_inspection_results SET resolved_at = @ts, resolved_by = @user WHERE id = @id`,
+      { id: resultId, ts, user: req.user?.username ?? '' }
+    );
+    res.json({ ok: true, resolvedAt: ts, resolvedBy: req.user?.username });
+  } catch (e: unknown) {
+    res.status(500).json({ error: (e as Error).message });
+  }
 }
 
 /** GET /reports/export — Excel lỗi phát hiện */

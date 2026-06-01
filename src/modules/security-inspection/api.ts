@@ -20,7 +20,14 @@ async function secFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
-import type { DepartmentTemplate, ResolvedAsset, SecurityDepartment } from './types';
+import type {
+  DepartmentTemplate,
+  ResolvedAsset,
+  SecurityDepartment,
+  SecurityFailureRecord,
+} from './types';
+
+export type { SecurityFailureRecord };
 
 export const securityInspectionAPI = {
   getDepartments: () => secFetch<{ data: SecurityDepartment[] }>('/departments'),
@@ -61,11 +68,33 @@ export const securityInspectionAPI = {
         checked_count: number;
         unchecked_count: number;
         fail_count: number;
+        progress_percent: number;
       }[];
       statusPie: { name: string; value: number }[];
-      totals: { machines: number; checked: number; unchecked: number; failures: number };
+      totals: {
+        machines: number;
+        checked: number;
+        unchecked: number;
+        failures: number;
+        progressPercent: number;
+        openAlerts: number;
+      };
     }>(`/reports/dashboard${qs ? `?${qs}` : ''}`);
   },
+  getCriticalAlerts: (from: string, to: string) => {
+    const q = new URLSearchParams({ from, to });
+    return secFetch<{ from: string; to: string; data: SecurityFailureRecord[] }>(
+      `/reports/critical-alerts?${q}`
+    );
+  },
+  getFailureHistory: (from: string, to: string) => {
+    const q = new URLSearchParams({ from, to });
+    return secFetch<{ from: string; to: string; data: SecurityFailureRecord[] }>(
+      `/reports/failure-history?${q}`
+    );
+  },
+  resolveFailure: (resultId: number) =>
+    secFetch<{ ok: boolean }>(`/reports/results/${resultId}/resolve`, { method: 'POST' }),
   listAssets: (departmentId?: number) => {
     const q = departmentId ? `?departmentId=${departmentId}` : '';
     return secFetch<{

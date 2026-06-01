@@ -162,6 +162,14 @@ IF COL_LENGTH('dbo.sec_check_items', 'unit') IS NULL
 IF COL_LENGTH('dbo.sec_inspection_results', 'numeric_value') IS NULL
   ALTER TABLE [dbo].[sec_inspection_results] ADD [numeric_value] FLOAT NULL;
 `);
+  await exec(`
+IF COL_LENGTH('dbo.sec_inspection_results', 'resolved_at') IS NULL
+  ALTER TABLE [dbo].[sec_inspection_results] ADD [resolved_at] NVARCHAR(50) NULL;
+`);
+  await exec(`
+IF COL_LENGTH('dbo.sec_inspection_results', 'resolved_by') IS NULL
+  ALTER TABLE [dbo].[sec_inspection_results] ADD [resolved_by] NVARCHAR(200) NULL;
+`);
 
   await seedSecurityInspectionIfEmpty();
   await seedSecurityNumericItemsIfMissing();

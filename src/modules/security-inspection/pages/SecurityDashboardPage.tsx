@@ -5,6 +5,8 @@ import { useI18n } from '@/hooks/useI18n';
 import { useAuth } from '@/contexts/AuthContext';
 import { securityInspectionAPI } from '../api';
 import { DeptCard } from '../components/DeptCard';
+import { ChecksheetWorkflowStepper } from '../components/ChecksheetWorkflowStepper';
+import { ChecksheetObjectivesStrip } from '../components/ChecksheetObjectivesStrip';
 import { getCachedTemplate, cacheTemplate } from '../offline/idb';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { Loader2 } from 'lucide-react';
@@ -55,6 +57,8 @@ export default function SecurityDashboardPage() {
 
   return (
     <div className="space-y-6">
+      <ChecksheetWorkflowStepper current={1} />
+      <ChecksheetObjectivesStrip compact />
       <div>
         <h1 className="text-2xl font-bold tracking-tight">{t('securityInspection.selectDept')}</h1>
         <p className="mt-1 text-sm font-medium text-slate-600">{t('securityInspection.progressToday')}</p>

@@ -102,11 +102,17 @@ export function NumberThresholdInput({
       {showFail && (
         <>
           <Input
-            className="min-h-12 text-base"
-            placeholder={t('securityInspection.notePlaceholder')}
+            className="min-h-12 border-2 border-red-300 text-base"
+            placeholder={t('securityInspection.noteRequiredPlaceholder')}
             value={result?.note ?? ''}
             onChange={(e) => onChange({ itemId: item.id, note: e.target.value })}
+            required
           />
+          {!result?.note?.trim() && (
+            <p className="text-sm font-bold text-red-600">
+              {t('securityInspection.noteRequiredBlock')}
+            </p>
+          )}
           <PhotoCapture
             required={item.requiresPhotoOnFail}
             value={result?.photoData}

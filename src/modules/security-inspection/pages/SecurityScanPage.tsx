@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useI18n } from '@/hooks/useI18n';
 import { QrScanner } from '../components/QrScanner';
+import { ChecksheetWorkflowStepper } from '../components/ChecksheetWorkflowStepper';
 import { securityInspectionAPI } from '../api';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
@@ -48,7 +49,9 @@ export default function SecurityScanPage() {
 
   return (
     <div className="space-y-4">
+      <ChecksheetWorkflowStepper current={2} />
       <h1 className="text-2xl font-bold">{t('securityInspection.scanTitle')}</h1>
+      <p className="text-sm font-semibold text-slate-600">{t('securityInspection.scanLocationHint')}</p>
       <QrScanner onScan={(code) => resolve.mutate(code)} />
     </div>
   );
