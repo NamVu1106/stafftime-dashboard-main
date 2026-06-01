@@ -9,6 +9,7 @@ import {
   loadSecurityScope,
 } from '../middleware/securityPermission';
 import { persistInspectionPhoto } from '../utils/securityPhotos';
+import { toFlatChecklistJson } from '../utils/checklistTemplateJson';
 
 function parseDateRange(req: AuthRequest): { from: string; to: string } {
   const today = new Date().toISOString().slice(0, 10);
@@ -155,13 +156,20 @@ export async function getDepartmentTemplate(req: AuthRequest, res: Response) {
       list.push(item);
       itemsByCat.set(item.category_id, list);
     }
+    const categoryPayload = categories.map((c) => ({
+      id: c.id,
+      name: c.name,
+      items: (itemsByCat.get(c.id) ?? []).map(mapCheckItem),
+    }));
+
+    if (String(req.query.format ?? '').toLowerCase() === 'flat') {
+      res.json(toFlatChecklistJson(dept, categoryPayload));
+      return;
+    }
+
     res.json({
       department: dept,
-      categories: categories.map((c) => ({
-        id: c.id,
-        name: c.name,
-        items: (itemsByCat.get(c.id) ?? []).map(mapCheckItem),
-      })),
+      categories: categoryPayload,
     });
   } catch (e: unknown) {
     res.status(500).json({ error: (e as Error).message });

@@ -35,7 +35,8 @@
     }
   ],
   "notes": {
-    "tablet_fetch": "GET /api/security-inspection/departments/:id/template trả cùng cấu trúc items",
+    "tablet_fetch": "GET /api/security-inspection/departments/:id/template (categories) hoặc ?format=flat cho JSON phẳng",
+    "flat_example_url": "/api/security-inspection/departments/1/template?format=flat",
     "persistence": "Editor ghi vào sec_categories + sec_check_items (giữ lịch sử inspection theo item id)",
     "self_service": "Admin/Manager bộ phận chỉnh tại /security/admin/checklist-editor"
   }
